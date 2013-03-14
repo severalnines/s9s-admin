@@ -1,0 +1,180 @@
+#!/bin/bash
+# Copyright 2012 Severalnines AB
+#
+# MODIFY THE BELOW TO SUIT YOU ENV:
+
+
+if [ ! -e /etc/cmon.cnf ] ; then
+    echo "Could not find /etc/cmon.cnf"
+    exit 1
+else
+    source /etc/cmon.cnf
+fi
+CID=$cluster_id
+CLUSTER_TYPE=$type
+CMON_USER=cmon
+CMON_PASSWORD=$mysql_password
+CMON_DB_HOST=$mysql_hostname
+CMON_DB_DB=cmon
+MYSQL_BIN=$mysql_bindir/mysql
+BACKUP_LOGFILE=/tmp/s9s_backup.log
+LOCKFILE="/tmp/s9s_backup.lock"
+
+### NO MODS BELOW UNLESS YOU KNOW WHAT YOU DO:
+
+
+ACTION=$1
+
+OSUSER=$USER
+if [ "$OSUSER" != "root" ]; then
+    echo "must be executed as 'root' or with 'sudo'"
+    exit 1
+fi
+
+
+if ! test -f $MYSQL_BIN; then
+    echo "Could not find mysql client binary"
+    exit 1
+fi
+
+WWWROOT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='WWWROOT' AND cid=$CID"`
+
+function log_job_message
+{    
+    MSG=$1
+    EXIT_CODE=$2
+    QUERY="INSERT INTO cmon_job_message(cid, jobid,message,exit_code,report_ts) VALUES($CID,$jobid,'$MSG',$EXIT_CODE,now())"
+    if [ $jobid -ne 0 ]; then 
+	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
+    fi
+}
+
+function log_job
+{    
+    STATUS=$1
+    STATUS_TXT=$2
+    EXIT_CODE=$3
+    QUERY="UPDATE cmon_job SET status='$STATUS', status_txt='$STATUS_TXT', exit_code=$EXIT_CODE, report_ts=NOW()  WHERE cid=$CID AND jobid=$jobid"
+    if [ $jobid -ne 0 ]; then 
+	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
+    fi
+}
+
+function write_logfile
+{
+   cat $BACKUP_LOGFILE | sed  -e "s/'/\\\'/g" -e 's/"/\\"/g' > /tmp/s9s_backup_log_escaped
+   LOG_CONTENT=`cat /tmp/s9s_backup_log_escaped`
+   SIZE=`stat --printf='%s' /tmp/s9s_backup_log_escaped`
+   HNAME=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$CMON_DB_PORT -e "SHOW GLOBAL VARIABLES LIKE 'hostname'" | awk '{print $2;}'`
+   QUERY="REPLACE INTO cmon_host_log(cid, hostname, filename, result_len, result, report_ts,description, tag) VALUES ($CID,'$HNAME', '$BACKUP_LOGFILE', $SIZE, \"$LOG_CONTENT\", NOW(), 's9s_backup log', 's9s_backup')"
+   $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
+   rm -rf /tmp/s9s_backup_log_escaped
+}
+
+
+function update_cmon_pkg
+{   
+    CMON_FILENAME=$1
+    if [ -z "$CMON_FILENAME" ]; then
+	echo "cmon pkg was not specified. Usage example:"
+	echo "s9s_update --cmon cmon-1.1.36-64bit-glibc23-mc70.tar.gz"
+	echo "s9s_sw_update --cmon cmon-agent-1.1.36-1.x86_64.rpm"
+	exit 1
+    fi
+    if [ ! -s $CMON_FILENAME ]; then
+	echo "$CMON_FILENAME does not exists or is zero bytes"
+	exit 1
+    fi
+    sum=`md5sum $CMON_FILENAME | awk '{print $1;}'`
+    filesize=`stat --printf='%s' $CMON_FILENAME`
+    fname=`basename $CMON_FILENAME`
+
+    echo "Do you want to add $CMON_FILENAME to CMON_DEFAULT install package (press y or Y to continue)?"
+    read x
+    if [ "$x" == "y" ] || [ "$x" == "Y" ]; then	
+	echo "Updating software package"
+	cp -rf $CMON_FILENAME  $WWWROOT/cmon/upload/
+	if [ $? -ne 0 ]; then 
+	    echo "FAILED: cp -rf $CMON_FILENAME  $WWWROOT/cmon/upload/"
+	    exit 1
+	fi
+	QUERY="BEGIN; DELETE FROM cmon_uploads WHERE cid=$CID AND packageid=(SELECT packageid FROM cmon.cmon_sw_package WHERE name='CMON_DEFAULT' AND cid=$CID); INSERT IGNORE INTO cmon.cmon_uploads ( cid, packageid, filename,path,cluster_type,version_tag,md5sum,filesize,selected) VALUES (1,1,'$fname','${WWWROOT}/cmon/upload/','$CLUSTER_TYPE','','$sum', $filesize ,1); COMMIT"    
+	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log    
+	if [ $? -ne 0 ]; then 
+	    echo "FAILED: $QUERY"
+	    echo "Nothing was changed"
+	    exit 1
+	fi
+	echo "Completed updating software package."
+    else
+	echo "Aborting upgrade of software package"
+    fi    
+}
+
+function update_mysql_pkg
+{   
+    COMMASEP_FILELIST=$1
+    if [ -z "$COMMASEP_FILELIST" ]; then
+	echo "mysql pkg was not specified. Usage example:"
+	echo 's9s_sw_update --mysql mysql-5.5.28_wsrep_23.7-linux-x86_64.tar.gz,galera-23.2.2-amd64.deb'
+	echo 's9s_sw_update --mysql MySQL-server-5.5.28_wsrep_23.7-1.rhel5.x86_64.rpm,galera-23.2.2-1.rhel5.x86_64.rpm'
+	exit 1
+    fi
+    FILELIST=""
+    
+    FILELIST=`echo $COMMASEP_FILELIST | awk '{gsub(","," ");print}'`
+    
+    for f in $FILELIST 
+    do
+	if [ ! -s $f ]; then
+	    echo "$f does not exists or is zero bytes"
+	    exit 1
+	fi
+    done
+
+    echo "Do you want to add $FILELIST to MYSQL_INITIAL_DEPLOY install package (press y or Y to continue)?"
+    read x
+    if [ "$x" == "y" ] || [ "$x" == "Y" ]; then	
+	echo "Updating software package"
+	QUERY="BEGIN; DELETE FROM cmon_uploads WHERE cid=$CID AND packageid=(SELECT packageid FROM cmon.cmon_sw_package WHERE name='MYSQL_INITIAL_DEPLOY' AND cid=$CID);"
+	for f in $FILELIST 
+	do
+	    sum=`md5sum $f | awk '{print $1;}'`
+	    filesize=`stat --printf='%s' $f`
+	    fname=`basename $f`
+	    cp -rf $f  $WWWROOT/cmon/upload/
+	    if [ $? -ne 0 ]; then 
+		echo "FAILED: cp -rf $f  $WWWROOT/cmon/upload/"
+		exit 1
+	    fi
+	    QUERY="$QUERY; INSERT IGNORE INTO cmon.cmon_uploads ( cid, packageid, filename,path,cluster_type,version_tag,md5sum,filesize,selected) VALUES (1,2,'$fname','${WWWROOT}/cmon/upload/','$CLUSTER_TYPE','','$sum', $filesize ,1)"
+	done
+	QUERY="$QUERY;COMMIT"
+	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log    
+	if [ $? -ne 0 ]; then 
+	    echo "FAILED: $QUERY"
+	    echo "Nothing was changed"
+	    exit 1
+	fi	
+	echo "Completed updating software package."
+    else
+	echo "Aborting upgrade of software package"
+    fi    
+}
+
+case $1 in
+    --cmon)
+	update_cmon_pkg $2
+    ;;
+    --mysql)
+	update_mysql_pkg $2
+    ;;
+    --list)
+    list_pkgs
+    ;;
+    *)
+	echo "Usage:"
+	echo "bash ./s9s_sw_updater <--cmon|--mysql> <comma sep. list of packages>"
+	exit 1
+	;;
+esac

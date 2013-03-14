@@ -1,0 +1,25 @@
+#!/bin/bash
+
+BACKUP_LOGFILE=$1
+SLEEPTIME=10
+
+searchexpr="innobackupex: Error: "
+#give xtrabackup a chance to start
+sleep 60
+
+while [ 1 ]; 
+do
+   if ps ax | grep -v grep | grep xtrabackup > /dev/null
+   then
+      err=`grep "$searchexpr" $BACKUP_LOGFILE`
+      if [ $? -eq 0 ]; then
+        sleep $SLEEPTIME
+        killall -9 xtrabackup innobackupex xtrabackup_55 xtrabackup_56
+        echo "BACKUP FAILED: $err " >> $BACKUP_LOGFILE
+        exit 1
+      fi
+   else
+      exit 0
+   fi
+   sleep 2
+done

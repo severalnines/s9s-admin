@@ -1,0 +1,932 @@
+#!/bin/bash
+# Copyright 2012 Severalnines AB
+#
+# MODIFY THE BELOW TO SUIT YOU ENV:
+
+
+if [ ! -e /etc/cmon.cnf ] ; then
+    echo "Could not find /etc/cmon.cnf"
+    exit 1
+else
+    source /etc/cmon.cnf
+fi
+
+
+CMON_DB_HOST=127.0.0.1
+CMON_DB_PORT=$mysql_port
+CMON_USER=cmon
+CMON_DB_DB=cmon
+CMON_PASSWORD=$mysql_password
+MYSQL_BIN=$mysql_basedir/bin/mysql
+CONNECT_TIMEOUT=10
+CLUSTER_TYPE=$type
+MYSQL_OPTS="--connect-timeout=$CONNECT_TIMEOUT"
+LOCKFILE="/tmp/s9s_create.lock"
+OSUSER=$USER
+jobid=0
+if [ "$OSUSER" != "root" ]; then
+    echo "must be executed as 'root' or with 'sudo'"
+    exit 1
+fi
+ 
+
+function log_job_message
+{    
+    MSG=$1
+    EXIT_CODE=$2
+    QUERY="INSERT INTO cmon_job_message(cid, jobid,message,exit_code,report_ts) VALUES($CID,$jobid,'$MSG',$EXIT_CODE,now())"
+    if [ $jobid -ne 0 ]; then 
+	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
+    else
+	echo "Failed: $MSG"
+    fi
+}
+
+function log_job
+{    
+    STATUS=$1
+    STATUS_TXT=$2
+    EXIT_CODE=$3
+    QUERY="UPDATE cmon_job SET status='$STATUS', status_txt='$STATUS_TXT', exit_code=$EXIT_CODE, report_ts=NOW()  WHERE cid=$CID AND jobid=$jobid"
+    if [ $jobid -ne 0 ]; then 
+	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
+    fi
+}
+
+
+function remote_copy()
+{
+   srcfile=$1
+   desthost=$2
+   destfile=$3
+   printf "%-4s: Copying '%s' " "$desthost" "$srcfile"
+   scp $SSH_OPTS2 $srcfile $os_user@$desthost:$destfile >> $HOME/s9s_deploy.log  2>/dev/null
+   if [ $? -eq 0 ]; then
+      printf "\033[32m[ok]\033[0m\n"
+      return 0
+   else
+      log_job_message "copying fileed $srcfile --> $desthost:$destfile" 1
+      log_job 'FAILED' 'backup failed' 1
+      printf "\033[31m[failed]\033[0m\n"
+      exit 1
+   fi
+}
+
+function remote_cmdx()
+{
+   desthost=$1
+   xcommand=$2
+   printf "%-4s: Executing '%s'" "$desthost" "$xcommand"
+   ssh -q $SSH_OPTS $SSH_USER@$desthost "$SUDO $xcommand "
+   if [ $? -eq 0 ]; then
+      printf "\033[32m[ok]\033[0m\n"
+      return 0
+   else
+      log_job_message "command failed: $xcommand" 1
+      log_job 'FAILED' 'backup failed' 1
+      printf "\033[31m[failed]\033[0m\n"
+      exit 1
+   fi
+}
+
+function remote_cmd_nofail()
+{
+   desthost=$1
+   xcommand=$2
+   printf "%-4s: Executing '%s'" "$desthost" "$xcommand"
+   ssh -q $SSH_OPTS $SSH_USER@$desthost "$SUDO $xcommand "  >> $HOME/s9s_deploy.log 2>&1
+   ret=$?
+   printf "\033[32m[ok]\033[0m\n"
+   return $ret
+}
+
+function remote_cmd()
+{
+   desthost=$1
+   xcommand=$2
+   MAX_RETRIES=1
+   printf "%-4s: Executing '%s' " "$desthost" "$xcommand"
+   retry=0
+   while [ $retry -lt $MAX_RETRIES ]; 
+   do
+      x=`ssh -q $SSH_OPTS $SSH_USER@$desthost "$SUDO $xcommand " 2>&1  >> $HOME/s9s_deploy.log`
+      if [ $? -eq 0 ]; then
+        printf "\033[32m[ok]\033[0m\n"
+        return 0
+      fi
+      retry=`expr $retry + 1`
+      printf "\033[31m[failed: retrying ${retry}/${MAX_RETRIES}]\033[0m\n"
+      ssh -q $SSH_OPTS $SSH_USER@$desthost " sync " 2>&1  >> $HOME/s9s_deploy.log
+      sleep 1
+   done
+   
+   printf "\033[31m[failed]\033[0m\n"
+   echo $x
+   echo 'The following command failed:'
+   echo "ssh -q $SSH_OPTS $SSH_USER@$desthost \" $xcommand \""
+   echo 'Try running the command on the line above again, contact http://support.severalnines.com/ticket/new, attach the output from deploy.sh and the error from running the command to the Support issue.'
+   exit 1
+}
+
+
+function remote_cmd3()
+{
+   desthost=$1
+   xcommand=$2
+   printf "%-4s: Executing '%s' " "$desthost" "$xcommand"
+   ssh -nq -tt $SSH_OPTS $SSH_USER@$desthost "$SUDO $xcommand "   >> $HOME/s9s_deploy.log 2>&1
+   if [ $? -eq 0 ]; then
+      printf "\033[32m[ok]\033[0m\n"
+      return 0
+   else
+      printf "\033[31m[failed]\033[0m\n"
+      exit 1
+   fi
+}
+function install_agent
+{
+    args=`getopt p:i:P:a:h: $*`
+    set -- $args
+    for i
+    do
+	case "$i" in
+            -p)
+		CMON_PASSWORD="$2"; shift;
+		shift;;
+            -h)
+		HOSTNAME="$2"; shift;
+		shift;;
+            -i)
+		CLUSTER_ID="$2"; shift;
+		shift;;
+            -a)
+		AGENT_BINARY="$2"; shift;
+		shift;;
+	    -P)
+		PORT="$2"; shift;
+		shift;;
+            --)
+		shift; break;;
+	esac
+    done    
+
+    if [ -z "$CMON_PASSWORD" ]; then
+	echo "s9s_clone "
+	exit 1
+    fi
+    
+    if [ -z "$CLUSTER_ID" ]; then
+	echo "s9s_clone "
+	exit 1
+    fi
+    
+    if [ ! -f $AGENT_BINARY ]; then
+	echo "s9s_clone "
+	exit 1
+    fi
+
+    if [ -z "$HOSTNAME" ]; then
+	echo "s9s_clone "
+	exit 1
+    fi
+    echo "Not implemented"
+    exit 1
+    
+}
+
+function load_opts 
+{
+    local CLUSTER_ID=$1
+    echo "load opts $CLUSTER_ID"
+    OS=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='OS' AND cid=$CLUSTER_ID"`
+    CONFIGDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='CONFIGDIR' AND cid=$CLUSTER_ID"`
+    MYSQL_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MYSQL_PORT' AND cid=$CLUSTER_ID"`
+    GALERA_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='GALERA_PORT' AND cid=$CLUSTER_ID"`
+    MYSQL_BASEDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MYSQL_BASEDIR' AND cid=$CLUSTER_ID"`
+    MYSQL_SCRIPTDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SCRIPTDIR' AND cid=$CLUSTER_ID"`
+    SSH_IDENTITY=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_IDENTITY' AND cid=$CLUSTER_ID"`
+    SSH_USER=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_USER' AND cid=$CLUSTER_ID"`
+    SUDO=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SUDO' AND cid=$CLUSTER_ID"`
+    
+    OS_USER_HOME=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='OS_USER_HOME' AND cid=$CLUSTER_ID"`
+    DATADIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon.cluster_config where variable='datadir' and cid=1 order by id asc limit 1"`
+    MYCNF=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select data  from cmon.cluster_configuration where cid=1 limit 1"`
+
+    echo $MYCNF |  sed 's#\\n#\n\r#g' > /tmp/my.cnf
+    
+    SSH_OPTS="-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10"
+    if [ "$SSH_IDENTITY" = "" ]; then
+	SSH_IDENTITY="-oIdentityFile=${OS_USER_HOME}/.ssh/id_rsa"
+    fi
+    SSH_OPTS="-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY"
+    if [ "$SSH_USER" != "root" ]; then
+	SSH_OPTS="-t -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY"
+	if [ "$SUDO" = "" ] || [ "$SUDO" = "NULL" ];  then
+           SUDO=sudo
+        fi
+    fi
+}
+
+function install_mysql
+{
+    args=`getopt p:i:P:a:h:g:d: $*`
+    set -- $args
+    for i
+    do
+	case "$i" in
+            -p)
+		CMON_PASSWORD="$2"; shift;
+		shift;;
+            -h)
+		TARGET_HOSTNAME="$2"; shift;
+		shift;;
+            -d)
+		DONOR="$2"; shift;
+		shift;;
+            -i)
+		CLUSTER_ID="$2"; shift;
+		shift;;
+            -a)
+		MYSQL_BINARY="$2"; shift;
+		shift;;
+            -g)
+		GALERA_BINARY="$2"; shift;
+		shift;;
+	    -P)
+		PORT="$2"; shift;
+		shift;;
+            --)
+		shift; break;;
+	esac
+    done    
+    if [ -z "$CMON_PASSWORD" ]; then
+	echo "s9s_clone "
+	exit 1
+    fi
+
+    if [ -z "$DONOR" ]; then
+	echo "donor -d not set "
+	exit 1
+    fi
+    
+    if [ -z "$CLUSTER_ID" ]; then
+	echo "s9s_clone "
+	exit 1
+    fi
+    
+    if [ ! -f $MYSQL_BINARY ]; then
+	echo "MYSQL BINARY NOT FOUND"
+	exit 1
+    fi
+
+    if [ ! -f $GALERA_BINARY ]; then
+	echo "GALERA LIBRARY NOT FOUND"
+	exit 1
+    fi
+
+    if [ -z "$HOSTNAME" ]; then
+	echo "s9s_clone "
+	exit 1
+    fi
+    
+    
+    echo "NOT IMPLEMENTED"
+    exit
+    load_opts
+    exit
+}
+
+
+function create_cluster
+{
+    args=`getopt p:s:P:h:t:N: $*`
+    set -- $args
+    for i
+    do
+	case "$i" in
+            -p)
+		CMON_PASSWORD="$2"; shift;
+		shift;;
+            -t)
+		TARGET_CLUSTER_ID="$2"; shift;
+		shift;;
+            -s)
+		SOURCE_CLUSTER_ID="$2"; shift;
+		shift;;
+            -h)
+		TARGET_HOSTNAME="$2"; shift;
+		shift;;
+            -N)
+		CLUSTER_NAME="$2"; shift;
+		shift;;
+            --)
+		shift; break;;
+		esac
+    done    
+   
+    CLUSTER_ID=${SOURCE_CLUSTER_ID} 
+
+
+    if [ -z "$CMON_PASSWORD" ]; then
+      echo "s9s_clone --create -p  missing"
+      exit 1
+    fi
+
+    if [ -z "$TARGET_HOSTNAME" ]; then
+	echo "s9s_clone --create  -h <source cluster hostname> missing"
+	exit 1
+    fi
+
+    if [ -z "$TARGET_CLUSTER_ID" ]; then
+      QUERY="select MAX(id)+1 FROM cluster"
+      TARGET_CLUSTER_ID=`$MYSQL_BIN  -A -B -N --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" `           
+    fi
+
+    if [ -z "$CLUSTER_NAME" ]; then
+	CLUSTER_NAME="CLONE_OF_${SOURCE_CLUSTER_ID}"
+    fi
+
+    if [ -z "$SOURCE_CLUSTER_ID" ]; then
+      echo "s9s_clone --create -s <source cluster id> missing"
+      exit 1
+    fi
+    echo "Creating Cluster $CLUSTER_NAME (${TARGET_CLUSTER_ID}) From Cluster $SOURCE_CLUSTER_ID"
+    
+    QUERY="select count(id) FROM cluster WHERE id=${TARGET_CLUSTER_ID}"
+    CNT=`$MYSQL_BIN  -A -B -N --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" `    
+    if [ $CNT -ne 0 ]; then
+	echo "Cluster $TARGET_CLUSTER_ID already exists"
+	log_job_message "Cluster $TARGET_CLUSTER_ID already exists" 1
+	log_job 'FAILED' 's9s_clone --create failed' 1
+	exit 1
+    fi
+
+    QUERY="select count(id) FROM cluster WHERE id=${SOURCE_CLUSTER_ID}"
+    CNT=`$MYSQL_BIN  -A -B -N --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" `
+    
+    if [ $CNT -eq 0 ]; then
+	log_job_message "Cluster $SOURCE_CLUSTER_ID does not exists" 1
+	log_job 'FAILED' 's9s_clone --create failed' 1
+	echo "Cluster $SOURCE_CLUSTER_ID does not exists"
+	exit 1
+    fi
+    
+    if [ $TARGET_CLUSTER_ID -eq 1 ]; then
+	log_job_message "Cannot clone to cluster id = 1" 1
+	log_job 'FAILED' 's9s_clone --create failed' 1
+	echo "s9s_clone - cannot clone to CLUSTER ID = 1"
+	exit 1
+    fi
+
+    if [ $TARGET_CLUSTER_ID -eq $SOURCE_CLUSTER_ID ]; then
+	log_job_message "Source and target clusterid is the same" 1
+	log_job 'FAILED' 's9s_clone --create failed' 1
+	echo "s9s_clone - cannot clone to same CLUSTER ID"
+	exit 1
+    fi
+
+    
+##    CMON_DB_DB="cmon_${CLUSTER_ID}"
+    
+    case $CLUSTER_TYPE in
+	galera)
+	    ;;
+	*)
+	    echo "Invalid cluster type - only galera is supported"
+	    exit 1;	           	     
+    esac
+    load_opts $SOURCE_CLUSTER_ID 
+    
+    check_host_exists  $TARGET_CLUSTER_ID  $TARGET_HOSTNAME
+
+    QUERY="SHOW GLOBAL STATUS LIKE 'wsrep_local_state'"
+    
+    STATE=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=$TARGET_HOSTNAME --port=$CMON_DB_PORT --auto-vertical-output -N -A -Bse "$QUERY"`
+    
+    if [ $? -ne 0 ]; then
+	echo "Failed to get wsrep_local_state of $TARGET_HOSTNAME"
+	exit 1
+    fi
+    if [ "$STATE" = "NULL" ]; then
+	echo "$TARGET_HOSTNAME not SYNCHED"
+	exit 1
+    fi
+    STATE=`echo $STATE | awk '{print $2;}'`    
+    if [ $STATE -ne 4 ]; then
+	echo "$TARGET_HOSTNAME not SYNCHED"
+	exit 1
+    fi
+    
+    
+
+
+#    QUERY="CREATE DATABASE IF NOT EXISTS $CMON_DB_DB"
+    
+#    `$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$CMON_DB_PORT --auto-vertical-output -Bse "$QUERY"`
+    
+#    if [ $? -ne 0 ]; then
+#	echo "Failed to create $CMON_DB_DB"
+#	exit 1
+#    fi
+   # cp /usr/local/cmon/sql/cmon_db.sql /tmp/cmon_db.sql
+   # cp /usr/local/cmon/sql/cmon_data.sql /tmp/cmon_data.sql
+    
+  #  sed -i.bak '/CREATE DATABASE IF/d' /tmp/cmon_db.sql
+  #  sed -i.bak '/USE /d' /tmp/cmon_db.sql
+  #  sed -i.bak '/USE /d' /tmp/cmon_data.sql
+
+  #  `$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$PORT $CMON_DB_DB < /tmp/cmon_db.sql`
+  #  `$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$PORT $CMON_DB_DB < /tmp/cmon_data.sql`
+
+    QUERY="DELETE FROM hosts WHERE cid=$TARGET_CLUSTER_ID;DELETE FROM hosts WHERE cid=0"
+    `$MYSQL_BIN $MYSQL_OPTS -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"`    
+    if [ $? -ne 0 ]; then
+	echo "Failed to clear"
+	exit 1
+    fi
+
+    QUERY="DELETE FROM hosts WHERE cid=$TARGET_CLUSTER_ID;DELETE FROM processes WHERE cid=0"
+    `$MYSQL_BIN $MYSQL_OPTS -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"`    
+    if [ $? -ne 0 ]; then
+	echo "Failed to clear"
+	exit 1
+    fi
+
+    QUERY="DELETE FROM mysql_server WHERE cid=$TARGET_CLUSTER_ID"    
+    `$MYSQL_BIN $MYSQL_OPTS -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"`    
+    if [ $? -ne 0 ]; then
+	echo "Failed to clear"
+	exit 1
+    fi
+
+    ##Lets' do the move in one transaction
+    QUERY="BEGIN; INSERT INTO cluster(id, type) VALUES($TARGET_CLUSTER_ID, '$CLUSTER_TYPE')"    
+    QUERY="$QUERY;INSERT IGNORE INTO cmon_configuration(cid, param, value) SELECT $TARGET_CLUSTER_ID, param,value  FROM cmon.cmon_configuration WHERE cid=${SOURCE_CLUSTER_ID}"    
+    QUERY="$QUERY;INSERT IGNORE INTO cmon_sw_package(cid, packageid, name, rpm, selected) SELECT $TARGET_CLUSTER_ID,packageid, name, rpm, selected  FROM cmon.cmon_sw_package WHERE cid=${SOURCE_CLUSTER_ID}"    
+    QUERY="$QUERY;INSERT INTO cmon_uploads(cid, packageid, filename,path,cluster_type,version_tag,md5sum,filesize, selected) SELECT $TARGET_CLUSTER_ID, packageid, filename,path,cluster_type,version_tag,md5sum,filesize, selected FROM cmon.cmon_uploads WHERE cid=${SOURCE_CLUSTER_ID}"    
+    QUERY="$QUERY;REPLACE INTO cmon_configuration(cid, param, value) VALUES ($TARGET_CLUSTER_ID, \"CLUSTER_NAME\", \"${CLUSTER_NAME}\")"    
+    QUERY="$QUERY;CALL sp_cmon_movehost(${TARGET_CLUSTER_ID}, ${HID})"
+    QUERY="$QUERY;COMMIT"
+    `$MYSQL_BIN $MYSQL_OPTS -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"`    
+    if [ $? -ne 0 ]; then
+	echo "Failed to create cluster: $QUERY"
+	exit 1
+    fi
+    
+    
+    ## install config files
+    cp /etc/cmon.cnf /etc/cmon_${TARGET_CLUSTER_ID}.cnf
+    sed -i.bak "s#cluster_id=.*#cluster_id=${TARGET_CLUSTER_ID}#g" /etc/cmon_${TARGET_CLUSTER_ID}.cnf
+    sed -i.bak "s#logfile=.*#logfile=/var/log/cmon_${TARGET_CLUSTER_ID}.log#g" /etc/cmon_${TARGET_CLUSTER_ID}.cnf
+    sed -i.bak "s#mysql_server_addresses=.*#mysql_server_addresses=${TARGET_HOSTNAME}#g" /etc/cmon_${TARGET_CLUSTER_ID}.cnf
+    
+    echo "cmon_multi_tenant=1" | tee --append /etc/cmon_${TARGET_CLUSTER_ID}.cnf
+    
+    ## init.d
+    cp /etc/init.d/cmon /etc/init.d/cmon_${TARGET_CLUSTER_ID}
+    sed -i.bak 's#MULTI_TENANT=.*#MULTI_TENANT=1#g' /etc/init.d/cmon_${TARGET_CLUSTER_ID}
+    sed -i.bak "s#CMON_CNF=.*#CMON_CNF=/etc/cmon_${TARGET_CLUSTER_ID}.cnf#g" /etc/init.d/cmon_${TARGET_CLUSTER_ID}
+    sed -i.bak "s#CLUSTERID=.*#CLUSTERID=${TARGET_CLUSTER_ID}#g" /etc/init.d/cmon_${TARGET_CLUSTER_ID}
+    
+    
+    remote_cmd $TARGET_HOSTNAME "sed -i.bak 's#cluster_id=.*#cluster_id=${TARGET_CLUSTER_ID}#g' /etc/cmon.cnf"
+    remote_cmd $TARGET_HOSTNAME "/etc/init.d/cmon restart"
+    
+    
+    OS=debian  
+    pkill -9 -xf "cmon.*--config-file=/etc/cmon_${TARGET_CLUSTER_ID}.cnf"
+    case $OS in
+	redhat)
+	    /sbin/chkconfig --add cmon_${TARGET_CLUSTER_ID}
+	    /sbin/service cmon_${TARGET_CLUSTER_ID} start	    
+	    ;;
+	debian)
+	    /usr/sbin/update-rc.d cmon_${TARGET_CLUSTER_ID} defaults
+	    /usr/sbin/service cmon_${TARGET_CLUSTER_ID} start	    
+	    ;;
+	*)
+	    echo "./s9s_create -- invalid OS found"
+	    exit 1;	           	     
+    esac
+
+    QUERY="SELECT GROUP_CONCAT(hostname) FROM mysql_server WHERE cid=$SOURCE_CLUSTER_ID"
+    SERVERS=`$MYSQL_BIN $MYSQL_OPTS -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"`    
+    if [ $? -ne 0 ]; then
+	echo "Failed to get mysql_server list"
+	exit 1
+    fi
+    
+    if [ $SOURCE_CLUSTER_ID -eq 1 ]; then
+	 sed -i.bak "s#mysql_server_addresses=.*#mysql_server_addresses=${SERVERS}#g" /etc/cmon.cnf
+    else
+	 sed -i.bak "s#mysql_server_addresses=.*#mysql_server_addresses=${SERVERS}#g" /etc/cmon_${SOURCE_CLUSTER_ID}.cnf
+    fi
+    echo ""
+    echo "Don't forget to detach cluster, by running:"
+    echo "    s9s_clone --detach -i $TARGET_CLUSTER_ID -h $TARGET_HOSTNAME "
+    echo ""
+}
+
+## end create_cluster
+
+function check_host_exists
+{
+    local TARGET_CID=$1
+    local TARGET_HOSTNAME=$2
+    local QUERY="select id from cmon.hosts where (hostname='$TARGET_HOSTNAME' OR ip='$TARGET_HOSTNAME') AND cid=${SOURCE_CLUSTER_ID}"
+    HID=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"`
+    if [ $? -ne 0 ]; then
+	echo "$QUERY  - failed!"
+	exit 1
+    fi
+
+    if [ -z "$HID" ]; then
+	echo "Server $TARGET_HOSTNAME does not exists"
+	exit 1
+    fi
+
+    if [ "$HID" = "NULL" ]; then
+	echo "Server $TARGET_HOSTNAME does not exists"
+	exit 1
+    fi
+    echo "Found hostid = $HID"
+
+}
+
+
+function delete_cluster
+{
+    args=`getopt p:i:P:t:h: $*`
+    set -- $args
+    for i
+    do
+	case "$i" in
+            -p)
+		CMON_PASSWORD="$2"; shift;
+		shift;;
+            -i)
+		CLUSTER_ID="$2"; shift;
+		shift;;
+            -h)
+		HOSTNAME="$2"; shift;
+		shift;;
+	    -P)
+		PORT="$2"; shift;
+		shift;;
+            --)
+		shift; break;;
+	esac
+    done    
+    
+
+    if [ -z "$CMON_PASSWORD" ]; then
+      echo "s9s_clone --delete -p  missing"
+      exit 1
+    fi
+
+    if [ -z "$CLUSTER_ID" ]; then
+      echo "s9s_clone --delete -i <cluster id of cluster to be deleted> missing"
+      exit 1
+    fi
+
+##    CMON_DB_DB="cmon_${CLUSTER_ID}"
+    
+    case $CLUSTER_TYPE in
+	galera)
+	    ;;
+	*)
+	    echo "./s9s_clone -- only galera is supported"
+	    exit 1;	           	     
+    esac
+    load_opts $CLUSTER_ID
+    
+    QUERY="select group_concat(hostname SEPARATOR ' ') from ${CMON_DB_DB}.mysql_server where cid=${CLUSTER_ID}"
+    SERVER_LIST=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$CMON_DB_PORT --auto-vertical-output -Bse "$QUERY"`
+    QUERY="CALL ${CMON_DB_DB}.sp_cmon_deletecluster(${CLUSTER_ID})"
+    `$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$CMON_DB_PORT --auto-vertical-output -Bse "$QUERY"`
+    
+    if [ $? -ne 0 ]; then
+	echo "Failed to delete cluster"
+	exit 1
+    fi
+
+    if [ -z "$OS" ]; then
+	if [ `hash update-rc.d 2>/dev/null`  ]; then
+	    OS="redhat"
+	else
+	    OS="debian"
+	fi	
+    fi
+    if [ "$SERVER_LIST" != "NULL" ]; then
+	for host in $SERVER_LIST
+	do
+	    remote_cmd_nofail $host "killall -9 mysqld mysqld_safe cmon"
+	    remote_cmd_nofail $host "rm -rf $DATADIR"
+	    
+	    case $OS in
+		redhat)
+		    remote_cmd_nofail $host "/sbin/chkconfig --del mysql"
+		    remote_cmd_nofail $host "/sbin/chkconfig --del cmon"
+		    ;;
+		debian)
+		    remote_cmd_nofail $host "/usr/sbin/update-rc.d -f mysql remove"
+		    remote_cmd_nofail $host "/usr/sbin/update-rc.d -f cmon remove"
+		    ;;
+		*)
+		    echo "./s9s_clone -- invalid OS found - cannot uninstall cmon initd, proceeding"
+	    esac	
+	    remote_cmd_nofail $host "rm -rf /etc/init.d/cmon"
+	    remote_cmd_nofail $host "rm -rf /etc/cmon.cnf"
+	    remote_cmd_nofail $host "rm -rf /var/log/cmon.*"
+	done
+    fi
+    case $OS in
+	redhat)
+	    /sbin/service cmon_${CLUSTER_ID} stop
+	    /sbin/chkconfig --del cmon_${CLUSTER_ID}
+	    ;;
+	debian)
+	    /usr/sbin/service cmon_${CLUSTER_ID} stop
+	    /usr/sbin/update-rc.d -f cmon_${CLUSTER_ID} remove
+	    ;;
+	*)
+	    echo "./s9s_clone -- invalid OS found - cannot uninstall cmon initd, proceeding"
+	    exit 1;	           	     
+    esac	        
+    rm -rf /etc/init.d/cmon_${CLUSTER_ID}
+}
+function list_cluster
+{
+    QUERY="select group_concat(id SEPARATOR ' ') FROM cluster"    
+    RESULT=`$MYSQL_BIN  -A -B -N --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" `           
+
+    if [ "$RESULT" = "NULL" ]; then
+	echo "No clusters exists"
+	exit 1
+    fi
+    echo "Available clusters:"
+    echo "cluster-id    size    name"
+    echo "--------------------------"
+    for i in $RESULT 
+    do
+	NAME=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='CLUSTER_NAME' AND cid=$i"`
+	QUERY="select count(id) FROM mysql_server WHERE cid=$i"    
+	SZ=`$MYSQL_BIN  -A -B -N --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" `           
+	echo "$i               $SZ     $NAME"
+    done
+
+}
+
+function move_node
+{
+#    args=`getopt -o p:,h:,f:,t: --long password:,hostname:,from-clusterid:,to-clusterid: -n 's9s-clone.sh' -- "$*"`
+    args=`getopt p:s:h:t: $*`
+    set -- $args
+    for i
+    do
+	case "$i" in
+            -p)
+		CMON_PASSWORD="$2"; shift;
+		shift;;
+            -s)
+		CLUSTER_ID="$2"; shift;
+		SOURCE_CLUSTER_ID=$CLUSTER_ID
+		shift;;
+            -t)
+		TARGET_CLUSTER_ID="$2"; shift;
+		shift;;
+            -h)
+		SOURCE_HOSTNAME="$2"; shift;
+		shift;;
+            --)
+		shift; break;;
+		esac
+    done    
+    if [ -z "$CMON_PASSWORD" ]; then
+      echo "s9s_clone  --move-node  -p  missing"
+      exit 1
+    fi
+
+    if [ -z "$CLUSTER_ID" ]; then
+      echo "s9s_clone  --move-node -s <source clusterid> missing"
+      exit 1
+    fi
+
+    if [ -z "$TARGET_CLUSTER_ID" ]; then
+      echo "s9s_clone --move-node -t <target clusterid> missing"
+      exit 1
+    fi
+
+    if [ "$TARGET_CLUSTER_ID" = "$SOURCE_CLUSTER_ID" ]; then
+      echo "s9s_clone  --move-node  source and target is the same!"
+      exit 1
+    fi
+
+    if [ -z "$SOURCE_HOSTNAME" ]; then
+      echo "s9s_clone  --move-node  -h <source cluster hostname> missing"
+      exit 1
+    fi
+    
+    QUERY="select count(id) FROM cluster WHERE id=${TARGET_CLUSTER_ID}"
+    CNT=`$MYSQL_BIN  -A -B -N --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" `           
+    if [ $CNT -eq 0 ]; then
+	echo "Cluster $TARGET_CLUSTER_ID does not exist, use s9s_clone --create first"
+	exit 1
+    fi
+    
+    QUERY="select id from cmon.hosts where (hostname='$SOURCE_HOSTNAME' OR ip='$SOURCE_HOSTNAME') AND cid=${SOURCE_CLUSTER_ID}"
+    local HID=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"`
+
+    if [ -z "$HID" ]; then
+	echo "Server $SOURCE_HOSTNAME does not exists in cluster $SOURCE_CLUSTER_ID"
+	exit 1
+    fi
+
+    if [ "$HID" = "NULL" ]; then
+	echo "Server $SOURCE_HOSTNAME does not exists in cluster $SOURCE_CLUSTER_ID"
+	exit 1
+    fi
+    
+    load_opts $SOURCE_CLUSTER_ID
+    check_host_exists $TARGET_CLUSTER_ID $SOURCE_HOSTNAME   
+
+    QUERY="DELETE FROM processes WHERE cid=0"
+    `$MYSQL_BIN $MYSQL_OPTS -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"`    
+    if [ $? -ne 0 ]; then
+	echo "Failed to clear"
+	exit 1
+    fi
+    QUERY="BEGIN; CALL sp_cmon_deletehost(${TARGET_CLUSTER_ID}, ${HID})"
+    QUERY="$QUERY;CALL sp_cmon_movehost(${TARGET_CLUSTER_ID}, ${HID})"    
+    QUERY="$QUERY;CALL sp_cmon_deletehost($SOURCE_CLUSTER_ID, $HID); COMMIT"
+    `$MYSQL_BIN $MYSQL_OPTS -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"`    
+    if [ $? -ne 0 ]; then
+	echo "Failed to migrate host: $QUERY";
+	exit 1
+    fi	
+
+    QUERY="select count(id) FROM mysql_server WHERE cid=${TARGET_CLUSTER_ID}"
+    CNT=`$MYSQL_BIN  -A -B -N --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" `
+    
+
+    remote_cmd $SOURCE_HOSTNAME "sed -i.bak 's#cluster_id=.*#cluster_id=${TARGET_CLUSTER_ID}#g' /etc/cmon.cnf"
+    remote_cmd $SOURCE_HOSTNAME "/etc/init.d/cmon restart"
+    if [ $CNT -eq 0 ]; then 
+	## IF THE CLUSTER WE MOVE THE NODE TO IS EMPTY, THEN INIT THE GALERA NODE
+	QUERY="SET WSREP_ON=0;SET GLOBAL wsrep_cluster_address='gcomm://'"	    
+	`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=$SOURCE_HOSTNAME --port=$PORT --auto-vertical-output -Bse "$QUERY"`	    
+	if [ $? -ne 0 ]; then
+	    echo "Failed to create cluster on $TARGET_CLUSTER_ID"
+	    exit 1
+	fi
+    else	    
+	echo "Stopping mysql server on $SOURCE_HOSTNAME - ClusterControl will resync it"
+	remote_cmd_nofail $SOURCE_HOSTNAME "killall -q -15 mysqld mysqld_safe"
+    fi
+    
+
+    QUERY="SELECT GROUP_CONCAT(hostname) FROM mysql_server WHERE cid=$TARGET_CLUSTER_ID"
+    SERVERS=`$MYSQL_BIN $MYSQL_OPTS -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"`    
+    if [ $? -ne 0 ]; then
+	echo "Failed to get mysql_server list"
+	exit 1
+    fi
+    if [ $TARGET_CLUSTER_ID -eq 1 ]; then
+	sed -i.bak "s#mysql_server_addresses=.*#mysql_server_addresses=${SERVERS}#g" /etc/cmon.cnf
+    else
+	sed -i.bak "s#mysql_server_addresses=.*#mysql_server_addresses=${SERVERS}#g" /etc/cmon_${TARGET_CLUSTER_ID}.cnf
+    fi
+
+
+    echo "Node moved - follow recovery progress in GUI"
+}
+
+function detach_cluster
+{
+    args=`getopt p:i:P:t:h: $*`
+    set -- $args
+    for i
+    do
+	case "$i" in
+            -p)
+		CMON_PASSWORD="$2"; shift;
+		shift;;
+            -i)
+		CLUSTER_ID="$2"; shift;
+		shift;;
+            -h)
+		TARGET_HOSTNAME="$2"; shift;
+		shift;;
+	    -P)
+		PORT="$2"; shift;
+		shift;;
+            --)
+		shift; break;;
+		esac
+    done    
+    
+
+    if [ -z "$CMON_PASSWORD" ]; then
+      echo "s9s_clone --detach -p  missing"
+      exit 1
+    fi
+
+    if [ -z "$CLUSTER_ID" ]; then
+      echo "s9s_clone --detach -i <clusterid> missing"
+      exit 1
+    fi
+
+    if [ -z "$TARGET_HOSTNAME" ]; then
+      echo "s9s_clone --detach -h <hostname> missing"
+      exit 1
+    fi
+
+
+#    if [ -z "$PORT" ]; then
+#      echo "s9s_clone -P <target server mysql port> is  missing"
+#       exit 1
+#    fi
+
+
+##    CMON_DB_DB="cmon_${CLUSTER_ID}"
+    
+    case $CLUSTER_TYPE in
+	galera)
+	    ;;
+	*)
+	    echo "Invalid cluster type - only galera is supported"
+	    exit 1;	           	     
+    esac
+   
+
+    QUERY="select id from cmon.hosts where (hostname='$TARGET_HOSTNAME' OR ip='$TARGET_HOSTNAME') AND cid=${CLUSTER_ID}"
+    local HID=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"`
+
+    if [ -z "$HID" ]; then
+        echo "Server $TARGET_HOSTNAME does not exists in cluster $CLUSTER_ID"
+        exit 1
+    fi
+ 
+    QUERY="SET GLOBAL wsrep_cluster_address='gcomm://'"
+    
+    `$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=$TARGET_HOSTNAME --port=$PORT --auto-vertical-output -Bse "$QUERY"`
+    
+    if [ $? -ne 0 ]; then
+	echo "Failed to detach cluster"
+	exit 1
+    fi
+
+    echo "Detached cluster."
+}
+
+function check_mysql_client()
+{
+   if [ ! -f $MYSQL_BIN ]; then
+        # Try normal locations:
+        MYSQL_BIN="/usr/bin/mysql"
+        if [ ! -f $MYSQL_BIN ]; then
+             MYSQL_BIN="/usr/local/mysql/bin/mysql"
+             if [ ! -f $MYSQL_BIN ]; then
+		 echo "The MySQL client binary could not be found"         
+		 if [ "$mysql_basedir" = "" ]; then
+		     echo "mysql_basedir in /etc/cmon.cnf is not set. Add it to /etc/cmon.cnf"
+		     exit 1		     
+		 fi
+             fi
+	fi
+   fi
+}
+
+if [ ! -e $LOCKFILE ]; then
+    trap "rm -f $LOCKFILE; exit" INT TERM EXIT
+    touch $LOCKFILE
+    
+    check_mysql_client		 
+ 
+    
+    case $1 in
+	--list)
+	    list_cluster  $2 $3 $4 $5 $6 $7
+	    ;;
+	--create)
+	    create_cluster  $2 $3 $4 $5 $6 $7 $8 $9
+	    ;;
+	--detach)
+	    detach_cluster  $2 $3 $4 $5 $6 $7
+	    ;;
+	--move-node)
+	    move_node  $2 $3 $4 $5 $6 $7
+	    ;;
+	--delete)
+	    delete_cluster  $2 $3 $4 $5 $6 $7
+	    ;;
+	*)
+	    echo "Usage: "
+	    echo "s9s_clone --[create|delete|detach|move-node]: "
+	    exit 1
+	    ;;
+    esac
+    rm $LOCKFILE
+    trap - INT TERM EXIT
+fi
+

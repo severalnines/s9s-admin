@@ -1,0 +1,917 @@
+#!/bin/bash
+# Copyright 2012 Severalnines AB
+#
+# MODIFY THE BELOW TO SUIT YOU ENV:
+
+
+if [ ! -e /etc/cmon.cnf ] ; then
+    echo "Could not find /etc/cmon.cnf"
+    exit 1
+else
+    source /etc/cmon.cnf
+fi
+CID=$cluster_id
+
+REPL_USER=""
+REPL_PASSWORD=""
+CMON_USER=cmon
+CMON_PASSWORD=$mysql_password
+CMON_DB_HOST=$mysql_hostname
+CMON_DB_DB=cmon
+MYSQL_BIN=$mysql_bindir/mysql
+CONNECT_TIMEOUT=10
+MYSQL_OPTS="--connect-timeout=$CONNECT_TIMEOUT"
+MAX_ALLOWED_EPS=2
+LOCKFILE="/tmp/s9s_geored.lock"
+
+function create_endpoint 
+{
+    master_cmon_password=""
+    master_addr=""
+    slave_addr=""
+    master_port=""
+    slave_port=""
+    group="1"
+    args=`getopt cp:m:s:S:M:G:u: $*`
+    set -- $args
+    for i
+    do
+	case "$i" in
+	    -c) 
+		shift;;
+            -m)
+		master_addr="$2"; shift;
+		shift;;
+            -M)
+		master_port="$2"; shift;
+		shift;;
+            -s)
+		slave_addr="$2"; shift;
+		shift;;
+            -S)
+		slave_port="$2"; shift;
+		shift;;
+            -G)
+		group="$2"; shift;
+		shift;;
+            -u)
+		REPL_USER="$2"; shift;
+		shift;;
+            -p)
+		REPL_PASSWORD="$2"; shift;
+		shift;;
+            --)
+		shift; break;;
+		esac
+    done    
+
+
+    if [ -z "$master_addr" ]; then
+      echo "s9s_geored --create-endpoint -m <master_address> -M <master_port> -s <slave_address> -S <slave port> -u<repl user> -p<repl password>" 
+      exit 1
+    fi
+
+    if [ -z "$slave_addr" ]; then
+      echo "s9s_geored --create-endpoint -m <master_address> -M <master_port> -s <slave_address> -S <slave port> -u<repl user> -p<repl password>" 
+      exit 1
+    fi
+
+    if [ -z "$slave_port" ]; then
+      echo "s9s_geored --create-endpoint -m <master_address> -M <master_port> -s <slave_address> -S <slave port> -u<repl user> -p<repl password>" 
+      exit 1
+    fi
+
+    if [ -z "$master_port" ]; then
+      echo "s9s_geored --create-endpoint -m <master_address> -M <master_port> -s <slave_address> -S <slave port> -u<repl user> -p<repl password>" 
+      exit 1
+    fi
+
+    if [ -z "$REPL_USER" ]; then
+      echo "s9s_geored --create-endpoint -m <master_address> -M <master_port> -s <slave_address> -S <slave port> -u<repl user> -p<repl password>" 
+      exit 1
+    fi
+   
+    if [ -z "$REPL_PASSWORD" ]; then
+      echo "s9s_geored --create-endpoint -m <master_address> -M <master_port> -s <slave_address> -S <slave port> -u<repl user> -p<repl password>" 
+      exit 1
+    fi
+
+   TABLE="CREATE TABLE IF NOT EXISTS mysql_repl_endpoint( \
+             ep_id INTEGER UNSIGNED AUTO_INCREMENT NOT NULL,\
+             cid INTEGER UNSIGNED NOT NULL,\
+             gid INTEGER UNSIGNED NOT NULL,\
+             slave_serverid INTEGER UNSIGNED NOT NULL,\
+             master_serverid INTEGER UNSIGNED NOT NULL,\
+             master_address VARCHAR(255) DEFAULT '',
+             master_port INTEGER UNSIGNED DEFAULT '3306',
+             slave_address VARCHAR(255) DEFAULT '',
+             slave_port INTEGER UNSIGNED DEFAULT '3306',
+             status ENUM('INACTIVE', 'RUNNING', 'IO_NOT_RUNNING', 'SQL_NOT_RUNNING', 'LAGGING', 'STOPPED' ),
+             seconds_behind_master INTEGER UNSIGNED DEFAULT NULL,
+             master_log_file VARCHAR(255) DEFAULT '',
+             read_master_log_pos INTEGER UNSIGNED DEFAULT NULL,
+             exec_master_log_pos INTEGER UNSIGNED DEFAULT NULL,
+             last_errno INTEGER UNSIGNED DEFAULT '0',
+             last_error VARCHAR(255) DEFAULT NULL,
+             last_io_errno INTEGER UNSIGNED DEFAULT '0',
+             last_io_error VARCHAR(255) DEFAULT NULL,
+             last_sql_errno INTEGER UNSIGNED DEFAULT '0',
+             last_sql_error VARCHAR(255) DEFAULT NULL,
+             PRIMARY KEY(ep_id), 
+             UNIQUE INDEX (cid, master_address, slave_address)
+             ) ENGINE = innodb;"
+                 
+   $MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$TABLE"
+   
+   if [ $? -ne 0 ]; then
+       echo "Create table failed"
+       exit 1
+   fi
+
+   SERVERID_ROW=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=$slave_addr --port=$slave_port --auto-vertical-output -Bse "show variables where variable_name='server_id'"`
+   
+   if [ -z "$SERVERID_ROW" ]; then
+       echo "server_id not found - you must set server id on the $slave_addr"
+       exit 1
+   fi
+
+   if [ "$SERVERID_ROW" = "null"  ]; then
+       echo "server_id not found - you must set server id on the $slave_addr"
+       exit 1
+   fi
+
+   if [ "$SERVERID_ROW" = "NULL"  ]; then
+       echo "server_id not found - you must set server id on the $slave_addr"
+       exit 1
+   fi
+   
+   SERVERID=`echo $SERVERID_ROW | awk '{print $2;}'`
+   
+   if [ -z "$SERVERID" ]; then
+       echo "server_id not found - you must set server id on the $slave_addr"
+       exit 1
+   fi
+
+   if [ $SERVERID -eq 0 ]; then
+       echo "server_id must be greater than 0 on the $slave_addr (and unique amongst the clusters)"
+       exit 1
+   fi
+   
+   NO_EPS_IN_GROUP=`$MYSQL_BIN $MYSQL_OPTS -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "SELECT count(ep_id) FROM mysql_repl_endpoint WHERE cid=$CID and gid=$group"`
+   if [ $NO_EPS_IN_GROUP -eq $MAX_ALLOWED_EPS ]; then
+       echo "You already have two endpoints in the group $group."
+       echo "Max allowed EPs in group = $MAX_ALLOWED_EPS."
+       echo "You can specig -G <group id> to set another group."
+       exit 1
+   fi
+
+
+   QUERY="INSERT IGNORE INTO mysql_repl_endpoint(cid, master_address, master_port, slave_address, slave_port, status,gid, slave_serverid) VALUES ($CID, '$master_addr', $master_port, '$slave_addr', $slave_port, 'INACTIVE', $group, $SERVERID)" 
+
+   if [ `$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"` ]; then
+      echo "Create endpoint failed"
+      exit 1
+   fi
+
+   EP_ID=`$MYSQL_BIN $MYSQL_OPTS -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "SELECT ep_id FROM mysql_repl_endpoint WHERE master_address='$master_addr' AND master_port=$master_port AND slave_address='$slave_addr' AND slave_port=$slave_port"`
+
+   if [ $EP_ID -eq 0 ]; then
+       echo "failed to create endpoint"
+       exit 1
+   fi
+    
+   echo "On master $master_addr:$master_port GRANT the following:"
+   echo "  GRANT replication slave ON *.* TO '$REPL_USER'@'$slave_addr' IDENTIFIED BY '$REPL_PASSWORD';"   
+   echo "  GRANT super ON *.* TO '$REPL_USER'@'$CMON_DB_HOST' IDENTIFIED BY '$REPL_PASSWORD';"   
+   echo "  GRANT select ON mysql.ndb_binlog_index TO 'REPL_USER'@'$CMON_DB_HOST' IDENTIFIED BY '$REPL_PASSWORD';"   
+   echo "NOTE: you mave have to use the DNS name (FQDN)."
+   echo ""
+   echo "Created endpoint $EP_ID (group $group): " 
+   echo "$master_addr:$master_port --> $slave_addr:$slave_port"
+   echo ""
+}
+
+
+
+function list_endpoints
+{
+    LIST=`$MYSQL_BIN $MYSQL_OPTS -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "set group_concat_max_len=1024*1024;select group_concat(concat(ep_id, ',', master_address,',', master_port , ',', slave_address,',', slave_port ,',' , status, ',', gid) ORDER BY gid asc, ep_id asc SEPARATOR ' ') from mysql_repl_endpoint where cid=$CID order by ep_id asc"`
+
+    if [ $? -ne 0 ]; then
+	echo "Failed to get endpoints"
+	exit 1
+    fi
+    if [ -z "$LIST" ]; then
+	echo "No endpoints found"
+	exit 0
+    fi
+    if [ "$LIST" = "NULL" ]; then
+	echo "No endpoints found"
+	exit 0
+    fi
+    
+    echo "Endpoints"
+    echo "************************"
+    
+    for f in $LIST
+    do
+	ep_id=`echo $f | awk -F ',' '{print $1;}'`
+	master=`echo $f | awk -F ',' '{print $2;}'`
+	master_port=`echo $f | awk -F ',' '{print $3;}'`
+	slave=`echo $f | awk -F ',' '{print $4;}'`
+	slave_port=`echo $f | awk -F ',' '{print $5;}'`
+	status=`echo $f | awk -F ',' '{print $6;}'`
+	group=`echo $f | awk -F ',' '{print $7;}'`
+	if [ "$ep_id" != "NULL" ]; then
+	    get_replication_status $master $master_port $slave $slave_port 1 1
+	    echo "GROUP ID:    $group "
+	    echo "ENDPOINT ID: $ep_id "
+	    echo "MASTER:      $master:$master_port" 
+	    echo "SLAVE:       $slave:$slave_port" 
+	    echo -e  "STATUS:      $link_status"
+	    echo ""
+	fi
+    done  
+   echo ""  
+}
+
+
+
+function check_started_in_group
+{
+    GID=$1
+    LIST=`$MYSQL_BIN $MYSQL_OPTS -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "set group_concat_max_len=1024*1024;select group_concat(concat(ep_id, ',', master_address,',', master_port , ',', slave_address,',', slave_port ,',' , status, ',', gid) SEPARATOR ' ') from mysql_repl_endpoint where cid=$CID and gid=$GID"`
+    
+    if [ $? -ne 0 ]; then
+	echo "Failed to get endpoints"
+	exit 1
+    fi
+    if [ -z "$LIST" ]; then
+	echo "No endpoints found"
+	exit 0
+    fi
+    if [ "$LIST" = "NULL" ]; then
+	echo "No endpoints found"
+	exit 0
+    fi
+    
+    for f in $LIST
+    do
+	ep_id=`echo $f | awk -F ',' '{print $1;}'`
+	master=`echo $f | awk -F ',' '{print $2;}'`
+	master_port=`echo $f | awk -F ',' '{print $3;}'`
+	slave=`echo $f | awk -F ',' '{print $4;}'`
+	slave_port=`echo $f | awk -F ',' '{print $5;}'`
+	status=`echo $f | awk -F ',' '{print $6;}'`
+	group=`echo $f | awk -F ',' '{print $7;}'`
+	if [ "$ep_id" != "NULL" ]; then
+	    get_replication_status $master $master_port $slave $slave_port 1 1
+	    if [ -n "$link_status_short" ]; then
+		if [ "$link_status_short" != "stopped" ]; then
+		    echo "Endpooint $ep_id is active, stop it first"
+		    exit 1
+		fi
+	    fi
+	fi
+    done    
+}
+
+
+
+
+function start_repl
+{
+
+    args=`getopt i:p:u:f $*`
+    set -- $args
+    for i
+    do
+	case "$i" in
+            -i)
+		EP_ID="$2"; shift;
+		shift;;
+            -u)
+		REPL_USER="$2"; shift;
+		shift;;
+            -p)
+		REPL_PASSWORD="$2"; shift;
+		shift;;
+            -f)
+		FORCE="force"; 
+		shift;;
+            --)
+		shift; break;;
+		esac
+    done    
+
+    if [ -z "$EP_ID" ]; then
+	echo "s9s_geored --start-repl -i <endpoint id> -u <replication user> -p <replication user password>"
+	exit 1
+    fi
+
+    if [ -z "$REPL_USER" ]; then
+	echo "s9s_geored --start-repl -i <endpoint id> -u <replication user> -p <replication user password>"
+	exit 1
+    fi
+
+    if [ -z "$REPL_PASSWORD" ]; then
+	echo "s9s_geored --start-repl -i <endpoint id> -u <replication user> -p <replication user password>"
+	exit 1
+    fi
+
+    GID=`$MYSQL_BIN $MYSQL_OPTS -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select gid from mysql_repl_endpoint where cid=$CID and ep_id=$EP_ID"`
+    
+    if [ -z "$GID" ]; then
+	echo "No group found matching EP $EP_ID"
+	exit 1
+    fi
+
+    check_started_in_group $GID    
+    
+    EP=`$MYSQL_BIN $MYSQL_OPTS -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "set group_concat_max_len=1024*1024;select group_concat(concat(ep_id, ',', master_address,',', master_port , ',', slave_address,',', slave_port ,',' , status) SEPARATOR ' ') from mysql_repl_endpoint where cid=$CID and ep_id=$EP_ID"`
+    
+    if [ $? -ne 0 ]; then
+	echo "Failed to get endpoint"
+	exit 1
+    fi
+    if [ -z "$EP" ]; then
+	echo "No endpoint found"
+	exit 0
+    fi
+    if [ "$EP" = "NULL" ]; then
+	echo "No endpoint found"
+	exit 0
+    fi
+    
+    ep_id=`echo $EP | awk -F ',' '{print $1;}'`
+    master=`echo $EP | awk -F ',' '{print $2;}'`
+    master_port=`echo $EP | awk -F ',' '{print $3;}'`
+    slave=`echo $EP | awk -F ',' '{print $4;}'`
+    slave_port=`echo $EP | awk -F ',' '{print $5;}'`
+    status=`echo $EP | awk -F ',' '{print $6;}'`
+
+
+    start_replication_internal $master $master_port $slave $slave_port $FORCE
+}
+
+function stop_repl
+{
+    EP_ID=$1
+    if [ -z "$EP_ID" ]; then
+	echo "s9s_geored --stop-repl <endpoint id>"
+	exit 1
+    fi
+
+    EP=`$MYSQL_BIN $MYSQL_OPTS -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "set group_concat_max_len=1024*1024;select group_concat(concat(ep_id, ',', master_address,',', master_port , ',', slave_address,',', slave_port ,',' , status) SEPARATOR ' ') from mysql_repl_endpoint where cid=$CID and ep_id=$EP_ID"`
+    
+    if [ $? -ne 0 ]; then
+	echo "Failed to get endpoint"
+	exit 1
+    fi
+    if [ -z "$EP" ]; then
+	echo "No endpoint found"
+	exit 0
+    fi
+    if [ "$EP" = "NULL" ]; then
+	echo "No endpoint found"
+	exit 0
+    fi
+    
+    ep_id=`echo $EP | awk -F ',' '{print $1;}'`
+    master=`echo $EP | awk -F ',' '{print $2;}'`
+    master_port=`echo $EP | awk -F ',' '{print $3;}'`
+    slave=`echo $EP | awk -F ',' '{print $4;}'`
+    slave_port=`echo $EP | awk -F ',' '{print $5;}'`
+    status=`echo $EP | awk -F ',' '{print $6;}'`
+
+    stop_replication_internal $master $master_port $slave $slave_port               
+}
+
+
+
+
+function delete_endpoint 
+{
+    EP_ID=$1
+    if [ -z "$EP_ID" ]; then
+	echo "s9s_geored --delete-endpoint <endpoint id>"
+	exit 1
+    fi
+    QUERY="DELETE FROM mysql_repl_endpoint WHERE ep_id=$EP_ID" 
+    
+    if [ `$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"` ]; then
+	echo "delete endpoint $EP_ID failed"
+	exit 1
+    fi
+    echo "deleted endpoint $EP_ID"
+    exit 0
+}
+
+
+function run_test
+{
+
+    EP_ID=$1
+    if [ -z "$EP_ID" ]; then
+	echo "s9s_geored --run-test <endpoint id>"
+	exit 1
+    fi
+
+    EP=`$MYSQL_BIN $MYSQL_OPTS -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "set group_concat_max_len=1024*1024;select group_concat(concat(ep_id, ',', master_address,',', master_port , ',', slave_address,',', slave_port ,',' , status) SEPARATOR ' ') from mysql_repl_endpoint where cid=$CID and ep_id=$EP_ID"`
+    
+    if [ $? -ne 0 ]; then
+	echo "Failed to get endpoint"
+	exit 1
+    fi
+    if [ -z "$EP" ]; then
+	echo "No endpoint found"
+	exit 0
+    fi
+    if [ "$EP" = "NULL" ]; then
+	echo "No endpoint found"
+	exit 0
+    fi
+    
+    ep_id=`echo $EP | awk -F ',' '{print $1;}'`
+    master=`echo $EP | awk -F ',' '{print $2;}'`
+    master_port=`echo $EP | awk -F ',' '{print $3;}'`
+    slave=`echo $EP | awk -F ',' '{print $4;}'`
+    slave_port=`echo $EP | awk -F ',' '{print $5;}'`
+    status=`echo $EP | awk -F ',' '{print $6;}'`
+    
+    get_max_epoch $master $master_port $slave $slave_port
+    echo $EPOCH
+    get_mc_binlog_pos $master $master_port $slave $slave_port $EPOCH
+    change_master $master $master_port $slave $BINLOG_FILE $BINLOG_POS
+    start_replication_internal $master $master_port $slave $slave_port
+    sleep 1
+    stop_replication_internal $master $master_port $slave $slave_port
+    sleep 1
+    get_replication_status $master $master_port $slave $slave_port
+    start_replication_internal $master $master_port $slave $slave_port
+    sleep 1
+    get_replication_status $master $master_port $slave $slave_port
+}
+
+
+
+function status
+{
+
+    EP_ID=$1
+    if [ -z "$EP_ID" ]; then
+	echo "s9s_geored --status <endpoint id>"
+	exit 1
+    fi
+
+    EP=`$MYSQL_BIN $MYSQL_OPTS -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "set group_concat_max_len=1024*1024;select group_concat(concat(ep_id, ',', master_address,',', master_port , ',', slave_address,',', slave_port ,',' , status) SEPARATOR ' ') from mysql_repl_endpoint where cid=$CID and ep_id=$EP_ID"`
+    
+    if [ $? -ne 0 ]; then
+	echo "Failed to get endpoint"
+	exit 1
+    fi
+    if [ -z "$EP" ]; then
+	echo "No endpoint found"
+	exit 0
+    fi
+    if [ "$EP" = "NULL" ]; then
+	echo "No endpoint found"
+	exit 0
+    fi
+    
+    ep_id=`echo $EP | awk -F ',' '{print $1;}'`
+    master=`echo $EP | awk -F ',' '{print $2;}'`
+    master_port=`echo $EP | awk -F ',' '{print $3;}'`
+    slave=`echo $EP | awk -F ',' '{print $4;}'`
+    slave_port=`echo $EP | awk -F ',' '{print $5;}'`
+    status=`echo $EP | awk -F ',' '{print $6;}'`
+
+    get_replication_status $master $master_port $slave $slave_port
+}
+
+
+#start_replication_internal master master_port slave slave_port reset change
+function start_replication_internal()
+{
+    local master=$1
+    local master_port=$2
+    local slave=$3
+    local slave_port=$4
+    local force=$5
+    if [ "$force" != "force" ]; then
+	get_max_epoch $master $master_port $slave $slave_port
+	get_mc_binlog_pos $master $master_port $slave $slave_port $EPOCH        
+    else	
+	get_binlog_pos $master $master_port $slave $slave_port       
+    fi
+    change_master $master $master_port $slave $BINLOG_FILE $BINLOG_POS
+    sleep 1
+    
+    local QUERY="START SLAVE"
+    ST=`$MYSQL_BIN $MYSQL_OPTS --show-warnings --user=$CMON_USER --password=$CMON_PASSWORD --host=$slave --port=$slave_port -e "$QUERY"`
+    if [ -z "$ST" ]; then
+	printf "starting replication between %s --> %s\n" "$master" "$slave"
+    else
+	echo "$ST"
+    fi
+}
+
+function stop_replication_internal()
+{
+    local master=$1
+    local master_port=$2
+    local slave=$3
+    local slave_port=$4
+      
+    local QUERY="STOP SLAVE"
+    ST=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$slave --port=$slave_port -e "$QUERY"`   
+    
+    if [ $? -ne 0 ]; then
+	echo $ST
+	exit 1
+    fi
+    if [ -n "$ST" ]; then
+	echo $ST
+	exit 1
+    fi
+    
+    if [ -z "$ST" ]; then
+	printf "stopping replication between %s --> %s\n" "$master" "$slave"   
+    else
+	echo "Failed to stop replication!"
+	echo "$ST"
+    fi
+}
+
+
+function reset_master()
+{
+    local master=$1
+    local master_port=$2
+    local slave=$3
+    local slave_port=$4
+    local QUERY="RESET MASTER"
+    $MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$master --port=$master_port -e "$QUERY"
+}
+
+
+function get_max_epoch()
+{
+    local master=$1
+    local master_port=$2
+    local slave=$3
+    local slave_port=$4
+    local QUERY="SELECT MAX(epoch) FROM mysql.ndb_apply_status"
+    EPOCH=`$MYSQL_BIN $MYSQL_OPTS -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --host=$slave --port=$slave_port -e "$QUERY"`   
+
+    if [ "$EPOCH" = "NULL" ]; then
+	echo "Slave cluster is not staged with data from the master,"
+	echo "If your master cluster is empty or you just want start from the "
+	echo "latest binary log position and file you can do:"
+	echo "s9s_geored --start-repl <endpoint> force"
+	echo "Warning! You may lose binlog events happening before this."
+	exit 0
+    fi
+
+    if [ -z "$EPOCH" ]; then
+	echo "Slave cluster is not staged with data from the master."
+	echo "If your master cluster is empty or you just want start from the "
+	echo "latest binary log position and file you can do:"
+	echo "s9s_geored --start-repl <endpoint> force"
+	echo "Warning! You may lose binlog events happening before this."
+	exit 0
+    fi
+}
+
+
+function get_mc_binlog_pos()
+{
+    local master=$1
+    local master_port=$2
+    local slave=$3
+    local slave_port=$4
+    EPOCH=$5
+    QUERY="SELECT CONCAT(SUBSTRING_INDEX(next_file, '/', -1), ',', next_position) FROM mysql.ndb_binlog_index WHERE epoch>=$EPOCH ORDER BY epoch ASC LIMIT 1"
+    BINLOGFILE_POS=`$MYSQL_BIN $MYSQL_OPTS -N -B -A --user=$REPL_USER --password=$REPL_PASSWORD --host=$master --port=$master_port -e "$QUERY"`
+    if [ $? -ne 0 ]; then
+	echo "Failed to get binlog and position from master $master:$master_port"
+	echo "Have you setup the GRANTs?"
+	publicip=`curl ifconfig.me 2>/dev/null`	
+	if [ -n "$publicip" ]; then
+	    echo "On $master do:"
+	    echo "GRANT replication slave ON *.* TO '$REPL_USER'@'$slave' IDENTIFIED BY '$REPL_PASSWORD';"   
+	    echo "GRANT select ON mysql.ndb_binlog_index TO '$REPL_USER'@'$publicip' IDENTIFIED BY '$REPL_PASSWORD';"
+	    echo "GRANT super ON *.* TO '$REPL_USER'@'$publicip' IDENTIFIED BY '$REPL_PASSWORD';"
+	    echo "NOTE: you mave have to use the DNS name (FQDN) instead of the suggested addresses"
+	fi
+	exit 1
+    fi
+    if [ -n "`echo $BINLOGFILE_POS |grep ERROR`" ]; then
+	echo "You must GRANT this host's public IP (outbound IP) to connect to $master"
+	publicip=`curl ifconfig.me 2>/dev/null`	
+	if [ -n "$publicip" ]; then
+	    echo "On $master do:"
+	    echo "GRANT replication slave ON *.* TO '$REPL_USER'@'$slave' IDENTIFIED BY '$REPL_PASSWORD';"   
+	    echo "GRANT select ON mysql.ndb_binlog_index TO '$REPL_USER'@'$publicip' IDENTIFIED BY '$REPL_PASSWORD';"
+	    echo "GRANT super ON *.* TO '$REPL_USER'@'$publicip' IDENTIFIED BY '$REPL_PASSWORD';"
+	    echo "NOTE: you mave have to use the DNS name (FQDN) instead of the suggested addresses"
+	fi
+	exit 1
+    fi
+
+    if [ "$BINLOGFILE_POS" = "NULL" ]; then
+	echo "No changes have been performed on the master, try again later."
+	echo "If this is the first time you setup replication you can:"
+	echo "  - create a dummy table on the master cluster"
+	echo "  - insert a record in the dummy table"
+	echo "This will create a binlog event to start the replication from."
+	echo "Also ensure that $master is producing binary logs using 'SHOW MASTER STATUS'."
+	exit 0
+    fi
+
+    if [ -z "$BINLOGFILE_POS" ]; then
+	echo "No changes have been performed on the master, try again later."
+	echo "If this is the first time you setup replication you can:"
+	echo "  - create a dummy table on the master cluster"
+	echo "  - insert a record in the dummy table"
+	echo "This will create a binlog event to start the replication from."
+	echo "Also ensure that $master is producing binary logs using 'SHOW MASTER STATUS'."
+	exit 0
+    fi
+
+    BINLOG_FILE=`echo $BINLOGFILE_POS | awk -F ',' '{print $1;}'`
+    BINLOG_POS=`echo $BINLOGFILE_POS | awk -F ',' '{print $2;}'`
+    
+    if [ -z "$BINLOG_FILE" ]; then
+	echo "No changes have been performed on the master, try again later."
+	echo "If this is the first time you setup replication you can:"
+	echo "  - create a dummy table on the master cluster"
+	echo "  - insert a record in the dummy table"
+	echo "This will create a binlog event to start the replication from."
+
+	exit 0
+    fi
+
+    if [ "$BINLOG_FILE" = "NULL" ]; then
+	echo "No changes have been performed on the master, try again later."
+	echo "If this is the first time you setup replication you can:"
+	echo "  - create a dummy table on the master cluster"
+	echo "  - insert a record in the dummy table"
+	echo "This will create a binlog event to start the replication from."
+
+	exit 0
+    fi
+    
+}
+
+
+function get_binlog_pos()
+{
+    local master=$1
+    local master_port=$2
+    local slave=$3
+    local slave_port=$4
+
+    QUERY="SHOW MASTER STATUS"
+    BINLOGFILE_POS=`$MYSQL_BIN $MYSQL_OPTS -N -B -A --user=$REPL_USER --password=$REPL_PASSWORD --host=$master --port=$master_port -e "$QUERY"`
+    if [ $? -ne 0 ]; then
+	echo "Failed to get binlog and position from master $master:$master_port"
+	echo "Have you setup the GRANTs?"
+	publicip=`curl ifconfig.me 2>/dev/null`	
+	if [ -n "$publicip" ]; then
+	    echo "On $master do:"
+	    echo "GRANT replication slave ON *.* TO '$REPL_USER'@'$slave' IDENTIFIED BY '$REPL_PASSWORD';"   
+	    echo "GRANT select ON mysql.ndb_binlog_index TO '$REPL_USER'@'$publicip' IDENTIFIED BY '$REPL_PASSWORD';"
+	    echo "GRANT super ON *.* TO '$REPL_USER'@'$publicip' IDENTIFIED BY '$REPL_PASSWORD';"
+	    echo "NOTE: you mave have to use the DNS name (FQDN) instead of the suggested addresses"
+	fi
+	exit 1
+    fi
+    if [ -n "`echo $BINLOGFILE_POS |grep ERROR`" ]; then
+	echo "You must GRANT this host's public IP (outbound IP) to connect to $master"
+	publicip=`curl ifconfig.me 2>/dev/null`	
+	if [ -n "$publicip" ]; then
+	    echo "On $master do:"
+	    echo "GRANT replication slave ON *.* TO '$REPL_USER'@'$slave' IDENTIFIED BY '$REPL_PASSWORD';"   
+	    echo "GRANT select ON mysql.ndb_binlog_index TO '$REPL_USER'@'$publicip' IDENTIFIED BY '$REPL_PASSWORD';"
+	    echo "GRANT super ON *.* TO '$REPL_USER'@'$publicip' IDENTIFIED BY '$REPL_PASSWORD';"
+	    echo "NOTE: you mave have to use the DNS name (FQDN) instead of the suggested addresses"
+	fi
+	exit 1
+    fi
+
+    if [ "$BINLOGFILE_POS" = "NULL" ]; then
+	echo "No changes have been performed on the master, try again later."
+	echo "If this is the first time you setup replication you can:"
+	echo "  - create a dummy table on the master cluster"
+	echo "  - insert a record in the dummy table"
+	echo "This will create a binlog event to start the replication from."
+	echo "Also ensure that $master is producing binary logs using 'SHOW MASTER STATUS'."
+	exit 0
+    fi
+
+    if [ -z "$BINLOGFILE_POS" ]; then
+	echo "No changes have been performed on the master, try again later."
+	echo "If this is the first time you setup replication you can:"
+	echo "  - create a dummy table on the master cluster"
+	echo "  - insert a record in the dummy table"
+	echo "This will create a binlog event to start the replication from."
+	echo "Also ensure that $master is producing binary logs using 'SHOW MASTER STATUS'."
+	exit 0
+    fi
+
+    BINLOG_FILE=`echo $BINLOGFILE_POS | awk -F ',' '{print $1;}'`
+    BINLOG_POS=`echo $BINLOGFILE_POS | awk -F ',' '{print $2;}'`
+    
+    if [ -z "$BINLOG_FILE" ]; then
+	echo "No changes have been performed on the master, try again later."
+	echo "If this is the first time you setup replication you can:"
+	echo "  - create a dummy table on the master cluster"
+	echo "  - insert a record in the dummy table"
+	echo "This will create a binlog event to start the replication from."
+
+	exit 0
+    fi
+
+    if [ "$BINLOG_FILE" = "NULL" ]; then
+	echo "No changes have been performed on the master, try again later."
+	echo "If this is the first time you setup replication you can:"
+	echo "  - create a dummy table on the master cluster"
+	echo "  - insert a record in the dummy table"
+	echo "This will create a binlog event to start the replication from."
+
+	exit 0
+    fi
+    
+}
+
+
+function change_master()
+{
+    local master=$1
+    local master_port=$2
+    local slave=$3
+    local xbinlog=$4
+    local xlogpos=$5
+    
+    QUERY="CHANGE MASTER TO MASTER_HOST='$master', MASTER_PORT=$master_port, MASTER_USER='$REPL_USER', MASTER_PASSWORD='$REPL_PASSWORD', MASTER_LOG_FILE='$xbinlog', MASTER_LOG_POS=$xlogpos";
+    
+    $MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$slave --port=$slave_port -e "$QUERY"
+    
+}
+
+
+
+function get_replication_status()
+{
+    master=$1
+    master_port=$2
+    slave=$3
+    slave_port=$4
+    return_fast=$5
+    silent=$6
+    if [ -z "$return_fast"  ]; then
+	echo "Endpoint $EP_ID status :  $master --> $slave "
+    fi
+    $MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=$slave --port=$slave_port --auto-vertical-output -Bse 'show slave status' > /tmp/${slave}_slave_stat
+    s_status_m_binlog=`grep -i Master_Log_File /tmp/${slave}_slave_stat | awk  -F: '{ print $2 }' |tr -d ' '`
+    s_status_m_pos=`grep -i Read_Master_Log_Pos /tmp/${slave}_slave_stat | awk  -F: '{ print $2 }' |tr -d ' '`
+    s_status_m_execpos=`grep -i Exec_Master_Log_Pos /tmp/${slave}_slave_stat | awk  -F: '{ print $2 }' |tr -d ' '`
+    s_status_seconds=`grep -i Seconds_Behind_Master /tmp/${slave}_slave_stat | awk  -F: '{ print $2 }' |tr -d ' '`
+    sql=`grep -i Slave_SQL_Running  /tmp/${slave}_slave_stat | awk  -F: '{ print $2 }' |tr -d ' '`
+    io=`grep -i Slave_IO_Running  /tmp/${slave}_slave_stat | awk  -F: '{ print $2 }' |tr -d ' '`
+    sec=`grep -i Seconds_Behind_Master  /tmp/${slave}_slave_stat | awk  -F: '{ print $2 }' |tr -d ' '`
+    master_server_id=`grep -i Master_Server_Id  /tmp/${slave}_slave_stat | awk  -F: '{ print $2 }' |tr -d ' '`
+    Slave_IO_State=`grep -i Slave_IO_State  /tmp/${slave}_slave_stat | awk  -F: '{ print $2 }' `
+    link_status=""
+  
+
+    if [ -z "$s_status_m_binlog" ]; then
+        s_status="not a slave"
+    fi 
+    s_status_m_binlog=`echo $s_status_m_binlog | awk '{print $1}'`
+    if [ -z "$s_status" ]; then
+        s_status="not a slave"
+    fi
+
+   if [ -z "$sql" ] && [ -z "$io" ]; then
+       if [ -z "$silent" ]; then
+         printf "replication not started on this link.\n" 
+       fi 
+       return 3
+    fi
+
+    if [ $sql == "Yes" ] && [ $io == "Yes" ] && [ $sec -ge 0  ]; then
+       link_status="\033[32m[running]\033[0m"
+       link_status_short="running"
+    fi
+
+    if [ $sql == "Yes" ] && [ $io == "Connecting" ] && [ "$sec" = "NULL" ]; then
+       link_status="connecting - check grants"
+       link_status_short="connectiong"
+    fi
+
+    if [ $sql == "No" ]; then
+	link_status="\033[31m[sql stopped]\033[0m"
+	link_status_short="sql stopped"
+    fi
+    if [ $io == "No" ]; then
+	link_status="\033[31m[io stopped]\033[0m"	
+	link_status_short="io stopped"
+    fi
+    
+    if [ $sql == "No" ] && [ $io == "No" ]; then
+	link_status="\033[31m[stopped]\033[0m"	
+	link_status_short="stopped"
+    fi
+    
+    if [ -n "$return_fast" ]; then
+	rm /tmp/${slave}_slave_stat
+	return 0
+    fi
+
+    echo "master            :  $master"
+    echo "slave             :  $slave"
+    echo "slave_io_state    : $Slave_IO_State"
+    echo -e "link_status       :  $link_status"
+    echo "master_binlog_file:  $s_status_m_binlog"
+    echo "master_binlog_pos : $s_status_m_pos"
+    echo "exec pos          : $s_status_m_execpos"
+    echo "seconds behind    : $sec"
+    
+    if [ "$link_status" != "running" ]; then
+	err1=`get_last_error $slave Slave_IO_State`
+	err2=`get_last_error $slave Last_IO_Error`
+	err3=`get_last_error $slave Last_SQL_Error`
+	err4=`get_last_error $slave Last_Error`
+	if [ -n "$err2" ]; then
+	    printf "Last_IO_Error:%s \n"  "$err2"      
+	fi 
+	if [ -n "$err3" ]; then
+	    printf "Last_SQL_Error:%s \n" "$err3"      
+	fi 
+	if [ -n "$err4" ]; then
+	    printf "Last_Error:%s \n"  "$err4"         
+	fi 
+    fi
+    rm /tmp/${slave}_slave_stat
+}
+
+function get_last_error()
+{
+    s1=$1
+    err=$2
+    last_error=`grep -i $err  /tmp/${s1}_slave_stat | awk  -F: '{ print $2 }'`
+    if [ -n "$last_error" ]; then
+       echo -n $last_error
+       return 1
+    fi
+    return 0 
+}
+
+
+#s9s_geord --delete-endpoint --master-addr --slave-addr 
+#s9s_geord --start-repl --endpoint 1
+#s9s_geord --stop-repl --endpoint 1
+#s9s_geord --list-endpoints
+
+
+if [ ! -e $LOCKFILE ]; then
+    trap "rm -f $LOCKFILE; exit" INT TERM EXIT
+    touch $LOCKFILE
+    
+    case $1 in
+	-c)
+	    create_endpoint  $*
+	    ;;
+	-d|--delete-endpoint|--delete-ep|--delete)
+	    delete_endpoint $2 
+	    ;;
+	--start-repl|--start_replication)
+	    start_repl $2 $3 $4 $5 $6 $7
+	    ;;
+	--stop-repl|--stop_replication)
+	    stop_repl $2
+	    ;;
+	-l|--list-ep|--list-endpoints|--list)
+	    list_endpoints
+	;;
+	--run-test)
+            run_test $2
+	    ;;
+	--status)
+            status $2
+	    ;;
+	*)
+	    echo "Usage:"
+	    echo "bash ./s9s_geored <-c|--list|--start-repl|--stop-repl|--delete-ep|--run-test> <options follows>"
+	    echo "e.g:"
+	    echo "./s9s_geored -c"
+	    echo "will print out additional arguments needed"
+	    exit 1
+	    ;;
+    esac
+    rm $LOCKFILE
+    trap - INT TERM EXIT
+fi
+
