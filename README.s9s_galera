@@ -1,0 +1,44 @@
+s9s_galera is a helper tool to start/stop the cluster, or invididual nodes.
+
+
+** Stop cluster
+s9s_galera --stop-cluster -i <clusterid>  
+typically, clusterid is 1
+Example:
+s9s_galera --stop-cluster -i 1
+
+** Start cluster
+s9s_galera --start-cluster -i <clusterid> -d <donor_address>
+-d <donor_address>: specifies the "master" node in the cluster, the other nodes will sync from this node.
+Example:
+s9s_galera --start-cluster -i 1 -d 192.168.56.102
+
+
+** Reinit cluster
+s9s_galera --reinit-cluster -i <clusterid> -d <donor_address>
+
+All nodes will be stopped (in case there is a node still up) and to start from a clean state.
+No data will be lost, but this is to logically recreate the cluster in case it has failed in an extreme way.
+
+-d <donor_address>: specifies the "master" node in the cluster, the other nodes will sync from this node.
+
+Example:
+s9s_galera --reinit-cluster -i 1 -d 192.168.56.102
+
+
+
+** Stop node
+s9s_galera --stop-node -i <clusterid>  -h <hostname>
+-h <hostname> : specifies the hostname to stop
+
+Example:
+s9s_galera --stop-node -i 1 -h 192.168.56.102
+
+
+** Start node
+s9s_galera --start-node -i <clusterid>  -h <hostname> -d <donor_address>
+-h <hostname> : specifies the hostname to stop
+-d <donor_adress> : specifies which node <hostname> should sync from. The <donor_address> must be SYNCED.
+
+Example:
+s9s_galera --start-node -i 1 -h 192.168.56.102 -d 192.168.56.103
