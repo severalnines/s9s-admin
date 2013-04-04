@@ -548,11 +548,18 @@ function check_host_exists
 
 function get_galera_nodestate
 {
-    HNAME=$1
+    local xHNAME=$1
+    local xNODEID=$2
     QUERY="SHOW GLOBAL STATUS LIKE 'wsrep_local_state_comment'"
-    STATE=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$HNAME --port=$CMON_DB_PORT --auto-vertical-output -Bse "$QUERY"  2>/dev/null`
+    STATE=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$xHNAME --port=$CMON_DB_PORT --auto-vertical-output -Bse "$QUERY"  2>/dev/null`
     if [ $? -ne 0 ]; then
 	echo "UNKNOWN"
+	STATE=$(check_node_up $xHNAME $xNODEID)
+	if [ "$STATE" = "DOWN" ]; then
+	    echo "DOWN"
+	else
+	    echo "Failed to get status, but process chk indicates it is up"
+	fi
     else
 	STATE=`echo $STATE | awk '{print $2;}'`
 	echo "$STATE"
@@ -658,7 +665,7 @@ function reinit_cluster
     RETRY=0
     while [ 1 ]; 
     do
-	X=$(get_galera_nodestate $DONOR_HOSTNAME)
+	X=$(get_galera_nodestate $DONOR_HOSTNAME $DONOR_ID)
 	if [ "$X" = "Synced" ]; then
 	    break
 	fi
@@ -842,7 +849,7 @@ function status_cluster
 	    HNAME=`echo $S | awk -F ',' '{print $1};'`
             NODEID=`echo $S | awk -F ',' '{print $2};'`
 	    ###
-	    X=$(get_galera_nodestate $HNAME)
+	    X=$(get_galera_nodestate $HNAME $NODEID) 
 	    echo "$HNAME       $X"	    
 	done
     fi
@@ -936,7 +943,7 @@ function start_node
 	exit 1
     fi
     
-    X=$(get_galera_nodestate $DONOR_HOSTNAME)
+    X=$(get_galera_nodestate $DONOR_HOSTNAME $DONOR_ID)
     if [ "$X" != "Synced" ]; then
 	echo "Donor $DONOR_HOSTNAME is not Synced, pick another -d <donor_address>"
 	exit 1
