@@ -683,7 +683,7 @@ function reinit_cluster
     do
 	HNAME=`echo $S | awk -F ',' '{print $1};'`
 	echo "s9s_galera --start-node -i $CLUSTER_ID -d $DONOR_HOSTNAME -h $HNAME  "
-    do
+    done
     
 #    if [ "$SERVER_LIST" != "NULL" ]; then
 #	for S in $SERVER_LIST
