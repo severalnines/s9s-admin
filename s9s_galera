@@ -676,17 +676,25 @@ function reinit_cluster
 	    exit 1
 	fi
     done
+    echo ""
+    echo "$DONOR_HOSTNAME is Synced"
+    echo "Start another node (one at a time):"
+    for S in $SERVER_LIST
+    do
+	HNAME=`echo $S | awk -F ',' '{print $1};'`
+	echo "s9s_galera --start-node -i $CLUSTER_ID -d $DONOR_HOSTNAME -h $HNAME  "
+    do
     
-    if [ "$SERVER_LIST" != "NULL" ]; then
-	for S in $SERVER_LIST
-	do
-	    HNAME=`echo $S | awk -F ',' '{print $1};'`
-            NODEID=`echo $S | awk -F ',' '{print $2};'`
-	    if [ "$HNAME" != "$DONOR_HOSTNAME" ]; then 
-		start_node_int $HNAME $NODEID $GALERA_PORT
-	    fi
-	done
-    fi
+#    if [ "$SERVER_LIST" != "NULL" ]; then
+#	for S in $SERVER_LIST
+#	do
+#	    HNAME=`echo $S | awk -F ',' '{print $1};'`
+#            NODEID=`echo $S | awk -F ',' '{print $2};'`
+#	    if [ "$HNAME" != "$DONOR_HOSTNAME" ]; then 
+#		start_node_int $HNAME $NODEID $GALERA_PORT
+#	    fi
+#	done
+#    fi
 }
 
 function start_cluster
