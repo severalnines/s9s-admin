@@ -777,6 +777,79 @@ function start_cluster
 
 
 
+function status_cluster
+{
+    args=`getopt p:i:P:t:d:j: $*`
+    set -- $args
+    for i
+    do
+	case "$i" in
+            -p)
+		CMON_PASSWORD="$2"; shift;
+		shift;;
+            -i)
+		CLUSTER_ID="$2"; shift;
+		shift;;
+            -j)
+		jobid="$2"; shift;
+		shift;;
+	    -P)
+		GALERA_PORT="$2"; shift;
+		shift;;
+            --)
+		shift; break;;
+	esac
+    done    
+    
+
+    if [ -z "$CMON_PASSWORD" ]; then
+      echo "s9s_galera --status -p  missing"
+      exit 1
+    fi
+
+    if [ -z "$CLUSTER_ID" ]; then
+      echo "s9s_clone --status -i <cluster id> missing"
+      exit 1
+    fi
+
+
+##    CMON_DB_DB="cmon_${CLUSTER_ID}"
+    
+    case $CLUSTER_TYPE in
+	galera)
+	    ;;
+	*)
+	    echo "./s9s_galera -- only galera is supported"
+	    exit 1;	           	     
+    esac
+    load_opts $CLUSTER_ID
+    
+    QUERY="select group_concat(concat(hostname, ',', nodeid) SEPARATOR ' ') from ${CMON_DB_DB}.mysql_server where cid=${CLUSTER_ID}"
+    SERVER_LIST=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$CMON_DB_PORT --auto-vertical-output -Bse "$QUERY"  2>/dev/null`
+    if [ -z "$OS" ]; then
+	if [ `hash /usr/sbin/update-rc.d 2>/dev/null`  ]; then
+	    OS="redhat"
+	else
+	    OS="debian"
+	fi	
+    fi
+
+
+    
+    if [ "$SERVER_LIST" != "NULL" ]; then
+	for S in $SERVER_LIST
+	do
+	    HNAME=`echo $S | awk -F ',' '{print $1};'`
+            NODEID=`echo $S | awk -F ',' '{print $2};'`
+	    ###
+	    X=$(get_galera_nodestate $HNAME)
+	    echo "$HNAME       $X"	    
+	done
+    fi
+}
+
+
+
 
 function start_node
 {
@@ -929,9 +1002,12 @@ if [ ! -e $LOCKFILE ]; then
 	--start-node)
 	    start_node  $2 $3 $4 $5 $6 $7 $8 $9
 	    ;;
+	--status)
+	    status_cluster  $2 $3 $4 $5 $6 $7 $8 $9
+	    ;;
 	*)
 	    echo "Usage: "
-	    echo "s9s_galera --[start-cluster|stop-cluster|reinit-cluster|start-node|stop-node] <options follows>"
+	    echo "s9s_galera --[start-cluster|stop-cluster|reinit-cluster|start-node|stop-node|status] <options follows>"
 	    exit 1
 	    ;;
     esac
