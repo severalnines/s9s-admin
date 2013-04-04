@@ -681,8 +681,10 @@ function reinit_cluster
     echo "Start another node (one at a time):"
     for S in $SERVER_LIST
     do
-	HNAME=`echo $S | awk -F ',' '{print $1};'`
-	echo "s9s_galera --start-node -i $CLUSTER_ID -d $DONOR_HOSTNAME -h $HNAME  "
+	if [ "$HNAME" != "$DONOR_HOSTNAME" ]; then
+	    HNAME=`echo $S | awk -F ',' '{print $1};'`
+	    echo "s9s_galera --start-node -i $CLUSTER_ID -d $DONOR_HOSTNAME -h $HNAME  "
+	fi
     done
     
 #    if [ "$SERVER_LIST" != "NULL" ]; then
