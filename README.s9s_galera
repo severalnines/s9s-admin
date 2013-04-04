@@ -29,7 +29,9 @@ s9s_galera --reinit-cluster -i 1 -d 192.168.56.102
 
 ** Stop node
 s9s_galera --stop-node -i <clusterid>  -h <hostname>
--h <hostname> : specifies the hostname to stop
+-h <hostname> : specifies the hostname to stop, the node will be set in USER_INITIATED_SHUTDOWN, meaning that CC will
+                not recover this node. This is good if you want to do manual maintenance of a node, to increase RAM e.g.
+
 
 Example:
 s9s_galera --stop-node -i 1 -h 192.168.56.102
