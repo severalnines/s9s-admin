@@ -553,12 +553,11 @@ function get_galera_nodestate
     QUERY="SHOW GLOBAL STATUS LIKE 'wsrep_local_state_comment'"
     STATE=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$xHNAME --port=$CMON_DB_PORT --auto-vertical-output -Bse "$QUERY"  2>/dev/null`
     if [ $? -ne 0 ]; then
-	echo "UNKNOWN"
 	STATE=$(check_node_up $xHNAME $xNODEID)
 	if [ "$STATE" = "DOWN" ]; then
 	    echo "DOWN"
 	else
-	    echo "Failed to get status, but process chk indicates it is up"
+	    echo "UNKNOWN - Failed to get status, but process chk indicates it is up"
 	fi
     else
 	STATE=`echo $STATE | awk '{print $2;}'`
