@@ -739,7 +739,7 @@ function reinit_cluster
 function make_primary
 {
 
-    args=`getopt p:i:P:t:d:j:f $*`
+    args=`getopt p:i:P:t:h:j:f $*`
     set -- $args
     FORCE=0
     for i
