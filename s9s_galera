@@ -566,6 +566,37 @@ function get_galera_nodestate
 }
 
 
+function get_galera_clusterstate
+{
+    local xHNAME=$1
+    local xNODEID=$2
+    QUERY="SHOW GLOBAL STATUS LIKE 'wsrep_cluster_state'"
+    STATE=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$xHNAME --port=$CMON_DB_PORT --auto-vertical-output -Bse "$QUERY"  2>/dev/null`
+    if [ $? -ne 0 ]; then
+	STATE=$(check_node_up $xHNAME $xNODEID)
+	if [ "$STATE" = "DOWN" ]; then
+	    echo "DOWN"
+	else
+	    echo "UNKNOWN"
+	fi
+    else
+	STATE=`echo $STATE | awk '{print $2;}'`
+	echo "$STATE"
+    fi
+}
+
+
+function get_galera_provider_options
+{
+    local xHNAME=$1
+    local xNODEID=$2
+    QUERY="SHOW GLOBAL VARIABLES LIKE 'wsrep_provider_options'"
+    STATE=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$xHNAME --port=$CMON_DB_PORT --auto-vertical-output -Bse "$QUERY"  2>/dev/null`
+    STATE=`echo $STATE | awk '{print $2;}'`
+    echo "$STATE"
+}
+
+
 function set_nodestate
 {
     NODEID=$1
@@ -581,8 +612,9 @@ function set_nodestate
 function reinit_cluster
 {
 
-    args=`getopt p:i:P:t:d:j: $*`
+    args=`getopt p:i:P:t:d:j:f $*`
     set -- $args
+    FORCE=0
     for i
     do
 	case "$i" in
@@ -598,6 +630,9 @@ function reinit_cluster
             -j)
 		jobid="$2"; shift;
 		shift;;
+            -f)
+		FORCE="1"; shift;
+		shift;;
 	    -P)
 		GALERA_PORT="$2"; shift;
 		shift;;
@@ -608,17 +643,17 @@ function reinit_cluster
     
 
     if [ -z "$CMON_PASSWORD" ]; then
-      echo "s9s_galera --start-cluster -p  missing"
+      echo "s9s_galera --reinit-cluster -p  missing"
       exit 1
     fi
 
     if [ -z "$CLUSTER_ID" ]; then
-      echo "s9s_clone --start-cluster -i <cluster id> missing"
+      echo "s9s_clone --reinit-cluster -i <cluster id> missing"
       exit 1
     fi
 
     if [ -z "$DONOR_HOSTNAME" ]; then
-      echo "s9s_clone --start-cluster -d <donor_addres -donor node is missing, specify one server address part of the cluster> missing"
+      echo "s9s_clone --reinit-cluster -d <donor_addres -donor node is missing, specify one server address part of the cluster> missing"
       exit 1
     fi
 
@@ -697,6 +732,96 @@ function reinit_cluster
 #	    fi
 #	done
 #    fi
+}
+
+
+function make_primary
+{
+
+    args=`getopt p:i:P:t:d:j:f $*`
+    set -- $args
+    FORCE=0
+    for i
+    do
+	case "$i" in
+            -p)
+		CMON_PASSWORD="$2"; shift;
+		shift;;
+            -i)
+		CLUSTER_ID="$2"; shift;
+		shift;;
+            -h)
+		XHOSTNAME="$2"; shift;
+		shift;;
+            -j)
+		jobid="$2"; shift;
+		shift;;
+	    -P)
+		GALERA_PORT="$2"; shift;
+		shift;;
+            --)
+		shift; break;;
+	esac
+    done    
+    
+
+    if [ -z "$CMON_PASSWORD" ]; then
+      echo "s9s_galera --make-primary -p  missing"
+      exit 1
+    fi
+
+    if [ -z "$CLUSTER_ID" ]; then
+      echo "s9s_clone --make-primary -i <cluster id> missing"
+      exit 1
+    fi
+
+    if [ -z "$XHOSTNAME" ]; then
+      echo "s9s_clone --make-primary -h <hostname> missing"
+      exit 1
+    fi
+
+    if [ -z "$GALERA_PORT" ]; then
+	GALERA_PORT="4567"
+    fi
+
+##    CMON_DB_DB="cmon_${CLUSTER_ID}"
+    
+    case $CLUSTER_TYPE in
+	galera)
+	    ;;
+	*)
+	    echo "./s9s_galera -- only galera is supported"
+	    exit 1;	           	     
+    esac
+
+    load_opts $CLUSTER_ID
+    
+    
+    PROVIDER_OPTS=$(get_galera_provider_options $XHOSTNAME)
+    
+    STATE=$(get_galera_nodestate $XHOSTNAME $DONOR_ID)
+    if [ "$STATE^^" = "INITIALIZED" ]; then
+
+	STATE=$(get_galera_clusterstate $XHOSTNAME $DONOR_ID)
+	if [ "$STATE^^" = "NON-PRIMARY" ]; then	   
+	    QUERY="SET GLOBAL WSREP_PROVIDER_OPTIONS='{$PROVIDER_OPTS};pc.bootstrap=1'"
+	    `$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$xHNAME --port=$CMON_DB_PORT --auto-vertical-output -Bse "$QUERY"  2>/dev/null`	
+	    if [ $? -ne 0 ]; then
+		echo "$QUERY failed"
+		exit 1
+	    fi
+	else
+	    echo "Server $XHOSTNAME is not Non-primary"
+	    exit 1
+	fi	
+    else
+	echo "Server $XHOSTNAME is not Initialized"
+	exit 1
+    fi
+
+    exit 0
+    
+
 }
 
 function start_cluster
@@ -1011,6 +1136,9 @@ if [ ! -e $LOCKFILE ]; then
 	    ;;
 	--reinit-cluster)
 	    reinit_cluster  $2 $3 $4 $5 $6 $7 $8 $9
+	    ;;
+	--make-primary)
+	    make_primary  $2 $3 $4 $5 $6 $7 $8 $9
 	    ;;
 	--stop-node)
 	    stop_node  $2 $3 $4 $5 $6 $7 $8 $9
