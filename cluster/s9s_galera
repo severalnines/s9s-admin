@@ -472,7 +472,7 @@ function stop_node_int
 	echo "Failed to stop node $xHNAME"
 	exit 1
     fi
-    echo $STATE
+    echo "DOWN"
     
 }
 
