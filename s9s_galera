@@ -570,8 +570,9 @@ function get_galera_clusterstate
 {
     local xHNAME=$1
     local xNODEID=$2
-    QUERY="SHOW GLOBAL STATUS LIKE 'wsrep_cluster_state'"
+    QUERY="SHOW GLOBAL STATUS LIKE 'wsrep_cluster_status'"
     STATE=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$xHNAME --port=$CMON_DB_PORT --auto-vertical-output -Bse "$QUERY"  2>/dev/null`
+    
     if [ $? -ne 0 ]; then
 	STATE=$(check_node_up $xHNAME $xNODEID)
 	if [ "$STATE" = "DOWN" ]; then
@@ -591,9 +592,9 @@ function get_galera_provider_options
     local xHNAME=$1
     local xNODEID=$2
     QUERY="SHOW GLOBAL VARIABLES LIKE 'wsrep_provider_options'"
-    STATE=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$xHNAME --port=$CMON_DB_PORT --auto-vertical-output -Bse "$QUERY"  2>/dev/null`
-    STATE=`echo $STATE | awk '{print $2;}'`
-    echo "$STATE"
+    STATE=$($MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$xHNAME --port=$CMON_DB_PORT -A -Bse "$QUERY"  2>/dev/null)
+    STATE=`echo $STATE | awk '{$1="";print $0;}'`
+    echo $STATE
 }
 
 
@@ -799,14 +800,18 @@ function make_primary
     
     
     PROVIDER_OPTS=$(get_galera_provider_options $XHOSTNAME)
+    QUERY="set global wsrep_provider_options='${PROVIDER_OPTS};pc.bootstrap=1'"    
+    $MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$xHNAME --port=$CMON_DB_PORT --auto-vertical-output -Bse "$QUERY"
+    exit
     
     STATE=$(get_galera_nodestate $XHOSTNAME $DONOR_ID)
-    if [ "$STATE^^" = "INITIALIZED" ]; then
+
+    if [ "$STATE" = "Initialized" ]; then
 
 	STATE=$(get_galera_clusterstate $XHOSTNAME $DONOR_ID)
-	if [ "$STATE^^" = "NON-PRIMARY" ]; then	   
-	    QUERY="SET GLOBAL WSREP_PROVIDER_OPTIONS='{$PROVIDER_OPTS};pc.bootstrap=1'"
-	    `$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$xHNAME --port=$CMON_DB_PORT --auto-vertical-output -Bse "$QUERY"  2>/dev/null`	
+	if [ "$STATE" = "non-Primary" ]; then	   
+	    QUERY="set global wsrep_provider_options='${PROVIDER_OPTS};pc.bootstrap=1'"
+	    $MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$xHNAME --port=$CMON_DB_PORT -e "$QUERY"
 	    if [ $? -ne 0 ]; then
 		echo "$QUERY failed"
 		exit 1
