@@ -461,13 +461,13 @@ function stop_node_int
     STATE=$(check_node_up $xHNAME $xNODEID)
     echo $STATE
     if [ "$STATE" = "DOWN" ]; then
-        set_nodestate $xNODEID 17
-	sleep 1
-        set_nodestate $xNODEID 17
-	sleep 1
-        set_nodestate $xNODEID 17
-	sleep 1
-        set_nodestate $xNODEID 17
+	i=0
+	while [ $i -lt 10 ]; 
+	do
+            set_nodestate $xNODEID 17
+	    sleep 1
+	    i=`expr $i + 1`
+	done
     else
 	echo "Failed to stop node $xHNAME"
 	exit 1
