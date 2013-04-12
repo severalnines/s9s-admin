@@ -551,7 +551,8 @@ function get_galera_nodestate
 {
     local xHNAME=$1
     local xNODEID=$2
-    QUERY="SHOW GLOBAL STATUS LIKE 'wsrep_local_state_comment'"
+    local xVAR=$3
+    QUERY="SHOW GLOBAL STATUS LIKE '$xVAR'"
     STATE=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$xHNAME --port=$CMON_DB_PORT --auto-vertical-output -Bse "$QUERY"  2>/dev/null`
     if [ $? -ne 0 ]; then
 	STATE=$(check_node_up $xHNAME $xNODEID)
@@ -701,7 +702,7 @@ function reinit_cluster
     RETRY=0
     while [ 1 ]; 
     do
-	X=$(get_galera_nodestate $DONOR_HOSTNAME $DONOR_ID)
+	X=$(get_galera_nodestate $DONOR_HOSTNAME $DONOR_ID "wsrep_local_state_comment")
 	if [ "$X" = "Synced" ]; then
 	    break
 	fi
@@ -805,7 +806,7 @@ function make_primary
     $MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$xHNAME --port=$CMON_DB_PORT --auto-vertical-output -Bse "$QUERY"
     exit
     
-    STATE=$(get_galera_nodestate $XHOSTNAME $DONOR_ID)
+    STATE=$(get_galera_nodestate $XHOSTNAME $DONOR_ID "wsrep_local_state_comment")
 
     if [ "$STATE" = "Initialized" ]; then
 
@@ -990,8 +991,9 @@ function status_cluster
 	    HNAME=`echo $S | awk -F ',' '{print $1};'`
             NODEID=`echo $S | awk -F ',' '{print $2};'`
 	    ###
-	    X=$(get_galera_nodestate $HNAME $NODEID) 
-	    echo "$HNAME       $X"	    
+	    X=$(get_galera_nodestate $HNAME $NODEID "wsrep_local_state_comment") 
+	    Y=$(get_galera_nodestate $HNAME $NODEID "wsrep_cluster_size") 
+	    echo "$HNAME       $X    cluster_size: $Y"	    
 	done
     fi
 }
@@ -1084,7 +1086,7 @@ function start_node
 	exit 1
     fi
     
-    X=$(get_galera_nodestate $DONOR_HOSTNAME $DONOR_ID)
+    X=$(get_galera_nodestate $DONOR_HOSTNAME $DONOR_ID "wsrep_local_state_comment")
     if [ "$X" != "Synced" ]; then
 	echo "Donor $DONOR_HOSTNAME is not Synced, pick another -d <donor_address>"
 	exit 1
