@@ -1,0 +1,57 @@
+#!/bin/bash
+progname="check_clusterstatus"
+version=.01
+author="Severalnines"
+
+print_version() {
+echo "Version $version Author $author"
+echo
+}
+
+print_help() {
+print_version $progname
+echo ""
+echo "$progname -> checks database cluster status"
+echo ""
+exit $unkown
+}
+while test -n "$1"; do
+case "$1" in
+-help|-h)
+print_help
+exit $unknown
+;;
+-version|-v)
+print_version $PROGNAME $VERSION
+exit $unknown
+;;
+*)
+echo "Unknown argument: $1"
+print_help
+exit $unknown
+;;
+esac
+shift
+done
+### CODE HERE TO GET STATE, 
+cmon_password='cmon'
+cmon_db_server='<cmon mysql host IP address>'
+cmon_db_port='3306'
+
+mysqlbin=`which mysql`
+status=`$mysqlbin -h$cmon_db_server -u cmon -p$cmon_password -A -Bse 'select status from cmon.cluster_state where id=1'`
+#convert to upper case
+clustate=${status^^}
+
+if (( "$clustate" == "STARTED" )); then
+	echo "OK: Cluster status is OK"
+	stateid=0
+elif  (( "$clustate" == "CRITICAL" || "$clustate" == "UNKNOWN" || "$clustate" == "FAILURE" || "$clustate" == "STOPPED" || "$clustate" == "SHUTTING_DOWN" )); then
+	echo "Critical: Cluster status is $clustate"
+	stateid=2
+else
+	echo "Warning: Unknown state"
+	stateid=1
+fi
+
+exit $stateid
