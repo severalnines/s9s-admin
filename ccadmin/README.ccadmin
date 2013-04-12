@@ -1,0 +1,5 @@
+ccadmin contains tools to :
+* change password (root and cmon password) on instances
+* update software packages with e.g a new release of Galera or CMON
+
+
