@@ -459,7 +459,7 @@ function stop_node_int
     remote_cmd_nofail $xHNAME "/etc/init.d/mysql stop"
     sleep 2
     STATE=$(check_node_up $xHNAME $xNODEID)
-    echo $STATE
+    echo "Waiting for node to fully stop and setting node state"
     if [ "$STATE" = "DOWN" ]; then
 	i=0
 	while [ $i -lt 10 ]; 
@@ -472,6 +472,7 @@ function stop_node_int
 	echo "Failed to stop node $xHNAME"
 	exit 1
     fi
+    echo $STATE
     
 }
 
