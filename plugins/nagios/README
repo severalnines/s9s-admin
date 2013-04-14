@@ -1,0 +1,49 @@
+s9s_cluster_status is a simple Nagios plugin to report database cluster status.
+
+===========
+Requirement
+===========
+
+- MySQL client must be installed in Nagios host.
+  RHEL/CentOS: mysql
+  Debian/Ubuntu: mysql-client
+  
+
+=========================================
+Step 1: Grant permission for cmon DB user
+=========================================
+
+- Login into ClusterControl host:
+  mysql> GRANT SELECT ON cmon.* TO 'cmon'@'<nagios_host_ip>' IDENTIFIED BY '<cmon_password>';
+  mysql> FLUSH PRIVILEGES;
+
+
+===============================
+Step 3: Configure Nagios Plugin
+===============================
+
+- Login into Nagios host and define following command at "commands.cfg":
+
+define command{
+        command_name    s9s_cluster_status
+        command_line    $USER1$/s9s_cluster_status -H $HOSTADDRESS$ -p $ARG1$
+}
+
+
+- Define host and service for respective ClusterControl host as example below:
+
+define host{
+        use                     linux-server
+        host_name               clustercontrol.mydomain.org
+        alias                   clustercontrol.mydomain.org
+        address                 192.168.197.40
+        hostgroups              linux-servers
+        }
+
+define service{
+        use                             generic-service
+        host_name                       clustercontrol.mydomain.org
+        service_description             Database Cluster Service
+        check_command                   s9s_cluster_status!password     ## Format: <command name>!<cmon password>
+        notifications_enabled           1
+        }

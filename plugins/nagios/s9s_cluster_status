@@ -1,6 +1,6 @@
 #!/bin/bash
 
-VERSION=0.1
+VERSION=0.2
 TEMP=`getopt -o h,H:,p:,P: --long help,host:,password:,port: -n 's9s_cluster_status' -- "$@"`
 eval set -- "$TEMP"
 
