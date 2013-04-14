@@ -22,17 +22,23 @@ Step 1: Grant permission for cmon DB user
 Step 3: Configure Nagios Plugin
 ===============================
 
-- Login into Nagios host and define following command at "commands.cfg":
+- Login into Nagios host and copy the plugin into Nagios libexec directory, for example:
+  $ cp s9s-admin/plugin/nagios/s9s_cluster_status /usr/local/nagios/libexec
 
-define command{
+- Make sure the the plugin is executable:
+  $ chmod 755 s9s_cluster_status
+
+- Define following command at "commands.cfg":
+
+  define command{
         command_name    s9s_cluster_status
         command_line    $USER1$/s9s_cluster_status -H $HOSTADDRESS$ -p $ARG1$
-}
+  }
 
 
-- Define host and service for respective ClusterControl host as example below:
+- Define host and service for respective ClusterControl host, as example below:
 
-define host{
+  define host{
         use                     linux-server
         host_name               clustercontrol.mydomain.org
         alias                   clustercontrol.mydomain.org
@@ -40,7 +46,7 @@ define host{
         hostgroups              linux-servers
         }
 
-define service{
+  define service{
         use                             generic-service
         host_name                       clustercontrol.mydomain.org
         service_description             Database Cluster Service
