@@ -1,4 +1,7 @@
 #!/bin/bash
+# All files in this package is subject to the GPL v2 license
+# More information is in the COPYING file in the top directory of this package.
+# Copyright (C) 2011 Severalnines
 
 VERSION=0.2
 TEMP=`getopt -o h,H:,p:,P: --long help,host:,password:,port: -n 's9s_cluster_status' -- "$@"`

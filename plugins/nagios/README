@@ -53,3 +53,15 @@ Step 3: Configure Nagios Plugin
         check_command                   s9s_cluster_status!password     ## Format: <command name>!<cmon password>
         notifications_enabled           1
         }
+
+
+=====
+Notes
+===== 
+
+- If you used non-default MySQL port, add another option and argument under command_line directive:
+	command_line	$USER1$/s9s_cluster_status -H $HOSTADDRESS$ -p $ARG1$ -P $ARG2$
+
+- Then, under check_command directive, add the port argument:
+	check_command	s9s_cluster_status!password!3307   ## Format: <command name>!<cmon password>!<MySQL port>
+
