@@ -19,7 +19,7 @@ Step 1: Grant permission for cmon DB user
 
 
 ===============================
-Step 3: Configure Nagios Plugin
+Step 2: Configure Nagios Plugin
 ===============================
 
 - Login into Nagios host and copy the plugin into Nagios libexec directory, for example:
