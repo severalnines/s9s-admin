@@ -1,4 +1,4 @@
-s9s_cluster_status is a simple Nagios plugin to report database cluster status.
+s9s_cluster_status is a simple Nagios plugin to report database cluster status from ClusterControl host.
 
 ===========
 Requirement
@@ -25,9 +25,6 @@ Step 2: Configure Nagios Plugin
 - Login into Nagios host and copy the plugin into Nagios libexec directory, for example:
   $ cp s9s-admin/plugin/nagios/s9s_cluster_status /usr/local/nagios/libexec
 
-- Make sure the the plugin is executable:
-  $ chmod 755 s9s_cluster_status
-
 - Define following command at "commands.cfg":
 
   define command{
@@ -43,7 +40,6 @@ Step 2: Configure Nagios Plugin
         host_name               clustercontrol.mydomain.org
         alias                   clustercontrol.mydomain.org
         address                 192.168.197.40
-        hostgroups              linux-servers
         }
 
   define service{
@@ -65,3 +61,4 @@ Notes
 - Then, under check_command directive, add the port argument:
 	check_command	s9s_cluster_status!password!3307   ## Format: <command name>!<cmon password>!<MySQL port>
 
+- If you create an individual object config file under "objects" directory, do not forget to call the config file inside nagios.cfg.
