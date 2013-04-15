@@ -23,7 +23,7 @@ LOCKFILE="/tmp/s9s_backup.lock"
 ### NO MODS BELOW UNLESS YOU KNOW WHAT YOU DO:
 
 
-ACTION=$1
+
 
 OSUSER=$USER
 if [ "$OSUSER" != "root" ]; then
@@ -114,29 +114,52 @@ function update_cmon_pkg
 function update_mysql_pkg
 {   
     COMMASEP_FILELIST=$1
+    PKG_NAME=$2
     if [ -z "$COMMASEP_FILELIST" ]; then
 	echo "mysql pkg was not specified. Usage example:"
 	echo 's9s_sw_update --mysql mysql-5.5.28_wsrep_23.7-linux-x86_64.tar.gz,galera-23.2.2-amd64.deb'
 	echo 's9s_sw_update --mysql MySQL-server-5.5.28_wsrep_23.7-1.rhel5.x86_64.rpm,galera-23.2.2-1.rhel5.x86_64.rpm'
 	exit 1
     fi
+
+    if [ -z "$PKG_NAME" ]; then
+	PKG_NAME="MYSQL_INITIAL_DEPLOY"
+    fi
     FILELIST=""
     
     FILELIST=`echo $COMMASEP_FILELIST | awk '{gsub(","," ");print}'`
-    
+    rpm=0
     for f in $FILELIST 
     do
 	if [ ! -s $f ]; then
 	    echo "$f does not exists or is zero bytes"
 	    exit 1
+	else
+	    ext=${f##*.}
+	    if [ "$ext" = "rpm" ]; then
+		rpm=1
+	    fi
 	fi
     done
 
-    echo "Do you want to add $FILELIST to MYSQL_INITIAL_DEPLOY install package (press y or Y to continue)?"
+    echo "Do you want to add $FILELIST to $PKG_NAME install package (press y or Y to continue)?"
     read x
     if [ "$x" == "y" ] || [ "$x" == "Y" ]; then	
 	echo "Updating software package"
-	QUERY="BEGIN; DELETE FROM cmon_uploads WHERE cid=$CID AND packageid=(SELECT packageid FROM cmon.cmon_sw_package WHERE name='MYSQL_INITIAL_DEPLOY' AND cid=$CID);"
+	QUERY="SELECT packageid FROM cmon.cmon_sw_package WHERE name='$PKG_NAME' AND cid=$CID"
+	PID=`$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY"`	
+	if [ -z "$PID" ]; then
+	    echo "Creating package $PKG_NAME"
+	    QUERY="INSERT INTO cmon.cmon_sw_package(cid,name,rpm) VALUES($CID, '$PKG_NAME', $rpm)"
+	    $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY"
+	fi
+	QUERY="SELECT packageid FROM cmon.cmon_sw_package WHERE name='$PKG_NAME' AND cid=$CID"
+	PID=`$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY"`
+	if [ -z "$PID" ]; then
+	    echo "Creating package failed"
+	    exit 1	    
+	fi
+	QUERY="BEGIN; DELETE FROM cmon_uploads WHERE cid=$CID AND packageid=(SELECT packageid FROM cmon.cmon_sw_package WHERE name='$PKG_NAME' AND cid=$CID);"
 	for f in $FILELIST 
 	do
 	    sum=`md5sum $f | awk '{print $1;}'`
@@ -147,7 +170,7 @@ function update_mysql_pkg
 		echo "FAILED: cp -rf $f  $WWWROOT/cmon/upload/"
 		exit 1
 	    fi
-	    QUERY="$QUERY; INSERT IGNORE INTO cmon.cmon_uploads ( cid, packageid, filename,path,cluster_type,version_tag,md5sum,filesize,selected) VALUES (1,2,'$fname','${WWWROOT}/cmon/upload/','$CLUSTER_TYPE','','$sum', $filesize ,1)"
+	    QUERY="$QUERY; INSERT IGNORE INTO cmon.cmon_uploads ( cid, packageid, filename,path,cluster_type,version_tag,md5sum,filesize,selected) VALUES ($CID,$PID,'$fname','${WWWROOT}/cmon/upload/','$CLUSTER_TYPE','','$sum', $filesize ,1)"
 	done
 	QUERY="$QUERY;COMMIT"
 	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log    
@@ -167,14 +190,14 @@ case $1 in
 	update_cmon_pkg $2
     ;;
     --mysql)
-	update_mysql_pkg $2
+	update_mysql_pkg $2 $3
     ;;
     --list)
     list_pkgs
     ;;
     *)
 	echo "Usage:"
-	echo "bash ./s9s_sw_updater <--cmon|--mysql> <comma sep. list of packages>"
+	echo "bash ./s9s_sw_updater <--cmon|--mysql> <comma sep. list of packages> <pkg_name>"
 	exit 1
 	;;
 esac
