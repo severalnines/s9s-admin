@@ -49,7 +49,7 @@ Step 2: Configure Nagios Plugin
   define service{
         use                             generic-service
         host_name                       clustercontrol.mydomain.org
-        service_description             Database Cluster Service
+        service_description             Database Cluster
         check_command                   s9s_cluster_status!password     ## Format: <command name>!<cmon password>
         notifications_enabled           1
         }
