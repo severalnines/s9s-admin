@@ -22,14 +22,12 @@ LOCKFILE="/tmp/s9s_backup.lock"
 
 ### NO MODS BELOW UNLESS YOU KNOW WHAT YOU DO:
 
-
-
-
 OSUSER=$USER
 if [ "$OSUSER" != "root" ]; then
     echo "must be executed as 'root' or with 'sudo'"
     exit 1
 fi
+
 
 
 if ! test -f $MYSQL_BIN; then
@@ -72,6 +70,106 @@ function write_logfile
 }
 
 
+
+function remote_cmd_getreply()
+{
+   desthost=$1
+   xcommand=$2
+   x=`ssh -q $SSH_OPTS $SSH_USER@$desthost "$SUDO $xcommand 2>/dev/null"`
+   x=`echo $x | grep -v "password"`
+   echo $x
+}
+
+function remote_copy()
+{
+   srcfile=$1
+   desthost=$2
+   destfile=$3
+   printf "%-4s: Copying '%s' " "$desthost" "$srcfile"
+   scp $SSH_OPTS2 $srcfile $os_user@$desthost:$destfile >> $HOME/s9s_deploy.log  2>/dev/null
+   if [ $? -eq 0 ]; then
+      printf "\033[32m[ok]\033[0m\n"
+      return 0
+   else
+      log_job_message "copying fileed $srcfile --> $desthost:$destfile" 1
+      log_job 'FAILED' 'backup failed' 1
+      printf "\033[31m[failed]\033[0m\n"
+      exit 1
+   fi
+}
+
+function remote_cmdx()
+{
+   desthost=$1
+   xcommand=$2
+   printf "%-4s: Executing '%s'" "$desthost" "$xcommand"
+   ssh -q $SSH_OPTS $SSH_USER@$desthost "$SUDO $xcommand "
+   if [ $? -eq 0 ]; then
+      printf "\033[32m[ok]\033[0m\n"
+      return 0
+   else
+      log_job_message "command failed: $xcommand" 1
+      log_job 'FAILED' 'backup failed' 1
+      printf "\033[31m[failed]\033[0m\n"
+      exit 1
+   fi
+}
+
+function remote_cmd_nofail()
+{
+   desthost=$1
+   xcommand=$2
+   printf "%-4s: Executing '%s'" "$desthost" "$xcommand"
+   ssh -q $SSH_OPTS $SSH_USER@$desthost "$SUDO $xcommand "  >> $HOME/s9s_deploy.log 2>&1
+   ret=$?
+   printf "\033[32m[ok]\033[0m\n"
+   return $ret
+}
+
+function remote_cmd()
+{
+   desthost=$1
+   xcommand=$2
+   MAX_RETRIES=1
+   printf "%-4s: Executing '%s' " "$desthost" "$xcommand"
+   retry=0
+   while [ $retry -lt $MAX_RETRIES ]; 
+   do
+      x=`ssh -q $SSH_OPTS $SSH_USER@$desthost "$SUDO $xcommand " 2>&1  >> $HOME/s9s_deploy.log`
+      if [ $? -eq 0 ]; then
+        printf "\033[32m[ok]\033[0m\n"
+        return 0
+      fi
+      retry=`expr $retry + 1`
+      printf "\033[31m[failed: retrying ${retry}/${MAX_RETRIES}]\033[0m\n"
+      ssh -q $SSH_OPTS $SSH_USER@$desthost " sync " 2>&1  >> $HOME/s9s_deploy.log
+      sleep 1
+   done
+   
+   printf "\033[31m[failed]\033[0m\n"
+   echo $x
+   echo 'The following command failed:'
+   echo "ssh -q $SSH_OPTS $SSH_USER@$desthost \" $xcommand \""
+   echo 'Try running the command on the line above again, contact http://support.severalnines.com/ticket/new, attach the output from deploy.sh and the error from running the command to the Support issue.'
+   exit 1
+}
+
+
+function remote_cmd3()
+{
+   desthost=$1
+   xcommand=$2
+   printf "%-4s: Executing '%s' " "$desthost" "$xcommand"
+   ssh $SSH_OPTS $SSH_USER@$desthost "$SUDO $xcommand "   
+   if [ $? -eq 0 ]; then
+      printf "\033[32m[ok]\033[0m\n"
+      return 0
+   else
+      printf "\033[31m[failed]\033[0m\n"
+      exit 1
+   fi
+}
+
 function update_cmon_pkg
 {   
     CMON_FILENAME=$1
@@ -98,7 +196,8 @@ function update_cmon_pkg
 	    echo "FAILED: cp -rf $CMON_FILENAME  $WWWROOT/cmon/upload/"
 	    exit 1
 	fi
-	QUERY="BEGIN; DELETE FROM cmon_uploads WHERE cid=$CID AND packageid=(SELECT packageid FROM cmon.cmon_sw_package WHERE name='CMON_DEFAULT' AND cid=$CID); INSERT IGNORE INTO cmon.cmon_uploads ( cid, packageid, filename,path,cluster_type,version_tag,md5sum,filesize,selected) VALUES (1,1,'$fname','${WWWROOT}/cmon/upload/','$CLUSTER_TYPE','','$sum', $filesize ,1); COMMIT"    
+	QUERY="BEGIN; DELETE FROM cmon_uploads WHERE cid=$CID AND packageid=(SELECT packageid FROM cmon.cmon_sw_package WHERE name='CMON_DEFAULT' AND cid=$CID);\
+                INSERT IGNORE INTO cmon.cmon_uploads ( cid, packageid, filename,path,cluster_type,version_tag,md5sum,filesize,selected) VALUES (1,1,'$fname','${WWWROOT}/cmon/upload/','$CLUSTER_TYPE','','$sum', $filesize ,1); COMMIT"    
 	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log    
 	if [ $? -ne 0 ]; then 
 	    echo "FAILED: $QUERY"
@@ -113,15 +212,38 @@ function update_cmon_pkg
 
 function update_mysql_pkg
 {   
-    COMMASEP_FILELIST=$1
-    PKG_NAME=$2
+    args=`getopt p:s:P:h:i:N:n:f: $*`
+    set -- $args
+    for i
+    do
+        case "$i" in
+            -p)
+                CMON_PASSWORD="$2"; shift;
+                shift;;
+            -i)
+                CID="$2"; shift;
+                shift;;
+            -f)
+                COMMASEP_FILELIST="$2"; shift;
+                shift;;
+            -n)
+                PKG_NAME="$2"; shift;
+                shift;;
+            --)
+                shift; break;;
+                esac
+    done
+
+
     if [ -z "$COMMASEP_FILELIST" ]; then
-	echo "mysql pkg was not specified. Usage example:"
-	echo 's9s_sw_update --mysql mysql-5.5.28_wsrep_23.7-linux-x86_64.tar.gz,galera-23.2.2-amd64.deb'
-	echo 's9s_sw_update --mysql MySQL-server-5.5.28_wsrep_23.7-1.rhel5.x86_64.rpm,galera-23.2.2-1.rhel5.x86_64.rpm'
+	echo "A comma-separated list of files was not specified. Usage example:"
+	echo '  s9s_sw_update --mysql -i <clusterid> -f mysql-5.5.28_wsrep_23.7-linux-x86_64.tar.gz,galera-23.2.2-amd64.deb -n <package_name>'
+	echo 'or'
+	echo '  s9s_sw_update --mysql -i <clusterid> -f MySQL-server-5.5.28_wsrep_23.7-1.rhel5.x86_64.rpm,galera-23.2.2-1.rhel5.x86_64.rpm -n <package_name>'
 	exit 1
     fi
 
+    CMON_DB='cmon'
     if [ -z "$PKG_NAME" ]; then
 	PKG_NAME="MYSQL_INITIAL_DEPLOY"
     fi
@@ -146,20 +268,20 @@ function update_mysql_pkg
     read x
     if [ "$x" == "y" ] || [ "$x" == "Y" ]; then	
 	echo "Updating software package"
-	QUERY="SELECT packageid FROM cmon.cmon_sw_package WHERE name='$PKG_NAME' AND cid=$CID"
+	QUERY="SELECT packageid FROM ${CMON_DB}.cmon_sw_package WHERE name='$PKG_NAME' AND cid=$CID"
 	PID=`$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY"`	
 	if [ -z "$PID" ]; then
 	    echo "Creating package $PKG_NAME"
-	    QUERY="INSERT INTO cmon.cmon_sw_package(cid,name,rpm) VALUES($CID, '$PKG_NAME', $rpm)"
+	    QUERY="INSERT INTO ${CMON_DB}.cmon_sw_package(cid,name,rpm) VALUES($CID, '$PKG_NAME', $rpm)"
 	    $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY"
 	fi
-	QUERY="SELECT packageid FROM cmon.cmon_sw_package WHERE name='$PKG_NAME' AND cid=$CID"
+	QUERY="SELECT packageid FROM ${CMON_DB}.cmon_sw_package WHERE name='$PKG_NAME' AND cid=$CID"
 	PID=`$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY"`
 	if [ -z "$PID" ]; then
 	    echo "Creating package failed"
 	    exit 1	    
 	fi
-	QUERY="BEGIN; DELETE FROM cmon_uploads WHERE cid=$CID AND packageid=(SELECT packageid FROM cmon.cmon_sw_package WHERE name='$PKG_NAME' AND cid=$CID);"
+	QUERY="BEGIN; DELETE FROM cmon_uploads WHERE cid=$CID AND packageid=(SELECT packageid FROM ${CMON_DB}.cmon_sw_package WHERE name='$PKG_NAME' AND cid=$CID); UPDATE ${CMON_DB}.cmon_sw_package SET selected=0 WHERE cid=$CID and name<>'CMON_DEFAULT'; UPDATE ${CMON_DB}.cmon_sw_package SET selected=1 WHERE cid=$CID AND packageid=$PID"
 	for f in $FILELIST 
 	do
 	    sum=`md5sum $f | awk '{print $1;}'`
@@ -170,7 +292,7 @@ function update_mysql_pkg
 		echo "FAILED: cp -rf $f  $WWWROOT/cmon/upload/"
 		exit 1
 	    fi
-	    QUERY="$QUERY; INSERT IGNORE INTO cmon.cmon_uploads ( cid, packageid, filename,path,cluster_type,version_tag,md5sum,filesize,selected) VALUES ($CID,$PID,'$fname','${WWWROOT}/cmon/upload/','$CLUSTER_TYPE','','$sum', $filesize ,1)"
+	    QUERY="$QUERY; INSERT IGNORE INTO ${CMON_DB}.cmon_uploads ( cid, packageid, filename,path,cluster_type,version_tag,md5sum,filesize,selected) VALUES ($CID,$PID,'$fname','${WWWROOT}/cmon/upload/','$CLUSTER_TYPE','','$sum', $filesize ,1)"
 	done
 	QUERY="$QUERY;COMMIT"
 	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log    
@@ -185,15 +307,199 @@ function update_mysql_pkg
     fi    
 }
 
+
+function install_mysql_pkg
+{   
+    args=`getopt p:s:P:h:i:N:n:f: $*`
+    set -- $args
+    for i
+    do
+        case "$i" in
+            -p)
+                CMON_PASSWORD="$2"; shift;
+                shift;;
+            -i)
+                CID="$2"; shift;
+                shift;;
+            -h)
+		XHOSTNAME="$2"; shift;
+                shift;;
+            -n)
+                PKG_NAME="$2"; shift;
+                shift;;
+            --)
+                shift; break;;
+                esac
+    done
+
+
+    if [ -z "$XHOSTNAME" ]; then
+	echo 'Syntax:'
+	echo ' s9s_sw_update --install-mysql -i <clusterid> -n <package_name> -h <hostname>'
+	exit 1
+    fi
+    if [ -z "$CID" ]; then
+	echo 'Syntax:'
+	echo ' s9s_sw_update --install-mysql -i <clusterid> -n <package_name> -h <hostname>'
+	exit 1
+    fi
+    load_opts $CID
+    CMON_DB='cmon'
+    echo "Do you want install $PKG_NAME on '$XHOSTNAME' (press y or Y to continue)?"
+    read x
+    if [ "$x" == "y" ] || [ "$x" == "Y" ]; then	
+	QUERY="SELECT packageid FROM ${CMON_DB}.cmon_sw_package WHERE name='$PKG_NAME' AND cid=$CID"
+	PID=`$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY"`	
+	if [ -z "$PID" ]; then
+	    echo "Invalid $PKG_NAME"
+	    exit 1
+	fi
+	QUERY="SELECT group_concat(concat(path,',', filename) SEPARATOR ' ') FROM ${CMON_DB}.cmon_uploads WHERE packageid='$PID' AND cid=$CID"
+	FILELIST=`$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY"`
+	
+	if [ -z "$FILELIST" ]; then
+	    echo "No files in package $PKG_NAME"
+	    exit 1	    
+	fi
+
+	if [ "$FILELIST" = "NULL" ]; then
+	    echo "No files in package $PKG_NAME"
+	    exit 1	    
+	fi
+
+	for f in $FILELIST 
+	do
+	    path=`echo $f | awk -F, '{print $1;}'`
+	    filename=`echo $f | awk -F, '{print $2;}'`	    
+	    remote_copy $path/$filename $XHOSTNAME $STAGING_DIR	    	    
+	done
+	RPMLIST=""
+	for f in $FILELIST 
+	do
+	    filename=`echo $f | awk -F, '{print $2;}'`	    
+	    ext=${filename##*.}
+	    case $ext in
+		gz)
+		    MYSQL_BASEDIR2=${MYSQL_BASEDIR%/}
+		    remote_cmd_nofail $XHOSTNAME "rm -f ${MYSQL_BASEDIR2}*"
+		    remote_cmd $XHOSTNAME "tar xvfz ${STAGING_DIR}/$filename -C `dirname $MYSQL_BASEDIR`"
+		    remote_cmd $XHOSTNAME "ln -s `dirname $MYSQL_BASEDIR`/`basename $filename .tar.gz`  $MYSQL_BASEDIR2"
+		    ;;
+		rpm)
+		    RPMLIST="$RPMLIST $STAGING_DIR/$filename"
+		    ;;
+		deb)
+		    DEBLIST="$DEBLIST $STAGING_DIR/$filename"
+		    ;;
+	    esac	    
+	done
+	if [ -n "$RPMLIST" ]; then
+	    remote_cmd $XHOSTNAME "rpm -Uvh $RPMLIST"
+	fi
+	if [ -n "$DEBLIST" ]; then
+	    remote_cmd $XHOSTNAME "/usr/sbin/dpkg -i $DEBLIST"
+	fi
+	echo "Installed $PKG_NAME on $XHOSTNAME"		    
+    fi
+}
+
+
+
+function update_mysql_pkg_yum
+{   
+    args=`getopt p:s:P:h:i:N:n:f: $*`
+    set -- $args
+    for i
+    do
+        case "$i" in
+            -p)
+                CMON_PASSWORD="$2"; shift;
+                shift;;
+            -i)
+                CID="$2"; shift;
+                shift;;
+            -h)
+		XHOSTNAME="$2"; shift;
+                shift;;
+            --)
+                shift; break;;
+                esac
+    done
+
+
+    if [ -z "$XHOSTNAME" ]; then
+	echo 'Syntax:'
+	echo ' s9s_sw_update --update-mysql-yum -i <clusterid> -h <hostname>'
+	exit 1
+    fi
+    if [ -z "$CID" ]; then
+	echo 'Syntax:'
+	echo ' s9s_sw_update --update-mysql-yum -i <clusterid> -h <hostname>'
+	exit 1
+    fi
+    load_opts $CID
+    CMON_DB='cmon'
+    echo "Do you want update yum packages on '$XHOSTNAME' (press y or Y to continue)?"
+    read x
+    if [ "$x" == "y" ] || [ "$x" == "Y" ]; then	
+	remote_cmd $XHOSTNAME "yum update `rpm -qa | egrep -i  '(percona|mysql|galera|maria)'`"
+	echo "Updated packages on $XHOSTNAME"		    
+    fi
+    echo "Updated packages on $XHOSTNAME"		    
+    exit 0
+}
+
+
+
+function load_opts 
+{
+    local CLUSTER_ID=$1
+    echo "load opts $CLUSTER_ID"
+    OS=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='OS' AND cid=$CLUSTER_ID" 2>/dev/null`
+    CONFIGDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='CONFIGDIR' AND cid=$CLUSTER_ID" 2>/dev/null`
+    MYSQL_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MYSQL_PORT' AND cid=$CLUSTER_ID" 2>/dev/null`
+    GALERA_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='GALERA_PORT' AND cid=$CLUSTER_ID" 2>/dev/null`
+    MYSQL_BASEDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MYSQL_BASEDIR' AND cid=$CLUSTER_ID" 2>/dev/null`
+    STAGING_DIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='STAGING_DIR' AND cid=$CLUSTER_ID" 2>/dev/null`
+    MYSQL_SCRIPTDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SCRIPTDIR' AND cid=$CLUSTER_ID" 2>/dev/null`
+    SSH_IDENTITY=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_IDENTITY' AND cid=$CLUSTER_ID" 2>/dev/null`
+    SSH_USER=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_USER' AND cid=$CLUSTER_ID" 2>/dev/null`
+    SUDO=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SUDO' AND cid=$CLUSTER_ID" 2>/dev/null`
+    
+    OS_USER_HOME=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='OS_USER_HOME' AND cid=$CLUSTER_ID" 2>/dev/null`
+    DATADIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon.cluster_config where variable='datadir' and cid=1 order by id asc limit 1" 2>/dev/null`
+
+    
+    SSH_OPTS="-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10"
+    if [ "$SSH_IDENTITY" = "" ]; then
+	SSH_IDENTITY="-oIdentityFile=${OS_USER_HOME}/.ssh/id_rsa"
+    else
+	SSH_IDENTITY="-oIdentityFile=$SSH_IDENTITY"
+    fi
+    SSH_OPTS="-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY"
+    if [ "$SSH_USER" != "root" ]; then
+	SSH_OPTS="-t -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY"
+	if [ "$SUDO" = "" ] || [ "$SUDO" = "NULL" ];  then
+           SUDO=sudo
+        fi
+    fi
+}
+
 case $1 in
     --cmon)
 	update_cmon_pkg $2
     ;;
     --mysql)
-	update_mysql_pkg $2 $3
-    ;;
+	update_mysql_pkg $2 $3 $4 $5 $6 $7 $8 $9
+	;;
+    --install-mysql)
+        install_mysql_pkg $2 $3 $4 $5 $6 $7 $8 $9
+	;;
+    --update-mysql-yum)
+        update_mysql_pkg_yum $2 $3 $4 $5 $6 $7 $8 $9
+	;;
     --list)
-    list_pkgs
+	list_pkgs
     ;;
     *)
 	echo "Usage:"
