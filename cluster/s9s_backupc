@@ -167,7 +167,8 @@ function start_backup
 	x=`ssh $SSH_OPTS -fnt  $SSH_USER@$BACKUP_HOSTNAME '$SUDO which innobackupex' 2>/dev/null`
 	if [ "$x" = ""  ]; then
 	    log_job_message "installing xtrabackup" 0	
-	    ssh $SSH_OPTS  $ssh_user@$slave "/usr/bin/s9s_backup --install $MYCNF"	
+	    echo "XX: ssh $SSH_OPTS  $ssh_user@$slave"
+	    ssh $SSH_OPTS  $SSH_USER@$BACKUP_HOSTNAME "/usr/bin/s9s_backup --install $MYCNF"	
 	    
 	fi
     
