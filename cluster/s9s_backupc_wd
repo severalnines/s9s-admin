@@ -13,7 +13,7 @@ TIMEOUT=3600
 TOTAL_TIME=0
 searchexpr="innobackupex: Error: "
 #give xtrabackup a chance to start
-
+echo $SUDO
 nc -d -l $NETCAT_PORT > $BACKUPFILE &
 ret=$?
 pid=$!
@@ -26,8 +26,9 @@ sleep 60
 
 while [ 1 ]; 
 do
-   x=`ssh $SSH_OPTS -fnt $SSH_USER@$BACKUP_HOSTNAME "ps ax | grep -v grep | grep xtrabackup" `
+   x=`ssh $SSH_OPTS $SSH_USER@$BACKUP_HOSTNAME "$SUDO /bin/sh -c 'pgrep -f innobackupex'" `
    ret=$?
+   echo "s9s_backupc_wd:  $x " >> $BACKUP_LOGFILE
    #if [ $ret -eq 0 ]; 
    if [ -n "$x" ]; 
    then
@@ -35,7 +36,7 @@ do
       err=`grep "$searchexpr" $BACKUP_LOGFILE`
       if [ -n "$err" ]; then
         sleep $SLEEPTIME
-        ssh $SSH_OPTS -fnt $SSH_USER@$BACKUP_HOSTNAME "$SUDO killall -q -9 xtrabackup innobackupex xtrabackup_55 xtrabackup_56"
+        ssh $SSH_OPTS $SSH_USER@$BACKUP_HOSTNAME "$SUDO killall -q -9 xtrabackup innobackupex xtrabackup_55 xtrabackup_56"
         echo "BACKUP FAILED: $err " >> $BACKUP_LOGFILE
 	kill -9 $pid 2>/dev/null
         exit 1

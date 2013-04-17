@@ -74,7 +74,6 @@ function write_logfile
 
 function start_backup
 {        
-
     args=`getopt h:i:b:t:j: $*`
     set -- $args
     for i
@@ -122,10 +121,12 @@ function start_backup
       exit 1
     fi
     log_job 'RUNNING' 'Job is running' 0
+    log_job_message "Loading options" 0
     load_opts $CLUSTER_ID
     MYCNF=${CONFIGDIR}/my.cnf
     if ! test -f $MYSQL_BIN; then
 	if ! test -f $MYSQL_BIN2; then
+	    log_job_message "Could not find mysql client" 1
 	    echo "Could not find mysql client binary"
 	    echo "Change MYSQL_BIN in beginning of the scipt"
 	    exit 1
@@ -164,7 +165,7 @@ function start_backup
 	    exit 1
 	fi
         echo $SSH_OPTS
-	x=`ssh $SSH_OPTS -fnt  $SSH_USER@$BACKUP_HOSTNAME '$SUDO which innobackupex' 2>/dev/null`
+	x=`ssh $SSH_OPTS  $SSH_USER@$BACKUP_HOSTNAME '$SUDO which innobackupex' 2>/dev/null`
 	if [ "$x" = ""  ]; then
 	    log_job_message "installing xtrabackup" 0	
 	    echo "XX: ssh $SSH_OPTS  $ssh_user@$slave"
@@ -172,7 +173,7 @@ function start_backup
 	    
 	fi
     
-	x=`ssh $SSH_OPTS -fnt  $SSH_USER@$BACKUP_HOSTNAME '$SUDO which innobackupex' 2>/dev/null`
+	x=`ssh $SSH_OPTS  $SSH_USER@$BACKUP_HOSTNAME '$SUDO which innobackupex' 2>/dev/null`
 	if [ "$x" = "" ]; then
 	    log_job_message "innobackupex not found" 1
 	    log_job 'FAILED' 'rebuild slave failed' 1
@@ -264,16 +265,17 @@ function start_backup
 	CLUSTER_TYPE=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select type from cluster where id=$CID"`
 	GALERA_INFO=""
 	
-	if [ "$CLUSTER_TYPE" = "galera" ]; then
-	    GALERA_INFO="--galera-info"
-	fi
-	
 	if [ $? -ne 0 ]; then
 	    log_job_message "Failed to retrieve next backup id" 1
 	    log_job 'FAILED' 'backup failed' 1	    
 	    echo "Failed to retrieve next backup id"
 	    exit 1
 	fi
+	if [ "$CLUSTER_TYPE" = "galera" ]; then
+	    GALERA_INFO="--galera-info"
+	fi
+	
+
 	if [ $? -ne 0 ]; then
 	    log_job_message "Failed to retrieve next backup id" 1
 	    log_job 'FAILED' 'backup failed' 1
@@ -300,14 +302,15 @@ function start_backup
   	   if [ -f /usr/local/cmon/bin/s9s_backupc_wd ]; then
                /usr/local/cmon/bin/s9s_backupc_wd $BACKUP_LOGFILE $BACKUP_HOSTNAME $SSH_USER "$SSH_OPTS" "$SCP_OPTS" "$SUDO" $NETCAT_PORT $BACKUPDIR/$FILENAME &
 	   else
-               echo "s9s_backup_wd not found in /usr/bin/s9s_backup_wd  or /usr/local/cmon/bin/s9s_backup_wd " 
+               echo "s9s_backup_wd not found in /usr/bin/s9s_backupc_wd  or /usr/local/cmon/bin/s9s_backupc_wd " 
+	       log_message "s9s_backupc_wd was not found in /usr/bin/s9s_backupc_wd  or /usr/local/cmon/bin/s9s_backupc_wd " 1 
 	       exit 1
            fi 
         fi
         pid="$!"
 
 	if [ "$TYPE" = "full" ]; then   
- 	    ssh -q -fntt  -X $SSH_OPTS  $SSH_USER@$BACKUP_HOSTNAME "$SUDO sh -c '$XTRABACKUP_BIN $GALERA_INFO  --ibbackup=xtrabackup_55 --defaults-file=$MYCNF --host=127.0.0.1 --user=$CMON_USER --password=$CMON_PASSWORD $THROTTLE  --stream=tar ./  2>$BACKUP_LOGFILE | gzip  - | nc $STORAGE_HNAME $NETCAT_PORT  '" 
+ 	    ssh $SSH_OPTS  $SSH_USER@$BACKUP_HOSTNAME "$SUDO sh -c '$XTRABACKUP_BIN $GALERA_INFO  --ibbackup=xtrabackup_55 --defaults-file=$MYCNF --host=127.0.0.1 --user=$CMON_USER --password=$CMON_PASSWORD $THROTTLE  --stream=tar ./  2>$BACKUP_LOGFILE | gzip  - | nc $STORAGE_HNAME $NETCAT_PORT  '" 
 	    ret=$?
 	    scp -q $SCP_OPTS $SSH_USER@$BACKUP_HOSTNAME:$BACKUP_LOGFILE $BACKUP_LOGFILE
 	    LSN=`cat $BACKUP_LOGFILE | grep 'xtrabackup: The latest check point (for incremental):' | awk -F ':' '{print $3;}'`
@@ -316,7 +319,7 @@ function start_backup
 		ret=1
 	    fi
 	else
- 	    ssh -q -fntt  -X $SSH_OPTS  $SSH_USER@$BACKUP_HOSTNAME "$SUDO sh -c '$XTRABACKUP_BIN $GALERA_INFO --ibbackup=xtrabackup_55 --defaults-file=$MYCNF --host=127.0.0.1 --user=$CMON_USER --password=$CMON_PASSWORD --incremental --incremental-lsn=$LSN $THROTTLE --stream=xbstream ./  2>$BACKUP_LOGFILE | gzip  - | nc $STORAGE_HNAME $NETCAT_PORT  '" 
+ 	    ssh  $SSH_OPTS  $SSH_USER@$BACKUP_HOSTNAME "$SUDO sh -c '$XTRABACKUP_BIN $GALERA_INFO --ibbackup=xtrabackup_55 --defaults-file=$MYCNF --host=127.0.0.1 --user=$CMON_USER --password=$CMON_PASSWORD --incremental --incremental-lsn=$LSN $THROTTLE --stream=xbstream ./  2>$BACKUP_LOGFILE | gzip  - | nc $STORAGE_HNAME $NETCAT_PORT  '" 
 	    ret=$?
 	    scp -q $SCP_OPTS $SSH_USER@$BACKUP_HOSTNAME:$BACKUP_LOGFILE $BACKUP_LOGFILE
 	    LSN=`cat $BACKUP_LOGFILE | grep 'xtrabackup: The latest check point (for incremental):' | awk -F ':' '{print $3;}'`	    
@@ -325,6 +328,9 @@ function start_backup
 		LSN=0
 	    fi
 	fi
+	if [ $ret -ne 0 ]; then
+	    log_job_message "Backup failed, innobackupex failed" 1
+	fi
         wait $pid  || let "FAIL=1"
 	scp -q $SCP_OPTS  $SSH_USER@$BACKUP_HOSTNAME:$BACKUP_LOGFILE  $BACKUP_LOGFILE	
 	write_logfile $ID
@@ -332,7 +338,7 @@ function start_backup
 	    STATUS='failed'
 	    SIZE=0
 	    FILENAME=''
-	    log_job_message "Backup failed, innobackupex failed" 1
+	    log_job_message "Backup failed, s9s_backupc_wd failed" 1
 	    log_job 'FAILED' 'backup failed' 1
 	else
 	    STATUS='completed'
@@ -728,7 +734,7 @@ function load_opts
     if [ "$SSH_PORT" = "" ] || [ "$SSH_PORT" = "NULL" ];  then
         SSH_PORT="22"
     fi
-    SSH_OPTS="-p$SSH_PORT $SSH_OPTS"    
+    SSH_OPTS="-p$SSH_PORT $SSH_OPTS -n"    
     SCP_OPTS="-P$SSH_PORT $SCP_OPTS"    
 }
 
@@ -926,7 +932,7 @@ function remote_cmd_nofail()
    desthost=$1
    xcommand=$2
    printf "%-4s: Executing '%s'" "$desthost" "$xcommand"
-   ssh -q $SSH_OPTS -fnt $SSH_USER@$desthost "$SUDO $xcommand "  >> $HOME/s9s_deploy.log 2>&1
+   ssh -q $SSH_OPTS $SSH_USER@$desthost "$SUDO $xcommand "  >> $HOME/s9s_deploy.log 2>&1
    ret=$?
    printf "\033[32m[ok]\033[0m\n"
    return $ret
@@ -941,14 +947,14 @@ function remote_cmd()
    retry=0
    while [ $retry -lt $MAX_RETRIES ]; 
    do
-      x=`ssh -q $SSH_OPTS -fnt  $SSH_USER@$desthost "$SUDO $xcommand " 2>&1  >> $HOME/s9s_deploy.log`
+      x=`ssh -q $SSH_OPTS  $SSH_USER@$desthost "$SUDO $xcommand " 2>&1  >> $HOME/s9s_deploy.log`
       if [ $? -eq 0 ]; then
         printf "\033[32m[ok]\033[0m\n"
         return 0
       fi
       retry=`expr $retry + 1`
       printf "\033[31m[failed: retrying ${retry}/${MAX_RETRIES}]\033[0m\n"
-      ssh -q $SSH_OPTS -fnt $SSH_USER@$desthost " sync " 2>&1  >> $HOME/s9s_deploy.log
+      ssh -q $SSH_OPTS  $SSH_USER@$desthost " sync " 2>&1  >> $HOME/s9s_deploy.log
       sleep 1
    done
    
