@@ -683,8 +683,6 @@ function reinit_cluster
 	    echo "./s9s_galera -- only galera is supported"
 	    exit 1;	           	     
     esac
-    echo "Stopping controller"
-    service cmon stop
     echo "Stopping all nodes to make sure the Cluster is down."
     stop_cluster  $2 $3 $4 $5 $6 $7 $8 $9
     echo "Starting cluster, intiializing from $DONOR_HOSTNAME"
@@ -706,8 +704,6 @@ function reinit_cluster
 
     if [ "$DONOR_ID" = "NULL" ]; then
 	echo "$DONOR_HOSTNAME not found in cluster - check server address"
-	echo "Starting controller"
-	service cmon start
 	exit 1
     fi
 
@@ -725,15 +721,11 @@ function reinit_cluster
 	if [ $RETRY -eq $MAX_RETRY ]; then
 	    echo "Donor not Synced in $MAX_RETRY retries"
 	    echo "Stop cluster, start again with another -d <donor_address>"
-	    echo "Starting controller"
-	    service cmon start	    
 	    exit 1
 	fi
     done
     echo ""
     echo "$DONOR_HOSTNAME is Synced"
-    echo "Starting controller"
-    service cmon start    
     echo "Start another node (one at a time):"
     for S in $SERVER_LIST
     do
