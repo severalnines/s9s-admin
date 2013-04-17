@@ -75,7 +75,7 @@ if [ ! -z "$mysqlbin" ]; then
 else
         echo "MySQL client not found. Kindly add the MySQL client into PATH or install MySQL client package"
 	echo "or change and specify the full path to the mysql client (in the beginning of this file): "
-	echo "mysqlbin=`which mysql`"
+	echo "mysqlbin=\`which mysql\`"
 	echo "to:"
 	echo "mysqlbin=/path/to/mysql"
         exit 1
