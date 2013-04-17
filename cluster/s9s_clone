@@ -600,6 +600,11 @@ function delete_cluster
       exit 1
     fi
 
+    if [ $CLUSTER_ID -eq 1 ]; then
+      echo "Cowardly refusing to delete cluster 1, if you really want to do this, modify the script"
+      exit 1
+    fi
+
 ##    CMON_DB_DB="cmon_${CLUSTER_ID}"
     
     case $CLUSTER_TYPE in
