@@ -744,6 +744,28 @@ function load_opts
 
 function list_backups
 {    
+
+    args=`getopt p:i: $*`
+    set -- $args
+    for i
+    do
+	case "$i" in
+            -p)
+		CMON_PASSWORD="$2"; shift;
+		shift;;
+            -i)
+		CLUSTER_ID="$2"; shift;
+		shift;;
+            --)
+		shift; break;;
+		esac
+    done    
+
+    if [ -z "$CLUSTER_ID" ]; then
+	echo "s9s_backupc  --list -i <clusterid> missing"
+	exit 1
+    fi
+
     if ! test -f $MYSQL_BIN; then
 	if ! test -f $MYSQL_BIN2; then
 	    echo "Could not find mysql client binary"
@@ -754,7 +776,7 @@ function list_backups
     fi
     STORAGE_HNAME=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$CMON_DB_PORT -e "SHOW GLOBAL VARIABLES LIKE 'hostname'" | awk '{print $2;}'`
 
-    QUERY="set group_concat_max_len=1024*1024;select group_concat(concat(parentid ,',', backup_type, ',', concat(directory,'/', filename), ',' , status, ',', size, ',\'' ,  date_format(report_ts, \"%Y-%M-%d_%H:%i:%s\") , '\'', ',',lsn, ',', md5sum, ',', hostname) order by parentid, backupid SEPARATOR ' '  ) from mysql_backup where cid=$CID and backup_method='xtrabackup' and cc_storage=1 and parentid>0 order by parentid, backupid"
+    QUERY="set group_concat_max_len=1024*1024;select group_concat(concat(parentid ,',', backup_type, ',', concat(directory,'/', filename), ',' , status, ',', size, ',\'' ,  date_format(report_ts, \"%Y-%M-%d_%H:%i:%s\") , '\'', ',',lsn, ',', md5sum, ',', hostname) order by parentid, backupid SEPARATOR ' '  ) from mysql_backup where cid=$CLUSTER_ID and backup_method='xtrabackup' and cc_storage=1 and parentid>0 order by parentid, backupid"
 
     LIST=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"`
     if [ $? -ne 0 ]; then
@@ -1022,23 +1044,23 @@ fi
 
 case $1 in
     --backup)
-    start_backup $2 $3 $4 $5 $6 $7 $8 $9
-    ;;
+	start_backup $2 $3 $4 $5 $6 $7 $8 $9
+	;;
     --purge)
-    purge_backups $2 $3 $4 $5 $6 $7 $8 $9
-    ;;
+	purge_backups $2 $3 $4 $5 $6 $7 $8 $9
+	;;
     --list)
-    list_backups 
-    ;;
+	list_backups  $2 $3 $4 $5 $6 $7 $8 $9
+	;;
     --install)
-    install $2 $3 $4 $5 $6 $7 $8 $9
-    ;;
+	install $2 $3 $4 $5 $6 $7 $8 $9
+	;;
     --restore)
-    restore $2 $3 $4 $5 $6 $7 $8 $9
-    ;;
+	restore $2 $3 $4 $5 $6 $7 $8 $9
+	;;
     --checkenv)
-    checkenv $2 $3 $4 $5 $6 $7 $8 $9
-    ;;
+	checkenv $2 $3 $4 $5 $6 $7 $8 $9
+	;;
     *)
     echo "Usage:"
     echo "bash ./s9s_backup <--backup|--list|--install|--purge|--restore|--checkenv> <options follows>"
