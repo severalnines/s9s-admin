@@ -133,7 +133,7 @@ function start_backup
 	MYSQL_BIN=$MYSQL_BIN2
     fi
     if [ ! -e $LOCKFILE ]; then
-	trap "rm -f $LOCKFILE; killall -9 s9s_backup_wdc; exit" INT TERM EXIT
+	trap "rm -f $LOCKFILE; killall -9 s9s_backupc_wd; exit" INT TERM EXIT
 	touch $LOCKFILE
 	if which pv &> /dev/null; then
             #THROTTLE="--throttle=30"
@@ -293,11 +293,11 @@ function start_backup
 	rm -rf $BACKUP_LOGFILE 
 	remote_cmd_nofail $BACKUP_HOSTNAME "rm -rf $BACKUP_LOGFILE"
 	remote_cmd_nofail $BACKUP_HOSTNAME "/bin/sh -c 'echo start_backup >>  $BACKUP_LOGFILE'"
-	if [ -f /usr/bin/s9s_backup_wdc ]; then
-           /usr/bin/s9s_backup_wdc $BACKUP_LOGFILE $BACKUP_HOSTNAME $SSH_USER "$SSH_OPTS" "$SCP_OPTS" "$SUDO" $NETCAT_PORT $BACKUPDIR/$FILENAME   &
+	if [ -f /usr/bin/s9s_backupc_wd ]; then
+           /usr/bin/s9s_backupc_wd $BACKUP_LOGFILE $BACKUP_HOSTNAME $SSH_USER "$SSH_OPTS" "$SCP_OPTS" "$SUDO" $NETCAT_PORT $BACKUPDIR/$FILENAME   &
         else
-  	   if [ -f /usr/local/cmon/bin/s9s_backup_wdc ]; then
-               /usr/local/cmon/bin/s9s_backup_wdc $BACKUP_LOGFILE $BACKUP_HOSTNAME $SSH_USER "$SSH_OPTS" "$SCP_OPTS" "$SUDO" $NETCAT_PORT $BACKUPDIR/$FILENAME &
+  	   if [ -f /usr/local/cmon/bin/s9s_backupc_wd ]; then
+               /usr/local/cmon/bin/s9s_backupc_wd $BACKUP_LOGFILE $BACKUP_HOSTNAME $SSH_USER "$SSH_OPTS" "$SCP_OPTS" "$SUDO" $NETCAT_PORT $BACKUPDIR/$FILENAME &
 	   else
                echo "s9s_backup_wd not found in /usr/bin/s9s_backup_wd  or /usr/local/cmon/bin/s9s_backup_wd " 
 	       exit 1
@@ -736,7 +736,7 @@ function list_backups
     if ! test -f $MYSQL_BIN; then
 	if ! test -f $MYSQL_BIN2; then
 	    echo "Could not find mysql client binary"
-	    echo "Change MYSQL_BIN in beginning of the scipt"
+	    echo "Change MYSQL_BIN in beginning of the script"
 	    exit 1
 	fi
 	MYSQL_BIN=$MYSQL_BIN2
