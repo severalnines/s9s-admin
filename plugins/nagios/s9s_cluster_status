@@ -1,6 +1,9 @@
 #!/bin/bash
 
 VERSION=0.2
+# MySQL client
+mysqlbin=`which mysql`
+
 TEMP=`getopt -o H:,p:,P:,h,v --long host:,password:,port:,help,version -n 's9s_cluster_status' -- "$@"`
 eval set -- "$TEMP"
 
@@ -58,8 +61,7 @@ fi
 # SQL query
 query='SELECT status FROM cmon.cluster_state WHERE id=1'
 
-# MySQL client
-mysqlbin=`which mysql`
+
 if [ ! -z "$mysqlbin" ]; then
         execute_query=`$mysqlbin -h$cmon_db_host -ucmon -p$cmon_db_password -P$cmon_db_port -A -Bse "$query"`
 	if [ ! $execute_query ]; then
@@ -72,11 +74,15 @@ if [ ! -z "$mysqlbin" ]; then
 	fi
 else
         echo "MySQL client not found. Kindly add the MySQL client into PATH or install MySQL client package"
+	echo "or change and specify the full path to the mysql client (in the beginning of this file): "
+	echo "mysqlbin=`which mysql`"
+	echo "to:"
+	echo "mysqlbin=/path/to/mysql"
         exit 1
 fi
 
 if [ "$clustate" == "STARTED" ]; then
-        echo "OK: Cluster status is OK"
+        echo "OK: Cluster status is STARTED"
         stateid=0
 elif  [ "$clustate" == "CRITICAL" ] || [ "$clustate" == "FAILURE" ] || [ "$clustate" == "STOPPED" ] || [ "$clustate" == "SHUTTING_DOWN" ]; then
         echo "Critical: Cluster status is $clustate"
