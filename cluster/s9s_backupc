@@ -169,7 +169,7 @@ function start_backup
 	if [ "$x" = ""  ]; then
 	    log_job_message "installing xtrabackup" 0	
 	    echo "XX: ssh $SSH_OPTS  $ssh_user@$slave"
-	    ssh $SSH_OPTS  $SSH_USER@$BACKUP_HOSTNAME "/usr/bin/s9s_backup --install $MYCNF"	
+	    ssh $SSH_OPTS  $SSH_USER@$BACKUP_HOSTNAME "/usr/bin/s9s_backup --install $MYCNF"
 	    
 	fi
     
@@ -556,7 +556,11 @@ function restore
       MYCNF=/etc/my.cnf
   fi
 
-
+  x=`which innobackupex' 2>/dev/null`
+  if [ "$x" = ""  ]; then     
+      sudo /usr/bin/s9s_backupc --install -h 127.0.0.1
+  fi
+  
   rm -rf $TARGETDIR/$BACKUPID
   mkdir -p $TARGETDIR/$BACKUPID
   
@@ -634,12 +638,12 @@ function restore
       echo "* Shutdown the cmon agent on this host to prevent automatic recovery"
       echo "* Shutdown all the mysql servers in the cluster. "
       echo "* Copy $TARGETDIR/$BACKUPID/  to all the mysql servers in the cluster, e.g: "
-      echo "*   scp -r $TARGETDIR/$BACKUPID/*  <user>@<target_server>:"
-      echo "* On the target_server"
-      echo "* innobackupex --copy-back $BACKUPID/"
-      echo "and don't forget to:"
-      echo "* chwon mysql:mysql -R <mysqld datadir>"
-      echo " Start up the cluster again."
+      echo "*   scp -r $TARGETDIR/$BACKUPID/  <user>@<target_server>:"
+      echo "*   On the target_server"
+      echo "*   innobackupex --copy-back $BACKUPID/"
+      echo "    and don't forget to:"
+      echo "*   chwon mysql:mysql -R <mysqld datadir>"
+      echo "Start up the cluster again."
       echo ""
       exit 0
   fi
@@ -750,8 +754,9 @@ function list_backups
     fi
     STORAGE_HNAME=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$CMON_DB_PORT -e "SHOW GLOBAL VARIABLES LIKE 'hostname'" | awk '{print $2;}'`
 
+    QUERY="set group_concat_max_len=1024*1024;select group_concat(concat(parentid ,',', backup_type, ',', concat(directory,'/', filename), ',' , status, ',', size, ',\'' ,  date_format(report_ts, \"%Y-%M-%d_%H:%i:%s\") , '\'', ',',lsn, ',', md5sum, ',', hostname) order by parentid, backupid SEPARATOR ' '  ) from mysql_backup where cid=$CID and backup_method='xtrabackup' and cc_storage=1 and parentid>0 order by parentid, backupid"
 
-    LIST=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "set group_concat_max_len=1024*1024;select group_concat(concat(parentid ,',', backup_type, ',', concat(directory,'/', filename), ',' , status, ',', size, ',\'' ,  date_format(report_ts, \"%Y-%M-%d_%H:%i:%s\") , '\'', ',',lsn, ',', md5sum, ',', hostname) SEPARATOR ' ') from mysql_backup where cid=$CID and backup_method='xtrabackup' and cc_storage=1 and parentid>0 order by parentid, backupid"`
+    LIST=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"`
     if [ $? -ne 0 ]; then
 	echo "Failed to backups"
 	exit 1
