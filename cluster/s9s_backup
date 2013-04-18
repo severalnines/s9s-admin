@@ -10,7 +10,7 @@ if [ ! -e /etc/cmon.cnf ] ; then
 else
     source /etc/cmon.cnf
 fi
-CID=$cluster_id
+#CLUSTER_ID=$cluster_id
 CMON_USER=cmon
 CMON_PASSWORD=$mysql_password
 CMON_DB_HOST=$mysql_hostname
@@ -36,7 +36,7 @@ function log_job_message
 {    
     MSG=$1
     EXIT_CODE=$2
-    QUERY="INSERT INTO cmon_job_message(cid, jobid,message,exit_code,report_ts) VALUES($CID,$jobid,'$MSG',$EXIT_CODE,now())"
+    QUERY="INSERT INTO cmon_job_message(cid, jobid,message,exit_code,report_ts) VALUES($CLUSTER_ID,$jobid,'$MSG',$EXIT_CODE,now())"
     if [ $jobid -ne 0 ]; then 
 	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
     else
@@ -53,7 +53,7 @@ function log_job
     STATUS=$1
     STATUS_TXT=$2
     EXIT_CODE=$3
-    QUERY="UPDATE cmon_job SET status='$STATUS', status_txt='$STATUS_TXT', exit_code=$EXIT_CODE, report_ts=NOW()  WHERE cid=$CID AND jobid=$jobid"
+    QUERY="UPDATE cmon_job SET status='$STATUS', status_txt='$STATUS_TXT', exit_code=$EXIT_CODE, report_ts=NOW()  WHERE cid=$CLUSTER_ID AND jobid=$jobid"
     if [ $jobid -ne 0 ]; then 
 	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
     fi
@@ -66,10 +66,10 @@ function write_logfile
    LOG_CONTENT=`cat /tmp/s9s_backup_log_escaped`
    SIZE=`stat --printf='%s' /tmp/s9s_backup_log_escaped`
    HNAME=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$CMON_DB_PORT -e "SHOW GLOBAL VARIABLES LIKE 'hostname'" | awk '{print $2;}'`
-   QUERY="REPLACE INTO cmon_host_log(cid, hostname, filename, result_len, result, report_ts,description, tag) VALUES ($CID,'$HNAME', '$BACKUP_LOGFILE', $SIZE, \"$LOG_CONTENT\", NOW(), 's9s_backup log', 's9s_backup')"
+   QUERY="REPLACE INTO cmon_host_log(cid, hostname, filename, result_len, result, report_ts,description, tag) VALUES ($CLUSTER_ID,'$HNAME', '$BACKUP_LOGFILE', $SIZE, \"$LOG_CONTENT\", NOW(), 's9s_backup log', 's9s_backup')"
    $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
    
-   QUERY="UPDATE mysql_backup SET logfile=\"$LOG_CONTENT\" WHERE cid=$CID and backupid=$BACKUPID "
+   QUERY="UPDATE mysql_backup SET logfile=\"$LOG_CONTENT\" WHERE cid=$CLUSTER_ID and backupid=$BACKUPID "
    $MYSQL_BIN --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"  2>&1 >/tmp/err.log
    rm -rf /tmp/s9s_backup_log_escaped
 }
@@ -77,6 +77,41 @@ function write_logfile
 
 function start_backup
 {        
+    args=`getopt p:h:i:b:t:j: $*`
+    set -- $args
+    for i
+    do
+	case "$i" in
+            -p)
+		CMON_PASSWORD="$2"; shift;
+		shift;;
+            -i)
+		CLUSTER_ID="$2"; shift;
+		shift;;
+            -t)
+		TYPE="$2"; shift;
+		shift;;
+            -j)
+		jobid="$2"; shift;
+		shift;;
+            -b)
+		BACKUPDIR="$2"; shift;
+		shift;;
+            --)
+		shift; break;;
+		esac
+    done    
+
+    if [ -z "$CLUSTER_ID" ]; then
+      echo "s9s_backup  --backup -i <clusterid> missing"
+      exit 1
+    fi
+
+    if [ -z "$TYPE" ]; then
+      echo "s9s_backup  --backup -t <full|incr> missing"
+      exit 1
+    fi
+
     if ! test -f $MYSQL_BIN; then
 	if ! test -f $MYSQL_BIN2; then
 	    echo "Could not find mysql client binary"
@@ -85,6 +120,22 @@ function start_backup
 	fi
 	MYSQL_BIN=$MYSQL_BIN2
     fi
+    if ! test -f $MYSQL_BIN; then
+	echo "Could not find mysql client binary"
+	log_job_message "Could not find mysql client binary" 1
+	log_job 'FAILED' 'backup failed' 1
+	exit 1
+    fi
+
+    if [ -z "$BACKUPDIR" ]; then
+	BACKUPDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='BACKUPDIR' AND cid=$CLUSTER_ID"`
+    fi
+
+    if [ -z "$BACKUPDIR" ]; then
+      echo "s9s_backup  --install -b <backupdir> missing"
+      exit 1
+    fi
+
     if [ ! -e $LOCKFILE ]; then
 	trap "rm -f $LOCKFILE; killall -9 s9s_backup_wd; exit" INT TERM EXIT
 	touch $LOCKFILE
@@ -104,23 +155,13 @@ function start_backup
   ##TYPE=<incremental|full>
   ##MYCNF - Path to my.cnf
   ##Where to store the backup
-	TYPE=$1
-	MYCNF=$2
-	BACKUPDIR=$3
-	jobid=$4
 	FAIL=0
 	if [ "$jobid" = "" ]; then 
 	    jobid=0
 	fi
 	
-	if ! test -f $MYSQL_BIN; then
-	    echo "Could not find mysql client binary"
-	    log_job_message "Could not find mysql client binary" 1
-	    log_job 'FAILED' 'backup failed' 1
-	    exit 1
-	fi
 	if ! test -f $XTRABACKUP_BIN ; then
-	    install $MYCNF      
+	    install $2 $3 $4 $5 $6 $7 $8
 	fi
 	QUERY="select count(column_name) from information_schema.columns where table_schema='$CMON_DB_DB' and table_name='mysql_backup' and column_name='md5sum'"
 	CNT=`$MYSQL_BIN  -A -B -N --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" `
@@ -138,30 +179,25 @@ function start_backup
 	fi
 
 
-	CONFIGDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='CONFIGDIR' AND cid=$CID"`
+	CONFIGDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='CONFIGDIR' AND cid=$CLUSTER_ID"`
 	
 	HNAME=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$CMON_DB_PORT -e "SHOW GLOBAL VARIABLES LIKE 'hostname'" | awk '{print $2;}'`
 	if [ -z "$TYPE" ]; then
 	    TYPE="full"
 	fi
-	
-	if [ -z "$MYCNF" ]; then
-	    echo "s9s_backup --backup <full|incremental> <my.cnf> <backup dir>"
-	    log_job_message "Wrong arguments - my.cnf not specified, e.g /etc/my.cnf" 1
-	    log_job 'FAILED' 'backup failed' 1
-	    exit 1
-	fi
+
+	MYCNF="${CONFIGDIR}/my.cnf"
+
 	
 	if [ -z "$BACKUPDIR" ]; then
-	    echo "s9s_backup --backup <full|incremental> <my.cnf> <backup dir>"
+	    echo "s9s_backup --backup -i <clusterid> -t <full|incremental> -b <backup dir>"
 	    log_job_message "Wrong arguments - backupdir not specified" 1
 	    log_job 'FAILED' 'backup failed' 1
 	    exit 1
 	fi
 	
 	if [ ! -f $MYCNF ]; then
-	    echo "s9s_backup --backup <full|incremental> <my.cnf> <backup dir>"
-	    log_job_message "Wrong arguments" 1
+	    log_job_message "Could not find $MYCNF" 1
 	    log_job 'FAILED' 'backup failed' 1
 	    exit 1
 	fi
@@ -178,8 +214,8 @@ function start_backup
 		BACKUPDIR=$BACKUPDIR/incremental
 		TYPE="incremental"
 		FILENAME="backup-incr-${curr_time}.tar.gz"
-		PARENTID=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select backupid from mysql_backup where backup_type='full' and hostname='$HNAME' and cid=$CID and lsn>0 order by report_ts desc limit 1"`
-		LSN=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select lsn from mysql_backup where cid=$CID and hostname='$HNAME' and status='completed' and lsn>0 order by report_ts desc LIMIT 1"`
+		PARENTID=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select backupid from mysql_backup where backup_type='full' and hostname='$HNAME' and cid=$CLUSTER_ID and lsn>0 order by report_ts desc limit 1"`
+		LSN=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select lsn from mysql_backup where cid=$CLUSTER_ID and hostname='$HNAME' and status='completed' and lsn>0 order by report_ts desc LIMIT 1"`
 		if [ -z "$LSN" ]; then
 		    log_job_message "No valid LSN, refusing incremental backup. Take a full backup" 1
 		    log_job 'FAILED' 'backup failed' 1
@@ -209,21 +245,20 @@ function start_backup
 		log_job_message "Starting an INCREMENTAL backup" 0
 		;;
 	    *)
-		echo "s9s_backup --backup <full|incremental> <my.cnf> <backup dir>"
+		echo "s9s_backup --backup -t <full|incremental> -i <clusterid>"
 		exit 1
 	esac
 	
 	if [ ! -e $MYCNF ]; then
-	    echo "s9s_backup  --backup <full|incremental> <my.cnf> <backup dir>"
+	    echo "$MYCNF could not be found"
 	    exit 1
 	fi
 	
 	mkdir -p $BACKUPDIR
-	
-	
+		
 	DATADIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --host=127.0.0.1 --port=$CMON_DB_PORT -e "SHOW GLOBAL VARIABLES LIKE 'datadir'" | awk '{print $2;}'`
 	ID=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select ifnull(max(backupid)+1,1) from mysql_backup"`
-	CLUSTER_TYPE=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select type from cluster where id=$CID"`
+	CLUSTER_TYPE=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select type from cluster where id=$CLUSTER_ID"`
 	GALERA_INFO=""
 	
 	if [ "$CLUSTER_TYPE" = "galera" ]; then
@@ -245,7 +280,7 @@ function start_backup
 	QUERY="UPDATE mysql_backup SET status='failed', error=1 WHERE status='running' AND hostname='$HNAME' "
 	$MYSQL_BIN --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"
 	
-	QUERY="INSERT INTO mysql_backup(backupid, cid, hostname,directory,filename, size, error, status, report_ts, backup_type, backup_method) VALUES($ID, $CID, '$HNAME', '$BACKUPDIR','',0,0,'running',now(), '$TYPE', 'xtrabackup')"
+	QUERY="INSERT INTO mysql_backup(backupid, cid, hostname,directory,filename, size, error, status, report_ts, backup_type, backup_method) VALUES($ID, $CLUSTER_ID, '$HNAME', '$BACKUPDIR','',0,0,'running',now(), '$TYPE', 'xtrabackup')"
 	$MYSQL_BIN --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"
 	if [ $? -ne 0 ]; then
 	    log_job_message "Failed to create backup record" 1
@@ -332,7 +367,30 @@ function start_backup
 
 function purge_backups
 {    
-    RETENTION=$1
+    args=`getopt p:i:r: $*`
+    set -- $args
+    for i
+    do
+	case "$i" in
+            -p)
+		CMON_PASSWORD="$2"; shift;
+		shift;;
+            -i)
+		CLUSTER_ID="$2"; shift;
+		shift;;     
+            -r)
+		RETENTION="$2"; shift;
+		shift;;     
+            --)
+		shift; break;;
+		esac
+    done    
+
+    if [ -z "$CLUSTER_ID" ]; then
+      echo "s9s_backup  --backup -i <clusterid> missing"
+      exit 1
+    fi
+
     if ! test -f $MYSQL_BIN; then
 	if ! test -f $MYSQL_BIN2; then
 	    echo "Could not find mysql client binary"
@@ -343,7 +401,7 @@ function purge_backups
     fi
     HNAME=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$CMON_DB_PORT -e "SHOW GLOBAL VARIABLES LIKE 'hostname'" | awk '{print $2;}'`
     if [ -z "$RETENTION" ]; then
-	RETENTION=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='BACKUP_RETENTION' AND cid=$CID"`
+	RETENTION=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='BACKUP_RETENTION' AND cid=$CLUSTER_ID"`
 	if [ $? -ne 0 ]; then
             RETENTION=32
 	fi   
@@ -351,14 +409,14 @@ function purge_backups
     
     if [ $RETENTION -eq 0 ]; then
 	echo "Retention period is 0, no retenetion. Set in Cluster Setup or do"
-	echo "s9s_backup --purge <retention days>"
+	echo "s9s_backup --purge -r <retention days>"
 	echo "Backups older than <retention days> will be purged"
 	exit 0
     fi
     
     echo "Round 1: purge failed backups - retention $RETENTION"
     
-    VICTIMS=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select group_concat(concat(backupid, ',', directory,'/', filename) SEPARATOR ' ') from mysql_backup where status='failed' AND hostname='$HNAME' AND backup_method='xtrabackup' AND cid=$CID"`
+    VICTIMS=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select group_concat(concat(backupid, ',', directory,'/', filename) SEPARATOR ' ') from mysql_backup where status='failed' AND hostname='$HNAME' AND backup_method='xtrabackup' AND cid=$CLUSTER_ID"`
     if [ $? -ne 0 ]; then
       echo "Failed to get files to purge"
       exit 1
@@ -380,11 +438,11 @@ function purge_backups
             echo "Purging $backuppath"
             rm -rf $backuppath
 	fi
-	`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "delete from mysql_backup where backupid=$backupid AND cid=$CID"`
+	`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "delete from mysql_backup where backupid=$backupid AND cid=$CLUSTER_ID"`
     done
   ## TODO: clean up purging (now ugly dupliated) but no time
     echo "Round 2: looking for candidates matching > retention period ($RETENTION)."
-    VICTIMS=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select group_concat(concat(backupid, ',', directory,'/', filename) SEPARATOR ' ') from mysql_backup where date_sub(now(), INTERVAL $RETENTION day) > report_ts AND backup_method='xtrabackup' AND hostname='$HNAME'  AND cid=$CID"`
+    VICTIMS=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select group_concat(concat(backupid, ',', directory,'/', filename) SEPARATOR ' ') from mysql_backup where date_sub(now(), INTERVAL $RETENTION day) > report_ts AND backup_method='xtrabackup' AND hostname='$HNAME'  AND cid=$CLUSTER_ID"`
     if [ $? -ne 0 ]; then
 	echo "Failed to get files to purge"
 	exit 1
@@ -409,16 +467,16 @@ function purge_backups
             echo "Purging $backuppath"
             rm -rf $backuppath
             if [ $? -eq 0 ];  then
-    		`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "delete from mysql_backup where backupid=$backupid AND cid=$CID"`
+    		`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "delete from mysql_backup where backupid=$backupid AND cid=$CLUSTER_ID"`
             fi
 	else
-    	    `$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "delete from mysql_backup where backupid=$backupid AND cid=$CID"`
+    	    `$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "delete from mysql_backup where backupid=$backupid AND cid=$CLUSTER_ID"`
 	fi
     done
     
     
     echo "Round 3: removing failed mysqldumps."
-    VICTIMS=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select group_concat(concat(backupid, ',', directory,'/', filename) SEPARATOR ' ') from mysql_backup where status='failed' AND backup_method='mysqldump' AND cid=$CID"`
+    VICTIMS=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select group_concat(concat(backupid, ',', directory,'/', filename) SEPARATOR ' ') from mysql_backup where status='failed' AND backup_method='mysqldump' AND cid=$CLUSTER_ID"`
     if [ $? -ne 0 ]; then
 	echo "Failed to get files to purge"
 	exit 1
@@ -432,21 +490,52 @@ function purge_backups
 
     if [  "$VICTIMS" = "NULL" ]; then
 	echo "Nothing to purge"
-      exit 0
+	exit 0
     fi 
     
     for f in $VICTIMS 
     do
 	backupid=`echo $f | awk -F ',' '{print $1;}'`
-	`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "delete from mysql_backup where backupid=$backupid AND cid=$CID"`
+	`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "delete from mysql_backup where backupid=$backupid AND cid=$CLUSTER_ID"`
     done
 }
 
 function restore
 {    
-  BACKUPID=$1
-  MYCNF=$2
-  TARGETDIR=$3
+    args=`getopt p:h:i:b:t: $*`
+    set -- $args
+    for i
+    do
+	case "$i" in
+            -p)
+		CMON_PASSWORD="$2"; shift;
+		shift;;
+            -i)
+		CLUSTER_ID="$2"; shift;
+		shift;;
+            -b)
+		BACKUPID="$2"; shift;
+		shift;;
+            -t)
+		TARGETDIR="$2"; shift;
+		shift;;
+            --)
+		shift; break;;
+		esac
+    done    
+
+    if [ -z "$CLUSTER_ID" ]; then
+	echo "s9s_backup  --restore -i <clusterid> missing"
+	exit 1
+    fi
+    if [ -z "$BACKUPID" ]; then
+	echo "s9s_backup  --restore -b <backup set> missing"
+	exit 1
+    fi
+    if [ -z "$TARGETDIR" ]; then
+	echo "s9s_backup  --restore -t <targetdir> missing"
+	exit 1
+    fi
     
   if ! test -f $MYSQL_BIN; then
       if ! test -f $MYSQL_BIN2; then
@@ -456,30 +545,35 @@ function restore
       fi
       MYSQL_BIN=$MYSQL_BIN2
   fi
-  if [ -z "$MYCNF" ]; then
-      MYCNF=/etc/my.cnf
-  fi
 
-  if [ -z "$TARGETDIR" ]; then
-      echo "./s9s_backup --restore <backup set> <my.cnf> <restoredir>"
-      exit 1
-  fi
 
   rm -rf $TARGETDIR/$BACKUPID
   mkdir -p $TARGETDIR/$BACKUPID
   
+
+  
+  
+  CONFIGDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='CONFIGDIR' AND cid=$CLUSTER_ID"`
+  
+  
+  MYCNF=${CONFIGDIR}/my.cnf
   if [ ! -f $MYCNF ]; then
-      echo "./s9s_backup --restore <backup set> <my.cnf> <restoredir>"
+      echo "Could not find my.cnf at $MYCNF"
       exit 1
   fi
-  
-  LIST=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "set group_concat_max_len=1024*1024;select group_concat(concat(parentid ,',', backup_type, ',', concat(directory,'/', filename), ',' , status, ',', size, ',\'' ,  date_format(report_ts, \"%Y-%M-%d_%H:%i:%s\") , '\'', ',', directory, ',', filename, ',', md5sum) SEPARATOR ' ') from mysql_backup where cid=$CID and parentid=$BACKUPID and backup_type='full' and lsn>0 and status='completed' order by parentid, backupid"`
+    
+  LIST=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "set group_concat_max_len=1024*1024;select group_concat(concat(parentid ,',', backup_type, ',', concat(directory,'/', filename), ',' , status, ',', size, ',\'' ,  date_format(report_ts, \"%Y-%M-%d_%H:%i:%s\") , '\'', ',', directory, ',', filename, ',', md5sum) SEPARATOR ' ') from mysql_backup where cid=$CLUSTER_ID and parentid=$BACKUPID and backup_type='full' and lsn>0 and status='completed' order by parentid, backupid"`
   if [ $? -ne 0 ]; then
       echo "Failed to read backups"
       exit 1
   fi
   
-  if [ -z "LIST" ]; then
+  if [ -z "$LIST" ]; then
+      echo "No backups found"
+      exit 0
+  fi
+
+  if [ "$LIST" = "NULL" ]; then
       echo "No backups found"
       exit 0
   fi
@@ -520,7 +614,7 @@ function restore
       fi
   done
 
-  LIST=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "set group_concat_max_len=1024*1024;select group_concat(concat(parentid ,',', backup_type, ',', concat(directory,'/', filename), ',' , status, ',', size, ',\'' ,  date_format(report_ts, \"%Y-%M-%d_%H:%i:%s\") , '\'', ',', directory, ',', filename, ',', md5sum) SEPARATOR ' ') from mysql_backup where cid=$CID and parentid=$BACKUPID and backup_type='incremental' and status='completed' and lsn>0 order by parentid, backupid"`
+  LIST=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "set group_concat_max_len=1024*1024;select group_concat(concat(parentid ,',', backup_type, ',', concat(directory,'/', filename), ',' , status, ',', size, ',\'' ,  date_format(report_ts, \"%Y-%M-%d_%H:%i:%s\") , '\'', ',', directory, ',', filename, ',', md5sum) SEPARATOR ' ') from mysql_backup where cid=$CLUSTER_ID and parentid=$BACKUPID and backup_type='incremental' and status='completed' and lsn>0 order by parentid, backupid"`
   if [ $? -ne 0 ]; then
       echo "Failed to read backups"
       echo "Restore FAILED"
@@ -595,6 +689,27 @@ function restore
 
 function list_backups
 {    
+    args=`getopt p:i: $*`
+    set -- $args
+    for i
+    do
+	case "$i" in
+            -p)
+		CMON_PASSWORD="$2"; shift;
+		shift;;
+            -i)
+		CLUSTER_ID="$2"; shift;
+		shift;;     
+            --)
+		shift; break;;
+		esac
+    done    
+
+    if [ -z "$CLUSTER_ID" ]; then
+      echo "s9s_backup  --backup -i <clusterid> missing"
+      exit 1
+    fi
+
     if ! test -f $MYSQL_BIN; then
 	if ! test -f $MYSQL_BIN2; then
 	    echo "Could not find mysql client binary"
@@ -604,7 +719,7 @@ function list_backups
 	MYSQL_BIN=$MYSQL_BIN2
     fi
     HNAME=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$CMON_DB_PORT -e "SHOW GLOBAL VARIABLES LIKE 'hostname'" | awk '{print $2;}'`
-    LIST=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "set group_concat_max_len=1024*1024;select group_concat(concat(parentid ,',', backup_type, ',', concat(directory,'/', filename), ',' , status, ',', size, ',\'' ,  date_format(report_ts, \"%Y-%M-%d_%H:%i:%s\") , '\'', ',',lsn, ',', md5sum) SEPARATOR ' ') from mysql_backup where cid=$CID and backup_method='xtrabackup' and hostname='$HNAME' and parentid>0 order by parentid, backupid"`
+    LIST=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "set group_concat_max_len=1024*1024;select group_concat(concat(parentid ,',', backup_type, ',', concat(directory,'/', filename), ',' , status, ',', size, ',\'' ,  date_format(report_ts, \"%Y-%M-%d_%H:%i:%s\") , '\'', ',',lsn, ',', md5sum) SEPARATOR ' ') from mysql_backup where cid=$CLUSTER_ID and backup_method='xtrabackup' and hostname='$HNAME' and parentid>0 order by parentid, backupid"`
     if [ $? -ne 0 ]; then
 	echo "Failed to backups"
 	exit 1
@@ -625,7 +740,7 @@ function list_backups
 	report_ts=`echo $f | awk -F ',' '{print $6;}'`
 	lsn=`echo $f | awk -F ',' '{print $7;}'`
 	md5=`echo $f | awk -F ',' '{print $8;}'`
-	VERIFICATION_PARENT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select count(backupid) from mysql_backup where cid=$CID and backup_method='xtrabackup' and hostname='$HNAME' and backupid=$backupid order by parentid, backupid"`
+	VERIFICATION_PARENT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select count(backupid) from mysql_backup where cid=$CLUSTER_ID and backup_method='xtrabackup' and hostname='$HNAME' and backupid=$backupid order by parentid, backupid"`
 	if [ $VERIFICATION_PARENT -gt 0 ]; then	  
 	    if [ "$backup_type" = "full" ];  then
 		echo "==========================================================================="
@@ -657,9 +772,30 @@ function list_backups
 
 function install
 {    
-    MYCNF=$1
-    CROND=$2    
-    
+    CROND=""
+    BACKUPDIR=""
+    args=`getopt p:i:b:c $*`
+    set -- $args
+    for i
+    do
+	case "$i" in
+            -p)
+		CMON_PASSWORD="$2"; shift;
+		shift;;
+            -i)
+		CLUSTER_ID="$2"; shift;
+		shift;;     
+            -b)
+		BACKUPDIR="$2"; shift;
+		shift;;     
+            -c)
+		CROND="1"; shift;
+		shift;;     
+            --)
+		shift; break;;
+		esac
+    done    
+
     if ! test -f $MYSQL_BIN; then
 	if ! test -f $MYSQL_BIN2; then
 	    echo "Could not find mysql client binary"
@@ -668,7 +804,21 @@ function install
 	fi
 	MYSQL_BIN=$MYSQL_BIN2
     fi
-    OS=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='OS' AND cid=$CID"`
+    if [ -z "$CLUSTER_ID" ]; then
+      echo "s9s_backup  --install -i <clusterid> missing"
+      exit 1
+    fi
+
+    if [ -z "$BACKUPDIR" ]; then
+	BACKUPDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='BACKUPDIR' AND cid=$CLUSTER_ID"`
+    fi
+
+    if [ -z "$BACKUPDIR" ]; then
+      echo "s9s_backup  --install -b <backupdir> missing"
+      exit 1
+    fi
+
+    OS=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='OS' AND cid=$CLUSTER_ID"`
     if [ $? -ne 0 ]; then 
 	log_job_message "Failed to read OS property from cmon_configuration" 1
 	echo "Failed - ensure that user '$CMON_USER' is allowed to SELECT from '$CMON_DB_HOST'"
@@ -677,14 +827,12 @@ function install
 	echo "GRANT SUPER ON *.* TO '$CMON_USER'@'<ip of this server>' IDENTIFIED BY '$CMON_PASSWORD';"
 	exit 1
     fi
-    CONFIGDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='CONFIGDIR' AND cid=$CID"`
-
-
+    CONFIGDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='CONFIGDIR' AND cid=$CLUSTER_ID"`
     MYCNF=${CONFIGDIR}/my.cnf
     
     if [ -z "$OS" ]; then
 	log_job_message "Could not start s9s_backup - OS is not defined in cmon_configuration" 1
-	echo "./s9s_backup --install <my.cnf> <crond optional>" 
+	echo "./s9s_backup --install -i <clusterid> -c" 
         exit 1
     fi
     
@@ -695,7 +843,7 @@ function install
     if [ ! -f $MYCNF ]; then
 	echo "$MYCNF not found!"
 	log_job_message "Could not start s9s_backup - $MYCNF not found" 1
-	echo "./s9s_backup --install <my.cnf> <crond optional>"
+	echo "./s9s_backup --install -i <clusterid -c "
 	exit 1
     fi
     
@@ -766,14 +914,14 @@ function install
 #
     if [ -n "$CROND" ]; then
 	cat > /etc/cron.d/s9s_backup <<EOF
-0 3 * * 0 root /usr/bin/s9s_backup --backup full $MYCNF
-0 3 * * 1 root /usr/bin/s9s_backup --backup incremental $MYCNF
-0 3 * * 2 root /usr/bin/s9s_backup --backup incremental $MYCNF
-0 3 * * 3 root /usr/bin/s9s_backup --backup incremental $MYCNF
-0 3 * * 4 root /usr/bin/s9s_backup --backup incremental $MYCNF
-0 3 * * 5 root /usr/bin/s9s_backup --backup incremental $MYCNF
-0 3 * * 6 root /usr/bin/s9s_backup --backup incremental $MYCNF
-0 6 * * 0 root /usr/bin/s9s_backup --purge 
+0 3 * * 0 root /usr/bin/s9s_backup --backup -i $CLUSTER_ID -t full -b $BACKUPDIR
+0 3 * * 1 root /usr/bin/s9s_backup --backup -i $CLUSTER_ID -t incr -b $BACKUPDIR
+0 3 * * 2 root /usr/bin/s9s_backup --backup -i $CLUSTER_ID -t incr -b $BACKUPDIR
+0 3 * * 3 root /usr/bin/s9s_backup --backup -i $CLUSTER_ID -t incr -b $BACKUPDIR
+0 3 * * 4 root /usr/bin/s9s_backup --backup -i $CLUSTER_ID -t incr -b $BACKUPDIR
+0 3 * * 5 root /usr/bin/s9s_backup --backup -i $CLUSTER_ID -t incr -b $BACKUPDIR
+0 3 * * 6 root /usr/bin/s9s_backup --backup -i $CLUSTER_ID -t incr -b $BACKUPDIR
+0 6 * * 0 root /usr/bin/s9s_backup --purge -i $CLUSTER_ID
 
 EOF
     fi
@@ -825,23 +973,23 @@ check_mysql_client
 
 case $1 in
     --backup)
-    start_backup $2 $3 $4 $5
-    ;;
+	start_backup $2 $3 $4 $5 $6 $7 $8
+	;;
     --purge)
-    purge_backups $2
-    ;;
+	purge_backups $2 $3 $4 $5 $6 $7 $8
+	;;
     --list)
-    list_backups 
-    ;;
+	list_backups $2 $3 $4 $5 $6 $7 $8
+	;;
     --install)
-    install $2 $3 $4
-    ;;
+	install $2 $3 $4 $5 $6 $7 $8
+	;;
     --restore)
-    restore $2 $3 $4
-    ;;
+	restore $2 $3 $4 $5 $6 $7 $8
+	;;
     --checkenv)
-    checkenv $2 $3 $4
-    ;;
+	checkenv $2 $3 $4 $5 $6 $7 $8
+	;;
     *)
     echo "Usage:"
     echo "bash ./s9s_backup <--backup|--list|--install|--purge|--restore|--checkenv> <options follows>"
