@@ -144,7 +144,7 @@ function start_backup
     fi
 
     if [ ! -e $LOCKFILE ]; then
-	trap "rm -f $LOCKFILE; killall -9 s9s_backupc_wd; exit" INT TERM EXIT
+	trap "rm -f $LOCKFILE; killall -9 s9s_backupc_wd; rm -rf /tmp/xtrabackup_pid; exit" INT TERM EXIT
 	touch $LOCKFILE
 	if which pv &> /dev/null; then
             #THROTTLE="--throttle=30"
@@ -338,6 +338,7 @@ function start_backup
         wait $pid  || let "FAIL=1"
 	scp -q $SCP_OPTS  $SSH_USER@$BACKUP_HOSTNAME:$BACKUP_LOGFILE  $BACKUP_LOGFILE	
 	write_logfile $ID
+	remote_cmd_nofail $BACKUP_HOSTNAME "rm -rf /tmp/xtrabackup_pid"
 	if [ $ret -ne 0 ] || [ $FAIL -eq 1 ] ; then
 	    STATUS='failed'
 	    SIZE=0
