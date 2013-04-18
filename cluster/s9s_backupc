@@ -215,7 +215,7 @@ function start_backup
 		BACKUPDIR=$BACKUPDIR/$BACKUP_HOSTNAME/full
 		FILENAME="backup-full-${curr_time}.tar.gz"
 		PARENTID=0
-		log_job_message "Starting a FULL backup" 0
+		log_job_message "Starting a FULL backup of $BACKUP_HOSTNAME" 0
 		;;      
 	    incr|incremental)
 		BACKUPDIR=$BACKUPDIR/$BACKUP_HOSTNAME/incremental
@@ -249,7 +249,7 @@ function start_backup
 		    echo "No valid parentid, refusing incremental backup. Take a full backup"
 		    exit 1
 		fi
-		log_job_message "Starting an INCREMENTAL backup" 0
+		log_job_message "Starting an INCREMENTAL backup of $BACKUP_HOSTNAME" 0
 		;;
 	    *)
 		echo "s9s_backupc --backup -t <full|incremental> -i <clusterid>"
