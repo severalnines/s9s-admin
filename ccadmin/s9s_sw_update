@@ -172,11 +172,34 @@ function remote_cmd3()
 
 function update_cmon_pkg
 {   
-    CMON_FILENAME=$1
+    args=`getopt p:s:P:h:i:N:n:f: $*`
+    set -- $args
+    for i
+    do
+        case "$i" in
+            -p)
+                CMON_PASSWORD="$2"; shift;
+                shift;;
+            -i)
+                CID="$2"; shift;
+                shift;;
+            -f)
+                CMON_FILENAME="$2"; shift;
+                shift;;
+            --)
+                shift; break;;
+                esac
+    done
+
     if [ -z "$CMON_FILENAME" ]; then
-	echo "cmon pkg was not specified. Usage example:"
-	echo "s9s_update --cmon cmon-1.1.36-64bit-glibc23-mc70.tar.gz"
-	echo "s9s_sw_update --cmon cmon-agent-1.1.36-1.x86_64.rpm"
+	echo "cmon pkg was not specified. Usage example (for RPM, DO NOT ADD THE CONTROLLER RPM to the package):"
+	echo "s9s_update --update-cmon-pkg -f cmon-1.1.36-64bit-glibc23-mc70.tar.gz"
+	echo "s9s_sw_update --update-cmon-pkg -f cmon-agent-1.1.36-1.x86_64.rpm"
+	exit 1
+    fi
+
+    if [ -z "$CID" ]; then
+	echo "s9s_sw_update --update-cmon-pkg -i <clusterid>"
 	exit 1
     fi
     if [ ! -s $CMON_FILENAME ]; then
@@ -237,9 +260,9 @@ function update_mysql_pkg
 
     if [ -z "$COMMASEP_FILELIST" ]; then
 	echo "A comma-separated list of files was not specified. Usage example:"
-	echo '  s9s_sw_update --mysql -i <clusterid> -f mysql-5.5.28_wsrep_23.7-linux-x86_64.tar.gz,galera-23.2.2-amd64.deb -n <package_name>'
+	echo '  s9s_sw_update --update-mysql-pkg -i <clusterid> -f mysql-5.5.28_wsrep_23.7-linux-x86_64.tar.gz,galera-23.2.2-amd64.deb -n <package_name>'
 	echo 'or'
-	echo '  s9s_sw_update --mysql -i <clusterid> -f MySQL-server-5.5.28_wsrep_23.7-1.rhel5.x86_64.rpm,galera-23.2.2-1.rhel5.x86_64.rpm -n <package_name>'
+	echo '  s9s_sw_update --update-mysql-pkg -i <clusterid> -f MySQL-server-5.5.28_wsrep_23.7-1.rhel5.x86_64.rpm,galera-23.2.2-1.rhel5.x86_64.rpm -n <package_name>'
 	exit 1
     fi
 
@@ -486,10 +509,10 @@ function load_opts
 }
 
 case $1 in
-    --cmon)
+    --update-cmon-pkg)
 	update_cmon_pkg $2
     ;;
-    --mysql)
+    --update-mysql-pkg)
 	update_mysql_pkg $2 $3 $4 $5 $6 $7 $8 $9
 	;;
     --install-mysql)
@@ -503,7 +526,7 @@ case $1 in
     ;;
     *)
 	echo "Usage:"
-	echo "bash ./s9s_sw_updater <--cmon|--mysql> <comma sep. list of packages> <pkg_name>"
+	echo "bash ./s9s_sw_updater <--update-cmon-pkg|--update-mysql-pkg|--install-mysql> more options will follow"
 	exit 1
 	;;
 esac
