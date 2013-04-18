@@ -137,7 +137,7 @@ function start_backup
     fi
 
     if [ ! -e $LOCKFILE ]; then
-	trap "rm -f $LOCKFILE; killall -9 s9s_backup_wd; exit" INT TERM EXIT
+	trap "rm -f $LOCKFILE; killall -9 s9s_backup_wd; rm -rf /tmp/xtrabackup_pid exit" INT TERM EXIT
 	touch $LOCKFILE
 	if which pv &> /dev/null; then
             #THROTTLE="--throttle=30"
