@@ -758,7 +758,10 @@ function load_opts
     SSH_OPTS="-q -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10"
     if [ "$SSH_IDENTITY" = "" ]; then
 	SSH_IDENTITY="-oIdentityFile=${OS_USER_HOME}/.ssh/id_rsa"
+    else
+	SSH_IDENTITY="-oIdentityFile=$SSH_IDENTITY"
     fi
+
     SSH_OPTS="-q -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY"
     SCP_OPTS="-q -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY"
     if [ "$SSH_USER" != "root" ]; then
