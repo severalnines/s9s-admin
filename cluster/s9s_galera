@@ -115,7 +115,7 @@ function remote_cmd_nofail()
    xcommand=$2
    printf "%-4s: Executing '%s'" "$desthost" "$xcommand"
    ssh -q $SSH_OPTS $SSH_USER@$desthost "$SUDO $xcommand "  >> $HOME/s9s_deploy.log 2>&1
-   echo "   ssh -q $SSH_OPTS $SSH_USER@$desthost "
+#   echo "   ssh -q $SSH_OPTS $SSH_USER@$desthost "
    ret=$?
    printf "\033[32m[ok]\033[0m\n"
    return $ret
