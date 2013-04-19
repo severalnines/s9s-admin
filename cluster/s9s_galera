@@ -65,7 +65,7 @@ function remote_cmd_getreply()
 {
    desthost=$1
    xcommand=$2
-   x=`ssh -q $SSH_OPTS $SSH_USER@$desthost "$SUDO $xcommand 2>/dev/null"`
+   x=`ssh -q $SSH_OPTS $SSH_USER@$desthost "$SUDO $xcommand"`
    if [ $? -ne 0 ]; then
        echo "Command failed: ssh -q $SSH_OPTS $SSH_USER@$desthost \"$SUDO $xcommand\""
        exit 1
@@ -540,8 +540,9 @@ function start_node_int
 function check_node_up
 {
     local xHNAME=$1
-    local xNODEID=$2
-    PID=$(remote_cmd_getreply $xHNAME "pgrep mysqld")
+    local xNODEID=$2   
+    PID=`ssh $SSH_OPTS $SSH_USER@$xHNAME "pgrep -f mysqld" 2>/dev/null`
+#    PID=$(remote_cmd_getreply $xHNAME "pgrep -f mysqld")    
     if [ -n "$PID" ]; then
         echo "UP"
         return
