@@ -391,6 +391,9 @@ function start_backup
 	rm $LOCKFILE
 	trap - INT TERM EXIT
 	exit 0
+    else
+	log_job_message "Lock file $LOCKFILE exists which indicates another backup may be running?" 1
+	log_job 'FAILED' 'backup failed' 1
     fi	
 }
 
