@@ -606,7 +606,7 @@ function get_galera_provider_options
     local xHNAME=$1
     local xNODEID=$2
     QUERY="SHOW GLOBAL VARIABLES LIKE 'wsrep_provider_options'"
-    STATE=$($MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$xHNAME --port=$CMON_DB_PORT -A -Bse "$QUERY"  2>/dev/null)
+    STATE=$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$xHNAME --port=$CMON_DB_PORT -A -Bse "$QUERY"  2>/dev/null    
     STATE=`echo $STATE | awk '{$1="";print $0;}'`
     echo $STATE
 }
@@ -822,11 +822,19 @@ function make_primary
 
     load_opts $CLUSTER_ID
     
+    QUERY="SHOW GLOBAL VARIABLES LIKE 'wsrep_provider_options'"
+    PROVIDER_OPTS=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$XHOSTNAME --port=$CMON_DB_PORT -A -Bse "$QUERY"` 
+    if [ $? -ne 0 ]; then
+	echo "Failed to get provider options"
+	exit 1
+    fi
     
-    PROVIDER_OPTS=$(get_galera_provider_options $XHOSTNAME)
+    PROVIDER_OPTS=`echo $PROVIDER_OPTS | sed 's#wsrep_provider_options##g'`
+    PROVIDER_OPTS=`echo $PROVIDER_OPTS | sed 's#\t##g'`
+    PROVIDER_OPTS=`echo $PROVIDER_OPTS | sed 's#\\\t##g'`
     QUERY="set global wsrep_provider_options='${PROVIDER_OPTS};pc.bootstrap=1'"    
-    $MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$xHNAME --port=$CMON_DB_PORT --auto-vertical-output -Bse "$QUERY"
-    exit
+
+    $MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$XHOSTNAME --port=$CMON_DB_PORT --auto-vertical-output -Bse "$QUERY"
     
     STATE=$(get_galera_nodestate $XHOSTNAME $DONOR_ID "wsrep_local_state_comment")
 
@@ -835,7 +843,7 @@ function make_primary
 	STATE=$(get_galera_clusterstate $XHOSTNAME $DONOR_ID)
 	if [ "$STATE" = "non-Primary" ]; then	   
 	    QUERY="set global wsrep_provider_options='${PROVIDER_OPTS};pc.bootstrap=1'"
-	    $MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$xHNAME --port=$CMON_DB_PORT -e "$QUERY"
+	    $MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$XHOSTNAME --port=$CMON_DB_PORT -e "$QUERY"
 	    if [ $? -ne 0 ]; then
 		echo "$QUERY failed"
 		exit 1
