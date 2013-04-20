@@ -385,6 +385,7 @@ function stop_cluster
 	    stop_node_int $HNAME $NODEID
 	done
     fi
+    set_clusterstate "STOPPED"
 }
 
 
@@ -623,6 +624,16 @@ function set_nodestate
     fi
 }
 
+function set_clusterstate
+{
+    STATE=$1
+    QUERY="UPDATE cluster_state SET report_ts=NOW(), status='$STATE' WHERE id=$CLUSTER_ID"
+    `$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=127.0.0.1 --port=$CMON_DB_PORT --auto-vertical-output -Bse "$QUERY"`
+    if [ $? -ne 0 ]; then
+        echo "setting cluster state failed"
+    fi
+}
+
 function reinit_cluster
 {
 
@@ -686,6 +697,7 @@ function reinit_cluster
     esac
     echo "Stopping all nodes to make sure the Cluster is down."
     stop_cluster  $2 $3 $4 $5 $6 $7 $8 $9
+    set_clusterstate "STOPPED"
     echo "Starting cluster, intiializing from $DONOR_HOSTNAME"
     load_opts $CLUSTER_ID
     
@@ -707,7 +719,7 @@ function reinit_cluster
 	echo "$DONOR_HOSTNAME not found in cluster - check server address"
 	exit 1
     fi
-
+    set_clusterstate "STARTING"
     start_node_donor $DONOR_HOSTNAME $DONOR_ID
     MAX_RETRY=60
     RETRY=0
@@ -920,7 +932,7 @@ function start_cluster
     fi
 
     start_node_donor $DONOR_HOSTNAME $DONOR_ID
-    
+    set_clusterstate "RECOVERING"
     
     if [ "$SERVER_LIST" != "NULL" ]; then
 	for S in $SERVER_LIST
@@ -1043,22 +1055,22 @@ function start_node
     
 
     if [ -z "$CMON_PASSWORD" ]; then
-      echo "s9s_galera --start-cluster -p  missing"
+      echo "s9s_galera --start-node -p  missing"
       exit 1
     fi
 
     if [ -z "$CLUSTER_ID" ]; then
-      echo "s9s_clone --start-cluster -i <cluster id> missing"
+      echo "s9s_clone --start-node -i <cluster id> missing"
       exit 1
     fi
 
     if [ -z "$DONOR_HOSTNAME" ]; then
-      echo "s9s_clone --start-cluster -d <donor node is missing, specify one server address part of the cluster> missing"
+      echo "s9s_clone --start-node -d <donor node is missing, specify one server address part of the cluster> missing"
       exit 1
     fi
 
     if [ -z "$XHOSTNAME" ]; then
-      echo "s9s_clone --start-cluster -h <hostname to start is missing>"
+      echo "s9s_clone --start-node -h <hostname to start is missing>"
       exit 1
     fi
 
