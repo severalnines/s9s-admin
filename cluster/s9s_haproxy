@@ -935,9 +935,6 @@ function delete_haproxy
             -N)
                 LB_NAME="$2"; shift;
                 shift;;
-            -N)
-                LB_NAME="$2"; shift;
-                shift;;
             -j)
                 JOBID="$2"; shift;
                 shift;;
