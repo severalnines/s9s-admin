@@ -180,6 +180,7 @@ cat << 'EOF' > $TMPDIR/makecfg.sh
 DC="$1"
 SUFFIX="$2"
 TMPDIR2="$3"
+MAX_CONNECTIONS="$4"
 TEMPLATE=${TMPDIR2}/haproxy.cfg.tmpl
 if ([ -z "$DC" ] || [ -z "$SUFFIX" ]); then
         echo "specify PREFIX and SUFFIX: $0 <prefix> <suffix>; ie: $0 dt 1"
@@ -215,7 +216,7 @@ listen  "$DESC"
         balance leastconn 
         option httpchk
         option allbackups
-        default-server port 9200 inter 2s downinter 5s rise 3 fall 2 slowstart 60s maxconn 256 maxqueue 128 weight 100
+        default-server port 9200 inter 2s downinter 5s rise 3 fall 2 slowstart 60s maxconn $MAX_CONNECTIONS maxqueue 128 weight 100
 	"
         for J in `cat $I`; do
                 SPLIT=(`echo $J | tr ',' ' '`);
@@ -626,13 +627,17 @@ function prepare
 function install_haproxy
 {
     LB_NODE_LIST=""
-    args=`getopt p:P:h:i:N:n:j:s $*`
+    MAX_CONNECTIONS=256
+    args=`getopt p:P:h:i:N:n:j:sf:c: $*`
     set -- $args
     for i
     do
         case "$i" in
             -p)
                 CMON_PASSWORD="$2"; shift;
+                shift;;
+            -P)
+		HAPROXY_MYSQL_LISTEN_PORT="$2"; shift;
                 shift;;
             -i)
                 CLUSTER_ID="$2"; shift;
@@ -646,8 +651,11 @@ function install_haproxy
             -s)
                 BUILD_FROM_SRC="1"; 
                 shift;;
-            -N)
-                LB_NAME="$2"; shift;
+            -f)
+                BUILD_FROM_SRC_FILE="$2"; 
+                shift;;
+            -c)
+                MAX_CONNECTIONS="$2"; shift;
                 shift;;
             -N)
                 LB_NAME="$2"; shift;
@@ -783,7 +791,7 @@ function install_haproxy
     echo "*************************************************************"
     echo "* writing $TMPDIR/${PREFIX}_${LB_NAME}_haproxy.cfg               *"
     echo "*************************************************************"
-    $TMPDIR/makecfg.sh $PREFIX $SUFFIX $TMPDIR > $TMPDIR/${PREFIX}_${LB_NAME}_haproxy.cfg
+    $TMPDIR/makecfg.sh $PREFIX $SUFFIX $TMPDIR $MAX_CONNECTIONS > $TMPDIR/${PREFIX}_${LB_NAME}_haproxy.cfg
     echo ""
     echo "*************************************************************"
     echo "* Installing haproxy on $LB_HOSTNAME                            *"
@@ -798,11 +806,22 @@ function install_haproxy
     fi
     remote_cmd_nofail $LB_HOSTNAME "$PKG_MGR $PHP_CURL"
     if [ -n "$BUILD_FROM_SRC" ]; then
-	remote_cmd $LB_HOSTNAME "wget -O/tmp/haproxy-1.4.22.tar.gz  http://haproxy.1wt.eu/download/1.4/src/haproxy-1.4.22.tar.gz"
-	remote_cmd $LB_HOSTNAME "tar xvfz /tmp/haproxy-1.4.22.tar.gz -C /tmp/"
+	HAPROXY_SRC="haproxy-1.4.22.tar.gz"
+	if [ -n "$BUILD_FROM_SRC_FILE" ]; then
+	    if [ ! -f $BUILD_FROM_SRC_FILE ]; then
+		echo "$BUILD_FROM_SRC_FILE could not be found"
+		exit 1
+	    fi
+	    HAPROXY_SRC=`basename $BUILD_FROM_SRC_FILE`
+	    remote_copy $BUILD_FROM_SRC_FILE $LB_HOSTNAME /tmp/
+	else
+	    remote_cmd $LB_HOSTNAME "wget -O/tmp/${HAPROXY_SRC}  http://haproxy.1wt.eu/download/1.4/src/${HAPROXY_SRC}"	 	
+	    
+	fi
 	remote_cmd $LB_HOSTNAME "$PKG_MGR $BUILD"
-	remote_cmd_nofail $LB_HOSTNAME "killall -q  -9 haproxy"
-	remote_cmd $LB_HOSTNAME "sh -c 'cd /tmp/haproxy-1.4.22 && make TARGET=linux26 && cp haproxy /usr/sbin/'"
+	remote_cmd $LB_HOSTNAME "tar xvfz /tmp/${HAPROXY_SRC} -C /tmp/"
+	remote_cmd_nofail $LB_HOSTNAME "killall -q  -9 haproxy"	
+	remote_cmd $LB_HOSTNAME "sh -c 'cd /tmp/${HAPROXY_SRC} && make TARGET=linux26 && cp haproxy /usr/sbin/'"
     else
 	remote_cmd $LB_HOSTNAME "$PKG_MGR2 haproxy"
     fi
@@ -1151,12 +1170,12 @@ function add_node
     fi
 
     if [ -z "$LB_HOSTNAME" ]; then
-        echo "s9s_haproxy --remote-node  -h <loadbalancer host> missing"
+        echo "s9s_haproxy --remove-node  -h <loadbalancer host> missing"
         exit 1
     fi
 
     if [ -z "$NODE" ]; then
-        echo "s9s_haproxy --remote-node  -n <serveraddr to add to lb > missing"
+        echo "s9s_haproxy --remove-node  -n <serveraddr to add to lb > missing"
         exit 1
     fi
     
