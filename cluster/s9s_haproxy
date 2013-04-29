@@ -348,7 +348,7 @@ function remote_cmdx()
       return 0
    else
       log_job_message "command failed: $xcommand" 1
-      log_job 'FAILED' 'backup failed' 1
+      log_job 'FAILED' 's9s_haproxy failed' 1
       printf "\033[31m[failed]\033[0m\n"
       exit 1
    fi
@@ -535,7 +535,7 @@ function load_opts
     SUDO=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SUDO' AND cid=$CLUSTER_ID"`
 
     if [ $? -ne 0 ]; then 
-        log_job_message "load opts failed"
+        log_job_message "load opts failed"       
         exit 1
     fi
 
@@ -670,17 +670,20 @@ function install_haproxy
 
     
     if [ -z "$CMON_PASSWORD" ]; then
-      echo "s9s_haproxy --install -p  missing"
+      log_job_message  "s9s_haproxy --install -p  missing" 1
+      log_job 'FAILED' 's9s_haproxy failed' 1
       exit 1
     fi
 
     if [ -z "$CLUSTER_ID" ]; then
-      echo "s9s_haproxy --install -i <cluster id>  missing"
+	log_job_message "s9s_haproxy --install -i <cluster id>  missing" 1
+      log_job 'FAILED' 's9s_haproxy failed' 1
       exit 1
     fi
 
     if [ -z "$LB_HOSTNAME" ]; then
-        echo "s9s_haproxy --install  -h <loadbalancer host> missing"
+        log_job_message "s9s_haproxy --install  -h <loadbalancer host> missing" 1
+	log_job 'FAILED' 's9s_haproxy failed' 1
         exit 1
     fi
     
@@ -693,6 +696,7 @@ function install_haproxy
     fi
 
 
+    log_job 'RUNNING' 'Job is running' 1
     load_opts $CLUSTER_ID
     rm -rf $TMPDIR/haproxy/*
     prepare
@@ -738,8 +742,9 @@ function install_haproxy
         mysqlcluster)
         ;;
         *)
-        echo "Cluster $CLUSTER_TYPE not supported"
-        exit 1
+        log_job_message "Cluster $CLUSTER_TYPE not supported" 1
+	log_job 'FAILED' 's9s_haproxy failed' 1
+	exit 1
         ;;
     esac
 
@@ -755,11 +760,13 @@ function install_haproxy
 
     if [ -z "$hostnames" ]; then
        echo "No hostnames found."
+       log_job 'FAILED' 's9s_haproxy failed' 1
        exit 1
     fi
 
     if [ "$hostnames" = "NULL" ]; then
        echo "No hostnames found."
+       log_job 'FAILED' 's9s_haproxy failed' 1
        exit 1
     fi
 
@@ -810,6 +817,7 @@ function install_haproxy
 	if [ -n "$BUILD_FROM_SRC_FILE" ]; then
 	    if [ ! -f $BUILD_FROM_SRC_FILE ]; then
 		echo "$BUILD_FROM_SRC_FILE could not be found"
+		log_job 'FAILED' 's9s_haproxy failed' 1
 		exit 1
 	    fi
 	    HAPROXY_SRC=`basename $BUILD_FROM_SRC_FILE`
@@ -874,8 +882,9 @@ function install_haproxy
         if [  $? -ne 0 ]; then
             log_job_message "Query failed: $QUERY"
             echo ""
-            cat /tmp/err.log
-            exit 1
+            cat /tmp/err.log           
+	    log_job 'FAILED' 's9s_haproxy failed' 1
+	    exit 1
         fi
     fi
 
@@ -887,9 +896,10 @@ function install_haproxy
     QUERY="REPLACE INTO ext_proc (cid, hostname,bin, opts,cmd, proc_name, port) VALUES($CLUSTER_ID, '$LB_HOSTNAME','/usr/sbin/haproxy', \"${HAPROXY_OPTS}\", \"/usr/sbin/haproxy ${HAPROXY_OPTS}\",'haproxy', $LB_ADMIN_PORT)"
     $MYSQL_BIN -B -N  -ucmon -p$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST  --port=${CMON_DB_PORT} -e "$QUERY" 2>&1 >/tmp/err.log
     if [  $? -ne 0 ]; then
-        log_job_message "Query failed: $QUERY"
+      log_job_message "Query failed: $QUERY"
        echo ""
        cat /tmp/err.log
+       log_job 'FAILED' 's9s_haproxy failed' 1
        exit 1
     fi
 
@@ -906,6 +916,7 @@ function install_haproxy
     echo "**Don't forget to GRANT ${LB_HOSTNAME} on your mysql servers:"
     echo "GRANT <privs> ON <db>.* TO '<user>'@'${LB_HOSTNAME}' IDENTIFIED BY '<password>'"
     echo ""
+    log_job 'FINISHED' 's9s_haproxy --install completed' 0
     exit 0
 
 }
@@ -945,17 +956,20 @@ function delete_haproxy
 
     
     if [ -z "$CMON_PASSWORD" ]; then
-      echo "s9s_haproxy --delete -p  missing"
+      log_job_message "s9s_haproxy --delete -p  missing" 1
+      log_job "FAILED" "s9s_haproxy failed" 1
       exit 1
     fi
 
     if [ -z "$CLUSTER_ID" ]; then
-      echo "s9s_haproxy --delete -i <cluster id>  missing"
+      log_job_message "s9s_haproxy --delete -i <cluster id>  missing" 1
+      log_job "FAILED" "s9s_haproxy failed" 1
       exit 1
     fi
 
     if [ -z "$LB_HOSTNAME" ]; then
-        echo "s9s_haproxy --delete  -h <loadbalancer host> missing"
+        log_job_message "s9s_haproxy --delete  -h <loadbalancer host> missing" 1
+	log_job "FAILED" "s9s_haproxy failed" 1
         exit 1
     fi
     
@@ -964,7 +978,7 @@ function delete_haproxy
 	JOBID=0
     fi
 
-
+    log_job 'RUNNING' 'Job is running' 1
     load_opts $CLUSTER_ID
     rm -rf $TMPDIR/haproxy/*
     prepare
@@ -979,8 +993,9 @@ function delete_haproxy
             OS=debian
             ;;
         *)
-        echo "OS $OS not supported"
-        exit
+        log_job_message "OS $OS not supported" 1
+	log_job "FAILED" "s9s_haproxy failed" 1
+        exit 1
         ;;
     esac
 
@@ -990,7 +1005,8 @@ function delete_haproxy
         mysqlcluster)
         ;;
         *)
-        echo "Cluster $CLUSTER_TYPE not supported"
+        log_job_message "Cluster $CLUSTER_TYPE not supported" 1
+	log_job "FAILED" "s9s_haproxy failed" 1
         exit 1
         ;;
     esac
@@ -1020,10 +1036,11 @@ function delete_haproxy
         log_job_message "Query failed: $QUERY"
        echo ""
        cat /tmp/err.log
-       exit 1
+       log_job "FAILED" "s9s_haproxy failed" 1
     fi
-    echo "Removed $LB_HOSTNAME"
+    log_job_message "Removed $LB_HOSTNAME" 0
     echo ""
+    log_job "FINISHED" "s9s_haproxy --delete completed" 0    
     exit 0
 }
 
