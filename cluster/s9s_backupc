@@ -145,7 +145,7 @@ function start_backup
 
     if [ ! -e $LOCKFILE ]; then
 	trap "rm -f $LOCKFILE; killall -9 s9s_backupc_wd; rm -rf /tmp/xtrabackup_pid; exit" INT TERM EXIT
-	touch $LOCKFILE
+	touch $LOCKFILE	
 	if which pv &> /dev/null; then
             #THROTTLE="--throttle=30"
 	    HAS_PV=1
@@ -312,7 +312,6 @@ function start_backup
            fi 
         fi
         pid="$!"
-
 	if [ "$TYPE" = "full" ]; then   
  	    ssh $SSH_OPTS  $SSH_USER@$BACKUP_HOSTNAME "$SUDO sh -c '$XTRABACKUP_BIN $GALERA_INFO  --ibbackup=xtrabackup_55 --defaults-file=$MYCNF --host=127.0.0.1 --user=$CMON_USER --password=$CMON_PASSWORD $THROTTLE  --stream=tar ./  2>$BACKUP_LOGFILE | gzip  - | nc $STORAGE_HNAME $NETCAT_PORT  '" 
 	    ret=$?
@@ -587,10 +586,13 @@ function restore
   if [ -z "$MYCNF" ]; then
       MYCNF=/etc/my.cnf
   fi
-
+  
+  
+  $SUDO killall -15 nc
+  sleep 2
   x=`which innobackupex' 2>/dev/null`
   if [ "$x" = ""  ]; then     
-      sudo /usr/bin/s9s_backupc --install -h 127.0.0.1
+      $SUDO /usr/bin/s9s_backupc --install -h 127.0.0.1
   fi
   
   rm -rf $TARGETDIR/$BACKUPID
@@ -779,6 +781,9 @@ function load_opts
         SSH_PORT="22"
     fi
     SSH_OPTS="-p$SSH_PORT $SSH_OPTS -n"    
+    if [ "$SSH_USER" != "root" ]; then
+	SSH_OPTS="$SSH_OPTS -t"    
+    fi
     SCP_OPTS="-P$SSH_PORT $SCP_OPTS"    
 }
 

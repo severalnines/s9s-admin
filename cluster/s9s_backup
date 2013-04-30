@@ -161,7 +161,7 @@ function start_backup
 	fi
 	
 	if ! test -f $XTRABACKUP_BIN ; then
-	    install $2 $3 $4 $5 $6 $7 $8
+	    install $2 $3 $4 $5 $6 $7 $8 $9
 	fi
 	QUERY="select count(column_name) from information_schema.columns where table_schema='$CMON_DB_DB' and table_name='mysql_backup' and column_name='md5sum'"
 	CNT=`$MYSQL_BIN  -A -B -N --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" `
