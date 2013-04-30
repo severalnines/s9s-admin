@@ -706,7 +706,7 @@ function list_backups
     done    
 
     if [ -z "$CLUSTER_ID" ]; then
-      echo "s9s_backup  --backup -i <clusterid> missing"
+      echo "s9s_backup  --list -i <clusterid> missing"
       exit 1
     fi
 
@@ -721,7 +721,7 @@ function list_backups
     HNAME=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$CMON_DB_PORT -e "SHOW GLOBAL VARIABLES LIKE 'hostname'" | awk '{print $2;}'`
     LIST=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "set group_concat_max_len=1024*1024;select group_concat(concat(parentid ,',', backup_type, ',', concat(directory,'/', filename), ',' , status, ',', size, ',\'' ,  date_format(report_ts, \"%Y-%M-%d_%H:%i:%s\") , '\'', ',',lsn, ',', md5sum) SEPARATOR ' ') from mysql_backup where cid=$CLUSTER_ID and backup_method='xtrabackup' and hostname='$HNAME' and parentid>0 order by parentid, backupid"`
     if [ $? -ne 0 ]; then
-	echo "Failed to backups"
+	echo "Failed to query for backups"
 	exit 1
     fi
     
