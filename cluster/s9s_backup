@@ -354,11 +354,13 @@ function start_backup
 	    log_job_message "Failed to update backup record" 1
 	    log_job 'FAILED' 'backup failed' 1
 	    echo "Failed to upate backup record"
+	    rm -rf /tmp/xtrabackup_pid
 	    exit 1
 	fi
 	log_job_message "Backup finished - check Backups for status" 0
 	log_job 'FINISHED' 'Command OK' 0
 	rm $LOCKFILE
+	rm -rf /tmp/xtrabackup_pid
 	trap - INT TERM EXIT
 	exit 0
     fi	
