@@ -286,7 +286,7 @@ function start_backup
 	    echo "Failed to retrieve next backup id"
 	    exit 1
 	fi
-	QUERY="UPDATE mysql_backup SET status='failed', error=1 WHERE status='running' AND hostname='$BACKUP_HOSTNAME' "
+	QUERY="UPDATE mysql_backup SET status='failed', error=1 WHERE status='running' AND cc_storage=1"
 	$MYSQL_BIN --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"
 	
 	QUERY="INSERT INTO mysql_backup(backupid, cid, storage_host, hostname,cc_storage,directory,filename, size, error, status, report_ts, backup_type, backup_method) VALUES($ID, $CLUSTER_ID,'$STORAGE_HNAME', '$BACKUP_HOSTNAME', 1, '$BACKUPDIR','',0,0,'running',now(), '$TYPE', 'xtrabackup')"
@@ -301,10 +301,10 @@ function start_backup
 	remote_cmd_nofail $BACKUP_HOSTNAME "rm -rf $BACKUP_LOGFILE"
 	remote_cmd_nofail $BACKUP_HOSTNAME "/bin/sh -c 'echo start_backup >>  $BACKUP_LOGFILE'"
 	if [ -f /usr/bin/s9s_backupc_wd ]; then
-           /usr/bin/s9s_backupc_wd $BACKUP_LOGFILE $BACKUP_HOSTNAME $SSH_USER "$SSH_OPTS" "$SCP_OPTS" "$SUDO" $NETCAT_PORT $BACKUPDIR/$FILENAME   &
+           /usr/bin/s9s_backupc_wd $BACKUP_LOGFILE $BACKUP_HOSTNAME $SSH_USER "$SSH_OPTS2" "$SCP_OPTS" "$SUDO" $NETCAT_PORT $BACKUPDIR/$FILENAME   &
         else
   	   if [ -f /usr/local/cmon/bin/s9s_backupc_wd ]; then
-               /usr/local/cmon/bin/s9s_backupc_wd $BACKUP_LOGFILE $BACKUP_HOSTNAME $SSH_USER "$SSH_OPTS" "$SCP_OPTS" "$SUDO" $NETCAT_PORT $BACKUPDIR/$FILENAME &
+               /usr/local/cmon/bin/s9s_backupc_wd $BACKUP_LOGFILE $BACKUP_HOSTNAME $SSH_USER "$SSH_OPTS2" "$SCP_OPTS" "$SUDO" $NETCAT_PORT $BACKUPDIR/$FILENAME &
 	   else
                echo "s9s_backup_wd not found in /usr/bin/s9s_backupc_wd  or /usr/local/cmon/bin/s9s_backupc_wd " 
 	       log_message "s9s_backupc_wd was not found in /usr/bin/s9s_backupc_wd  or /usr/local/cmon/bin/s9s_backupc_wd " 1 
@@ -312,6 +312,7 @@ function start_backup
            fi 
         fi
         pid="$!"
+	sleep 5
 	if [ "$TYPE" = "full" ]; then   
  	    ssh $SSH_OPTS  $SSH_USER@$BACKUP_HOSTNAME "$SUDO sh -c '$XTRABACKUP_BIN $GALERA_INFO  --ibbackup=xtrabackup_55 --defaults-file=$MYCNF --host=127.0.0.1 --user=$CMON_USER --password=$CMON_PASSWORD $THROTTLE  --stream=tar ./  2>$BACKUP_LOGFILE | gzip  - | nc $STORAGE_HNAME $NETCAT_PORT  '" 
 	    ret=$?
@@ -781,6 +782,7 @@ function load_opts
         SSH_PORT="22"
     fi
     SSH_OPTS="-p$SSH_PORT $SSH_OPTS -n"    
+    SSH_OPTS2="-q -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY -p$SSH_PORT"    
     if [ "$SSH_USER" != "root" ]; then
 	SSH_OPTS="$SSH_OPTS -t"    
     fi
