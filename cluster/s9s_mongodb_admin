@@ -659,31 +659,6 @@ EOF
 
 
 
-
-  ## STOP BALANCER
-  #TYPE="mongos"
-  #MONGOS_LIST=$(get_servers $TYPE)
-  #if [ "$MONGOS_LIST" != "NULL" ]; then
-  #    for r in $MONGOS_LIST
-  #    do	  
-#	  HNAME=`echo $r | awk -F ',' '{print $1};'`
-#	  NODEID=`echo $r | awk -F ',' '{print $2};'`
-#	  PORT=`echo $r | awk -F ',' '{print $3};'`
-#	  LC_ALL=C /usr/bin/mongo $HNAME:$PORT --eval "sh.stopBalancer()"
-#	  if [ $? -ne 0 ]; then 
-#	      log_job_message "Failed to disable balander" 1
-#	      exit 1
-#	  fi
-#	  break
- #     done
-#  else
-#      set_backup_status 'failed' 1
-#      echo "No mongos servers"
-#      exit 1
-#  fi
-  
-
-
   ##  STOP CONFIG SVR
   TYPE="configsvr"
   SERVER_LIST=$(get_servers $TYPE)
@@ -759,16 +734,32 @@ EOF
 	  remote_cmd $RS_HNAME "mkdir -p $BACKUPDIR/$RS_NAME"
 	  mkdir -p $BACKUPDIR/$RS_NAME
 	  echo "Backing up shard server $RS_HNAME"
-	  LC_ALL=C mongodump --journal  -h $RS_HNAME:$RS_PORT -o $BACKUPDIR/$RS_NAME  >> $BACKUP_LOGFILE  2>&1
-	  #ssh $SSH_OPTS $SSH_USER@$RS_HNAME "LC_ALL=C /usr/bin/mongodump --journal --dbpath $RS_DB_PATH --out $BACKUPDIR/$RS_NAME" >> $BACKUP_LOGFILE  2>&1 
-	  #rsync -arv --delete  -e "ssh $SSH_OPTS3"  $SSH_USER@$RS_HNAME:$BACKUPDIR/$RS_NAME $BACKUPDIR/ >> $BACKUP_LOGFILE  2>&1 
+	  LC_ALL=C mongodump --journal  -h $RS_HNAME:$RS_PORT -o $BACKUPDIR/$RS_NAME  >> $BACKUP_LOGFILE  2>&1  &
       done
   else
       set_backup_status 'failed' 1
       log_job_message "No rs servers" 1
       exit 1
   fi
-  
+ 
+
+FAIL=0
+for job in `jobs -p`
+do
+    echo $job
+    wait $job || let "FAIL+=1"
+done
+
+echo $FAIL
+
+if [ "$FAIL" == "0" ];
+then
+  log_job_message "All shards completed backup" 0
+else
+  log_job_message "$FAIL shards failed to complete backup - backup failed" 1
+  log_job "FAILED" "Backup Failed" 1
+fi
+ 
   sleep 10
 
   echo "Unlocking shard server" >> $BACKUP_LOGFILE
@@ -852,7 +843,11 @@ EOF
       set_backup_status 'failed' 1
       exit 1
   fi
-  set_backup_status 'completed' 0
+  if [ $FAIL -eq 0 ]; then
+     set_backup_status 'completed' 0
+  else
+     set_backup_status 'failed' 1 
+  fi
   exit 0
 }
 
