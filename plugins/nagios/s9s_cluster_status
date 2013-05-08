@@ -1,0 +1,211 @@
+#!/bin/bash
+# All files in this package is subject to the GPL v2 license
+# More information is in the COPYING file in the top directory of this package.
+# Copyright (C) 2011 Severalnines
+
+<<<<<<< HEAD
+VERSION=0.3
+
+TEMP=`getopt -o H:,t:,p:,P:,h,v --long host:,type:,password:,port:,help,version -n 's9s_cluster_status' -- "$@"`
+=======
+VERSION=0.2
+# MySQL client
+mysqlbin=`which mysql`
+
+TEMP=`getopt -o H:,p:,P:,h,v --long host:,password:,port:,help,version -n 's9s_cluster_status' -- "$@"`
+>>>>>>> 95800dc0470f355dfae02f155e3a45203ae430a4
+eval set -- "$TEMP"
+
+while true ; do
+  case "$1" in
+    -H|--host) cmon_db_host="$2" ; shift 2 ;;
+    -t|--type) query_type="$2" ; shift 2 ;;
+    -p|--password) cmon_db_password="$2" ; shift 2 ;;
+    -P|--port) cmon_db_port="$2" ; shift 2 ;;
+    -h|--help) help="1" ; shift ;;
+    -v|--version) version="1" ; shift ;;
+    --) shift ; break ;;
+    *) echo "$0: error - unrecognized option $1" 1>&2; exit 1;;
+  esac
+done
+
+printVersion(){
+        echo "Plugin  : Check Database Cluster Status and Alarms (Nagios)"
+        echo "Version : $VERSION"
+        echo "Author  : Severalnines"
+        echo ""
+}
+
+helpMenu(){
+        echo "Usage   : `basename $0` -H [host] -p [cmon_password] [options]"
+        echo ""
+        echo "-H, --host      : ClusterControl/cmon IP address"
+        echo "-p, --password  : DB password for user cmon"
+        echo "-t, --type      : Query type [cluster|alarm] (default: cluster)"
+        echo "-P, --port      : MySQL port for the host (default: 3306)"
+        echo "-h, --help      : Print help"
+        echo ""
+        echo "Example: `basename $0` -H 127.0.0.1 -p 'password' -t cluster"
+        echo ""
+}
+
+if [ ! -z "$version" ]; then
+	printVersion
+	exit 0
+fi
+
+# Help menu
+if [ ! -z "$help" ]; then
+	printVersion
+	helpMenu
+	exit 0
+fi
+
+[ -z $cmon_db_port ] && cmon_db_port=3306
+[ -z $query_type ] && query_type="cluster"
+
+if [ -z "$cmon_db_host" ] || [ -z "$cmon_db_password" ]; then
+	echo ""
+        helpMenu
+	exit 1
+fi
+
+<<<<<<< HEAD
+check_mysqlbin(){
+	mysqlbin=`which mysql`
+	if [ -z "$mysqlbin" ]; then
+		echo "MySQL client not found. Kindly add the MySQL client into PATH or install MySQL client package"
+		echo "or change and specify the full path to the mysql client (in the beginning of this file): "
+		echo "mysqlbin=\`which mysql\`"
+		echo "to:"
+		echo "mysqlbin=/path/to/mysql"
+	        exit 1
+	fi
+	return 0
+}
+
+if [ $query_type == "cluster" ]; then
+
+	# SQL query
+	query='SELECT status FROM cmon.cluster_state WHERE id=1'
+	
+	check_mysqlbin
+	
+	if [ $? -eq 0 ]; then
+		execute_query=`$mysqlbin -h$cmon_db_host -ucmon -p$cmon_db_password -P$cmon_db_port -A -Bse "$query"`
+		if [ ! $execute_query ]; then
+			echo "Failed to query cmon database. The following query failed : $query"
+			echo "Unknown: Cluster status is UNKNOWN"
+			stateid=3
+			exit $stateid
+		else
+			clustate=${execute_query^^}
+		fi
+	fi
+
+	if [ "$clustate" == "STARTED" ]; then
+		echo "OK: Cluster status is STARTED"
+=======
+# SQL query
+query='SELECT status FROM cmon.cluster_state WHERE id=1'
+
+
+if [ ! -z "$mysqlbin" ]; then
+        execute_query=`$mysqlbin -h$cmon_db_host -ucmon -p$cmon_db_password -P$cmon_db_port -A -Bse "$query"`
+	if [ ! $execute_query ]; then
+	        echo "Failed to query cmon database. The following query failed : $query"
+		echo "Unknown: Cluster status is UNKNOWN"
+	        stateid=3
+		exit $stateid
+	else
+		clustate=${execute_query^^}
+	fi
+else
+        echo "MySQL client not found. Kindly add the MySQL client into PATH or install MySQL client package"
+	echo "or change and specify the full path to the mysql client (in the beginning of this file): "
+	echo "mysqlbin=\`which mysql\`"
+	echo "to:"
+	echo "mysqlbin=/path/to/mysql"
+        exit 1
+fi
+
+if [ "$clustate" == "STARTED" ]; then
+        echo "OK: Cluster status is STARTED"
+>>>>>>> 95800dc0470f355dfae02f155e3a45203ae430a4
+        stateid=0
+	elif  [ "$clustate" == "CRITICAL" ] || [ "$clustate" == "FAILURE" ] || [ "$clustate" == "STOPPED" ] || [ "$clustate" == "SHUTTING_DOWN" ]; then
+        echo "Critical: Cluster status is $clustate"
+        stateid=2
+	else
+        echo "Warning: Cluster status is $clustate"
+        stateid=1
+	fi
+
+	exit $stateid
+
+elif [ $query_type == "alarm" ]; then
+
+	# SQL query
+	query='SELECT severity,cmon.hosts.hostname,alarm_name,description,cmon.alarm.report_ts \
+FROM cmon.alarm \
+INNER JOIN cmon.hosts \
+ON cmon.alarm.nodeid=cmon.hosts.id \
+WHERE ignored=0 \
+UNION SELECT severity,cmon.hosts.hostname,alarm_name,description,cmon.alarm_hosts.report_ts \
+FROM cmon.alarm_hosts \
+INNER JOIN cmon.hosts \
+ON cmon.alarm_hosts.hostid=cmon.hosts.id \
+WHERE ignored=0'
+
+	check_mysqlbin
+
+	if [ $? -eq 0 ]; then
+		execute_query=`$mysqlbin -h$cmon_db_host -ucmon -p$cmon_db_password -P$cmon_db_port -A -Bse "$query" | sed "s/'/\'/;s/\t/,/g;s/^//;s/$//;s/\n//g"`
+		if [ ! "$execute_query" ]; then
+			echo "Failed to query cmon database. The following query failed : $query"
+			echo "Unknown: Alarm status is UNKNOWN"
+			stateid=3
+			exit $stateid
+		else
+			INPUT=/tmp/query_result
+			OUTPUT=/tmp/output
+			[ -f $INPUT ] && rm -Rf $INPUT
+			[ -f $OUTPUT ] && rm -Rf $OUTPUT
+			echo "$execute_query" > $INPUT
+			OLDIFS=$IFS
+			IFS=,
+			critical=0; warning=0; i=1
+			while read severity hostname alarm description timestamp
+			do
+				if [ $severity == "CRITICAL" ]; then
+					critical=$(($critical+1))
+				fi
+				if [ $severity == "WARNING" ]; then
+					warning=$(($warning+1))
+				fi
+			full_status=($severity $hostname $alarm)
+			echo -n "${full_status[*]} | " >> $OUTPUT
+			done < $INPUT
+			IFS=$OLDIFS
+
+			if [ $critical != 0 ] && [ $warning != 0 ]; then
+				echo "CRITICAL: $critical alarm(s), WARNING: $warning alarm(s) | $(cat $OUTPUT)"
+				stateid=2
+                        elif [ $critical != 0 ]; then
+                                echo "CRITICAL: $critical alarm(s)"
+				stateid=2
+			elif [ $warning != 0 ]; then
+				echo "WARNING: $warning alarm(s)"
+				stateid=1
+			else
+				echo "OK: No alarms"
+				stateid=0
+			fi
+			exit $stateid
+		fi
+	fi
+
+else
+	echo "Unknown query type. Use following query type: (alarm|cluster)"
+	exit 1
+fi
