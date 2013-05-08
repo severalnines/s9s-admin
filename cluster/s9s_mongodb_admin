@@ -742,24 +742,21 @@ EOF
       exit 1
   fi
  
-
-FAIL=0
-for job in `jobs -p`
-do
-    echo $job
-    wait $job || let "FAIL+=1"
-done
-
-echo $FAIL
-
-if [ "$FAIL" == "0" ];
-then
-  log_job_message "All shards completed backup" 0
-else
-  log_job_message "$FAIL shards failed to complete backup - backup failed" 1
-  log_job "FAILED" "Backup Failed" 1
-fi
- 
+  
+  FAIL=0
+  for job in `jobs -p`
+  do
+      wait $job || let "FAIL+=1"
+  done 
+  
+  if [ "$FAIL" == "0" ];
+  then
+      log_job_message "All shards completed backup" 0
+  else
+      log_job_message "$FAIL shards failed to complete backup - backup failed" 1
+      log_job "FAILED" "Backup Failed" 1
+  fi
+  
   sleep 10
 
   echo "Unlocking shard server" >> $BACKUP_LOGFILE
@@ -866,7 +863,7 @@ case $1 in
     ;;
     *)
     echo "Usage:"
-    echo "bash ./s9s_mongodb_admin <--remove-lockfile|start-cluster|stop-cluster> <options follows>"
+    echo "bash ./s9s_mongodb_admin <--remove-lockfile|start-cluster|stop-cluster|--backup> <options follows>"
     exit 1
     ;;
 esac
