@@ -1,0 +1,869 @@
+#!/bin/bash
+# Copyright 2013 Severalnines AB
+#
+# MODIFY THE BELOW TO SUIT YOU ENV:
+
+
+if [ ! -e /etc/cmon.cnf ] ; then
+    echo "Could not find /etc/cmon.cnf"
+    exit 1
+else
+    source /etc/cmon.cnf
+fi
+CID=$cluster_id
+CMON_USER=cmon
+CMON_PASSWORD=$mysql_password
+CMON_DB_HOST=$mysql_hostname
+CMON_DB_DB=cmon
+MYSQL_BIN=$mysql_basedir/bin//mysql
+MYSQL_BIN2=$mysql_bindir/mysql
+CLUSTER_STATE_TIMEOUT=3600
+START_BALANCER_TIMEOUT=3600
+BACKUP_LOGFILE="/tmp/s9s_mongodb_backup.log"
+JOBID=0
+### NO MODS BELOW UNLESS YOU KNOW WHAT YOU DO:
+
+export LC_ALL=C
+OSUSER=$USER
+
+
+if [ "$OSUSER" != "root" ]; then
+    echo "must be executed as 'root' or with 'sudo'"
+    exit 1
+fi
+
+if ! test -f $MYSQL_BIN; then
+    if ! test -f $MYSQL_BIN2; then
+	echo "Could not find mysql client binary"
+	echo "Change MYSQL_BIN in beginning of the scipt"
+	exit 1
+    fi
+    MYSQL_BIN=$MYSQL_BIN2
+fi
+
+
+function log_job_message
+{    
+    MSG=$1
+    EXIT_CODE=$2
+    if [ -z "$EXIT_CODE" ]; then
+	EXIT_CODE=1
+    fi
+    QUERY="INSERT INTO cmon_job_message(cid, jobid,message,exit_code,report_ts) VALUES($CLUSTER_ID,$JOBID,\"$MSG\",$EXIT_CODE,now())"
+    if [ $JOBID -ne 0 ]; then 
+	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
+    else
+	if [ $EXIT_CODE -ne 0 ]; then
+	    echo "Failed: $MSG"
+	else
+	    echo "$MSG"
+	fi
+	
+    fi
+}
+
+function log_job
+{    
+    STATUS=$1
+    STATUS_TXT=$2
+    EXIT_CODE=$3
+    QUERY="UPDATE cmon_job SET status='$STATUS', status_txt='$STATUS_TXT', exit_code=$EXIT_CODE, report_ts=NOW()  WHERE cid=$CLUSTER_ID AND jobid=$JOBID"
+    if [ $JOBID -ne 0 ]; then 
+	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
+    fi
+}
+
+
+function remote_copy()
+{
+   srcfile=$1
+   desthost=$2
+   destfile=$3
+   printf "%-4s: Copying '%s' " "$desthost" "$srcfile"
+   scp $SSH_OPTS2 $srcfile $SSH_USER@$desthost:$destfile >> $HOME/s9s_deploy.log  2>/dev/null
+   if [ $? -eq 0 ]; then
+      log_job_message "copying file $srcfile --> $desthost:$destfile" 0
+      printf "\033[32m[ok]\033[0m\n"
+      return 0
+   else
+      log_job_message "copying file $srcfile --> $desthost:$destfile" 1
+      log_job 'FAILED' 's9s_haproxy failed' 1
+      printf "\033[31m[failed]\033[0m\n"
+      exit 1
+   fi
+}
+
+function remote_cmd_nofail()
+{
+   desthost=$1
+   xcommand=$2
+   printf "%-4s: Executing '%s'" "$desthost" "$xcommand"
+   ssh $SSH_OPTS $SSH_USER@$desthost "$SUDO $xcommand "  >> $HOME/s9s_deploy.log 2>&1
+   ret=$?
+   printf "\033[32m[ok]\033[0m\n"
+   return $ret
+}
+
+
+
+function remote_cmd_getreply()
+{
+   desthost=$1
+   xcommand=$2
+   x=`ssh $SSH_OPTS $SSH_USER@$desthost "$SUDO $xcommand " 2>&1`
+   echo $x
+}
+
+
+function remote_cmd()
+{
+   desthost=$1
+   xcommand=$2
+   MAX_RETRIES=1
+   printf "%-4s: Executing '%s' " "$desthost" "$xcommand"
+   retry=0
+   while [ $retry -lt $MAX_RETRIES ]; 
+   do
+      x=`ssh $SSH_OPTS $SSH_USER@$desthost "$SUDO $xcommand " 2>&1  >> $HOME/s9s_deploy.log`
+      if [ $? -eq 0 ]; then
+        printf "\033[32m[ok]\033[0m\n"
+        return 0
+      fi
+      retry=`expr $retry + 1`
+      printf "\033[31m[failed: retrying ${retry}/${MAX_RETRIES}]\033[0m\n"
+      ssh $SSH_OPTS $SSH_USER@$desthost " sync " 2>&1  >> $HOME/s9s_deploy.log
+      sleep 1
+   done
+   
+   printf "\033[31m[failed]\033[0m\n"
+   echo $x
+   echo 'The following command failed:'
+   echo "ssh $SSH_OPTS $SSH_USER@$desthost \" $xcommand \""
+   echo 'Try running the command on the line above again, contact http://support.severalnines.com/ticket/new, attach the output from deploy.sh and the error from running the command to the Support issue.'
+   exit 1
+}
+
+function load_opts 
+{
+    local CLUSTER_ID=$1
+    echo "load opts $CLUSTER_ID"
+    OS=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='OS' AND cid=$CLUSTER_ID"`
+    SSH_IDENTITY=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_IDENTITY' AND cid=$CLUSTER_ID"`
+    SSH_USER=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_USER' AND cid=$CLUSTER_ID"`
+    SSH_OPTS2=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_OPTS' AND cid=$CLUSTER_ID"`
+    SUDO=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SUDO' AND cid=$CLUSTER_ID"`
+    BACKUPDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='BACKUPDIR' AND cid=$CLUSTER_ID"`
+    OS_USER_HOME=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='OS_USER_HOME' AND cid=$CLUSTER_ID"`
+    SSH_OPTS="$SSH_OPTS2 -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10"
+    if [ "$SSH_IDENTITY" = "" ]; then
+	SSH_IDENTITY="-oIdentityFile=${OS_USER_HOME}/.ssh/id_rsa"
+    else
+        SSH_IDENTITY="-oIdentityFile=$SSH_IDENTITY"
+    fi
+    SSH_OPTS="$SSH_OPTS2 -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY"
+    SSH_OPTS3="-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY"
+    if [ "$SSH_USER" != "root" ]; then
+	SSH_OPTS="$SSH_OPTS2 -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY"
+        SSH_OPTS3="-qt -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY"
+	if [ "$SUDO" = "" ] || [ "$SUDO" = "NULL" ];  then
+           SUDO=sudo
+        fi
+    fi
+    if [ "$BACKUPDIR" = "" ]; then
+        BACKUPDIR="$HOME/backups/"
+    fi
+
+}
+
+function remove_lockfile
+{        
+    args=`getopt h:t:i: $*`
+    set -- $args
+    for i
+    do
+	case "$i" in
+            -h)
+		HOSTNAME="$2"; shift;
+		shift;;
+	    -t)
+		TYPE="$2"; shift;
+		shift;;
+	    -i)
+		CLUSTER_ID="$2"; shift;
+		shift;;
+            --)
+		shift; break;;
+	esac
+    done    
+
+  case $TYPE in 
+      configsvr)
+	  ;;      
+      shardsvr)
+	  ;;
+      *)
+	  echo "s9s_mongodb_admin --remove-lockfile -i <cluster id> -h <hostname> -t <configsvr|shardsvr>"
+	  exit 1
+  esac
+  
+  if [ -z "$TYPE" ]; then
+      echo "s9s_mongodb_admin --remove-lockfile -i <cluster id> -h <hostname> -t <configsvr|shardsvr>"
+      exit 1
+  fi
+
+  if [ -z "$CLUSTER_ID" ]; then
+      echo "s9s_mongodb_admin --remove-lockfile -i <cluster id> -h <hostname> -t <configsvr|shardsvr>"
+      exit 1
+  fi
+
+  if [ -z "$HOSTNAME" ]; then
+      echo "s9s_mongodb_admin --remove-lockfile -i <cluster id> -h <hostname> -t <configsvr|shardsvr>"
+      exit 1
+  fi
+  
+  load_opts $CLUSTER_ID
+
+  QUERY="select dbpath from mongodb_server m, hosts h,mongodb_nodetype_map n  where h.id=m.serverid and m.cid=1 and (h.hostname='$HOSTNAME' or h.ip='$HOSTNAME') and m.node_type=n.id and n.name='$TYPE'"
+  
+  DBPATH=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"`
+
+  if [ -z "$DBPATH" ]; then
+      echo "No 'dbpath' found for $HOSTNAME, type $TYPE"
+      exit 1
+  fi
+  
+  echo "Are you sure you want to remove the lockfile $DBPATH/mongod.lock? Enter YES to remove it."
+  read ANSWER
+
+  if [ "$ANSWER" = "YES" ]; then
+      remote_cmd $HOSTNAME "rm -f $DBPATH/mongod.lock"
+  else
+      echo "$ANSWER was pressed ($ANSWER != YES ), not removing file"
+      exit 0
+  fi    
+}
+
+
+function start_node
+{
+    local xHNAME=$1
+    local xNODEID=$2    
+    local cmdline=$(get_field $xNODEID "cmdline")
+    local pidfile=$(get_field $xNODEID "pidfilepath")
+    remote_cmd_nofail $xHNAME "sh -c '$cmdline'"
+    set_nodestate $xNODEID 3	    
+}
+
+
+function stop_node
+{
+    local xHNAME=$1
+    local xNODEID=$2    
+    local cmdline=$(get_field $xNODEID "cmdline")
+    local pidfile=$(get_field $xNODEID "pidfilepath")
+    PID=$(remote_cmd_getreply $xHNAME "cat $pidfile")
+    if [ -n "$PID" ]; then
+	remote_cmd_nofail $xHNAME "kill -15 $PID"
+    fi
+    remote_cmd_nofail $xHNAME "pkill -15 -f \"${cmdline}.*\""
+    max_retries=60
+    retry=0
+    while [ $retry -lt $max_retries  ];
+    do
+	STATE=$(check_node_up $xHNAME $xNODEID)
+	if [ "$STATE" = "DOWN" ]; then
+	    set_nodestate $xNODEID 12
+	    return
+	else
+	    retry=`expr $retry + 1`		  		  
+	fi
+	sleep 1
+    done
+    echo "failed to stop node $cmdline"
+    exit 1
+}
+
+
+function set_nodestate
+{
+    NODEID=$1
+    STATE=$2
+    QUERY="UPDATE mongodb_server SET status=$STATE WHERE cid=$CLUSTER_ID AND nodeid=$NODEID"  
+    `$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=127.0.0.1 --port=$CMON_DB_PORT --auto-vertical-output -Bse "$QUERY"`
+    if [ $? -ne 0 ]; then
+	echo "setting state failed"
+	exit 1
+    fi
+}
+
+
+function get_field
+{
+    NODEID=$1
+    FIELD=$2
+    QUERY="SELECT $FIELD FROM mongodb_server WHERE cid=$CLUSTER_ID AND nodeid=$NODEID"  
+    DATA=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=127.0.0.1 --port=$CMON_DB_PORT -N -Bse "$QUERY"`
+    if [ $? -ne 0 ]; then
+	echo "getting field failed"
+	exit 1
+    fi
+    echo "$DATA"
+}
+
+
+
+function check_node_up
+{
+    local xHNAME=$1
+    local xNODEID=$2    
+    local cmdline=$(get_field $xNODEID "cmdline")
+    local pidfile=$(get_field $xNODEID "pidfilepath")
+    PID=$(remote_cmd_getreply $xHNAME "pgrep \"${cmdline}\"")
+    if [ -n "$PID" ]; then
+	echo "UP"
+	return
+    fi
+    echo "DOWN"
+}
+
+function get_cluster_state
+{
+    local QUERY="SELECT status FROM cluster_state WHERE id=$CLUSTER_ID"
+    local STATE=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=127.0.0.1 --port=$CMON_DB_PORT -N -Bse "$QUERY"`   
+    if [ $? -ne 0 ]; then
+	echo "getting server list failed"
+	exit 1
+    fi
+    echo "$STATE"
+}
+
+function wait_for_cluster_state
+{
+    local STATE=$1
+    retry=0
+    while [ $retry -lt $CLUSTER_STATE_TIMEOUT ];
+    do
+	XSTATE=$(get_cluster_state)
+	if [ "$STATE" = "$XSTATE" ]; then
+	    echo $XSTATE
+	    return 0
+	fi
+	retry=`expr $retry + 1`
+	sleep 1
+    done
+    echo "Failed to reach cluster state $STATE - timed out after $CLUSTER_STATE_TIMEOUT (CLUSTER_STATE_TIMEOUT)"
+    exit 1
+}
+
+
+function get_servers
+{
+    local TYPE=$1
+    local QUERY="select group_concat(concat(m.hostname, ',', m.nodeid, ',', m.port) SEPARATOR ' ') from mongodb_server m,mongodb_nodetype_map n WHERE m.cid=$CLUSTER_ID  and m.node_type=n.id and n.name='$TYPE' and (m.status=1 or m.status=2)"
+    local SERVER_LIST=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=127.0.0.1 --port=$CMON_DB_PORT -N -Bse "$QUERY"`   
+    if [ $? -ne 0 ]; then
+	echo "getting server list failed"
+	exit 1
+    fi
+    echo "$SERVER_LIST"
+}
+
+function get_servers_in_state
+{
+    local TYPE=$1
+    local STATE=$2
+    local QUERY="select group_concat(concat(m.hostname, ',', m.nodeid, ',', m.port) SEPARATOR ' ') from mongodb_server m,mongodb_nodetype_map n WHERE m.cid=$CLUSTER_ID  and m.node_type=n.id and n.name='$TYPE' and m.status in ($STATE)"
+    local SERVER_LIST=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=127.0.0.1 --port=$CMON_DB_PORT -N -Bse "$QUERY"`   
+    if [ $? -ne 0 ]; then
+	echo "getting server list failed"
+	exit 1
+    fi
+    echo "$SERVER_LIST"
+}
+
+function get_count_up
+{
+    local QUERY="select count(nodeid) from mongodb_server m WHERE m.cid=$CLUSTER_ID  and (m.status=1 or m.status=2)"
+    local CNT=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=127.0.0.1 --port=$CMON_DB_PORT -N -Bse "$QUERY"`   
+    if [ $? -ne 0 ]; then
+	echo "getting server list failed"
+	exit 1
+    fi
+    echo "$CNT"
+}
+
+function get_count_all
+{
+    local QUERY="select count(nodeid) from mongodb_server m WHERE m.cid=$CLUSTER_ID"
+    local CNT=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=127.0.0.1 --port=$CMON_DB_PORT -N -Bse "$QUERY"`   
+    if [ $? -ne 0 ]; then
+	echo "getting server list failed"
+	exit 1
+    fi
+    echo "$CNT"
+}
+
+
+function get_rs_victims
+{
+    local QUERY="select group_concat(concat(hostname, ',', nodeid, ',', port, ',', rs_name, ',', dbpath) SEPARATOR ' ') from (select m.hostname, m.nodeid, m.port, m.rs_name, m.dbpath from mongodb_server m,mongodb_nodetype_map n WHERE m.cid=$CLUSTER_ID and m.node_type=n.id and n.name='shardsvr' and m.status=2 group by rs_name) t"  
+    local RS_SERVER_LIST=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=127.0.0.1 --port=$CMON_DB_PORT -N -Bse "$QUERY"`   
+    if [ $? -ne 0 ]; then
+	echo "getting server list failed"
+	exit 1
+    fi
+    echo "$RS_SERVER_LIST"
+}
+
+function get_configsvr
+{
+    local QUERY="select group_concat(concat(m.hostname, ',', m.nodeid,',', m.port) SEPARATOR ' ') from mongodb_server m,mongodb_nodetype_map n WHERE m.cid=$CLUSTER_ID  and m.node_type=n.id and n.name='configsvr' and m.status=1 LIMIT 1"  
+    local CFG_SERVER_LIST=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=127.0.0.1 --port=$CMON_DB_PORT -N -Bse "$QUERY"`   
+    if [ $? -ne 0 ]; then
+	echo "getting server list failed"
+	exit 1
+    fi
+    echo "$CFG_SERVER_LIST"
+}
+
+
+function stop_cluster
+{        
+    args=`getopt i: $*`
+    set -- $args
+    for i
+    do
+	case "$i" in
+	    -i)
+		CLUSTER_ID="$2"; shift;
+		shift;;
+            --)
+		shift; break;;
+	esac
+    done    
+
+
+  if [ -z "$CLUSTER_ID" ]; then
+      echo "s9s_mongodb_admin --stop-cluster -i <cluster id>"
+      exit 1
+  fi
+
+
+  echo $CLUSTER_ID
+  load_opts $CLUSTER_ID
+  
+  echo "Are you sure you want to stop the cluster? Enter YES to stop the cluster."
+  read ANSWER
+
+  if [ "$ANSWER" != "YES" ]; then
+      echo "$ANSWER was pressed ($ANSWER != YES ), not removing file"
+      exit 0
+  fi    
+  
+
+  TYPE="mongos"
+  SERVER_LIST=$(get_servers $TYPE)
+  if [ "$SERVER_LIST" != "NULL" ]; then
+      for r in $SERVER_LIST
+      do
+	  HNAME=`echo $r | awk -F ',' '{print $1};'`
+	  NODEID=`echo $r | awk -F ',' '{print $2};'`
+	  stop_node $HNAME $NODEID
+      done
+  fi
+
+  TYPE="configsvr"
+  SERVER_LIST=$(get_servers $TYPE)
+  if [ "$SERVER_LIST" != "NULL" ]; then
+      for r in $SERVER_LIST
+      do
+	  HNAME=`echo $r | awk -F ',' '{print $1};'`
+	  NODEID=`echo $r | awk -F ',' '{print $2};'`
+	  stop_node $HNAME $NODEID	  
+      done
+  fi
+
+  TYPE="shardsvr"
+  SERVER_LIST=$(get_servers $TYPE)
+  if [ "$SERVER_LIST" != "NULL" ]; then
+      for r in $SERVER_LIST
+      do
+	  HNAME=`echo $r | awk -F ',' '{print $1};'`
+	  NODEID=`echo $r | awk -F ',' '{print $2};'`
+	  stop_node $HNAME $NODEID
+      done
+  fi
+}
+
+
+
+function start_cluster
+{        
+    args=`getopt i: $*`
+    set -- $args
+    for i
+    do
+	case "$i" in
+	    -i)
+		CLUSTER_ID="$2"; shift;
+		shift;;
+            --)
+		shift; break;;
+	esac
+    done    
+
+
+  if [ -z "$CLUSTER_ID" ]; then
+      echo "s9s_mongodb_admin --start-cluster -i <cluster id>"
+      exit 1
+  fi
+
+
+  echo $CLUSTER_ID
+  load_opts $CLUSTER_ID
+  
+  echo "Are you sure you want to start the cluster? Enter YES to start the cluster."
+  read ANSWER
+
+  if [ "$ANSWER" != "YES" ]; then
+      echo "$ANSWER was pressed ($ANSWER != YES ), not removing file"
+      exit 0
+  fi    
+  
+  TYPE="shardsvr"
+  SERVER_LIST=$(get_servers_in_state $TYPE "8,11,12")
+  if [ "$SERVER_LIST" != "NULL" ]; then
+      for r in $SERVER_LIST
+      do
+	  HNAME=`echo $r | awk -F ',' '{print $1};'`
+	  NODEID=`echo $r | awk -F ',' '{print $2};'`
+	  start_node $HNAME $NODEID
+      done
+  fi
+
+  TYPE="configsvr"
+  SERVER_LIST=$(get_servers_in_state $TYPE "8,11,12")
+  if [ "$SERVER_LIST" != "NULL" ]; then
+      for r in $SERVER_LIST
+      do
+	  HNAME=`echo $r | awk -F ',' '{print $1};'`
+	  NODEID=`echo $r | awk -F ',' '{print $2};'`
+	  start_node $HNAME $NODEID
+      done
+  fi
+  TYPE="mongos"
+  SERVER_LIST=$(get_servers_in_state $TYPE "8,11,12")
+  if [ "$SERVER_LIST" != "NULL" ]; then
+      for r in $SERVER_LIST
+      do
+	  HNAME=`echo $r | awk -F ',' '{print $1};'`
+	  NODEID=`echo $r | awk -F ',' '{print $2};'`
+	  start_node $HNAME $NODEID
+      done
+  fi
+
+
+}
+
+function set_backup_status
+{
+    local status=$1
+    local error=$2
+    cat $BACKUP_LOGFILE | sed  -e "s/'/\\\'/g" -e 's/"/\\"/g' > /tmp/s9s_mongodb_backup_log_escaped
+    LOG_CONTENT=`cat /tmp/s9s_mongodb_backup_log_escaped`
+    QUERY="UPDATE mongodb_backup SET status='$status', error=$error, logfile='$LOG_CONTENT' WHERE backupid=$BACKUP_ID and cid=$CLUSTER_ID"
+    $MYSQL_BIN --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"
+   SIZE=`stat --printf='%s' /tmp/s9s_mongodb_backup_log_escaped`
+   CC_NAME=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$CMON_DB_PORT -e "SHOW GLOBAL VARIABLES LIKE 'hostname'" | awk '{print $2;}'`
+   QUERY="REPLACE INTO cmon_host_log(cid, hostname, filename, result_len, result, report_ts,description, tag) VALUES ($CID,'$CC_NAME', '$BACKUP_LOGFILE', $SIZE, \"$LOG_CONTENT\", NOW(), '$BACKUP_LOGFILE', 's9s_mongodb_backup')"
+   $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
+
+}
+
+function backup_cluster
+{        
+    args=`getopt i:b:j: $*`
+    set -- $args
+    for i
+    do
+	case "$i" in
+	    -i)
+		CLUSTER_ID="$2"; shift;
+		shift;;
+	    -j)
+		JOBID="$2"; shift;
+		shift;;
+	    -b)
+		XBACKUPDIR="$2"; shift;
+		shift;;
+            --)
+		shift; break;;
+	esac
+    done    
+
+
+  if [ -z "$CLUSTER_ID" ]; then
+      echo "s9s_mongodb_admin --backup -i <cluster id>"
+      exit 1
+  fi
+
+
+  echo $CLUSTER_ID
+  load_opts $CLUSTER_ID
+
+  if [ -n "$XBACKUPDIR" ]; then
+      BACKUPDIR=$XBACKUPDIR;
+  fi
+  echo $BACKUPDIR
+  
+
+  echo "starting mongodb shard backup" > $BACKUP_LOGFILE
+
+  cat << 'EOF' > /tmp/startBalancer.js
+   db=db.getMongo().getDB("config"); 
+   db.settings.update( { _id: "balancer" }, { $set : { stopped: false } } , true );
+EOF
+
+  cat << 'EOF' > /tmp/stopBalancer.js
+   db=db.getMongo().getDB("config"); 
+   db.settings.update( { _id: "balancer" }, { $set : { stopped: true } } , true );
+EOF
+
+  cat << 'EOF' > /tmp/lock.js
+   db.fsyncLock();
+EOF
+
+  cat << 'EOF' > /tmp/unlock.js
+   db.fsyncUnlock();
+EOF
+ 
+  CNT_UP=$(get_count_up)
+  CNT_ALL=$(get_count_all)
+  if [ $CNT_UP -ne $CNT_ALL ]; then
+      echo "All servers are not started - refusing to start backup."
+      exit 1
+  fi
+  BACKUP_ID=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select ifnull(max(backupid)+1,1) from mongodb_backup"`
+  
+
+  QUERY="UPDATE mongodb_backup SET status='failed', error=1 WHERE status='running'"
+  $MYSQL_BIN --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"
+ 
+  QUERY="INSERT INTO mongodb_backup(backupid, cid, directory, error, status, report_ts, backup_type, backup_method, logfile) VALUES($BACKUP_ID, $CID, '$BACKUPDIR','','running',now(), 'full', 'mongodump','')"
+  
+  $MYSQL_BIN --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"
+  if [ $? -ne 0 ]; then
+      echo "Failed to create backup record"
+      exit 1
+  fi
+
+
+
+  ##  STOP CONFIG SVR
+  TYPE="configsvr"
+  SERVER_LIST=$(get_servers $TYPE)
+  if [ "$SERVER_LIST" != "NULL" ]; then
+      for r in $SERVER_LIST
+      do	  
+	  CONFIG_SVR_HNAME=`echo $r | awk -F ',' '{print $1};'`
+	  CONFIG_SVR_NODEID=`echo $r | awk -F ',' '{print $2};'`
+	  stop_node $CONFIG_SVR_HNAME $CONFIG_SVR_NODEID	 
+	  break
+      done
+  else
+      set_backup_status 'failed' 1
+      echo "No cfg  servers"
+      exit 1
+  fi
+
+  TYPE="shardsvr"
+  RS_VICTIM_LIST=$(get_rs_victims $TYPE)
+  if [ "$RS_VICTIM_LIST" != "NULL" ]; then
+      for r in $RS_VICTIM_LIST
+      do	 
+	  RS_HNAME=`echo $r | awk -F ',' '{print $1};'`
+	  RS_NODEID=`echo $r | awk -F ',' '{print $2};'`
+	  RS_PORT=`echo $r | awk -F ',' '{print $3};'`
+          echo "Locking shard server $RS_HNAME"
+	  #stop_node $RS_HNAME $RS_NODEID	 
+	    echo "LC_ALL=C /usr/bin/mongo $RS_HNAME:$RS_PORT"
+              LC_ALL=C /usr/bin/mongo $RS_HNAME:$RS_PORT /tmp/lock.js >> $BACKUP_LOGFILE  2>&1
+              if [ $? -ne 0 ];  then
+                  echo "Failed to lock shard server" >> $BACKUP_LOGFILE
+                  log_job_message "Failed to lock shard  $RS_HNAME:$PORT" 1
+                  set_backup_status 'failed' 1
+                  exit 1
+              fi
+      done
+  else
+      echo "No rs servers"
+      set_backup_status 'failed' 1
+      exit 1
+  fi
+  curr_time=`date +%Y-%m-%d-%H-%M-%S`;
+  
+  BACKUPDIR=$BACKUPDIR/$curr_time
+
+  TYPE="configsvr"
+  CFG_VICTIM_LIST=$(get_configsvr $TYPE)
+  if [ "$CFG_VICTIM_LIST" != "NULL" ]; then
+      for r in $CFG_VICTIM_LIST
+      do	  
+	  CFG_HNAME=`echo $r | awk -F ',' '{print $1};'`
+	  CFG_NODEID=`echo $r | awk -F ',' '{print $2};'`
+	  CFG_PORT=`echo $r | awk -F ',' '{print $3};'`
+	  log_job_message "Backing up config server $CFG_HNAME:$CFG_PORT" 0
+	  mkdir -p $BACKUPDIR/config/
+	  LC_ALL=C mongodump --journal --db config -h $CFG_HNAME:$CFG_PORT -o $BACKUPDIR  >> $BACKUP_LOGFILE  2>&1
+	  break
+      done
+  else
+      set_backup_status 'failed' 1
+      log_job_message "No cfg server to dump from" 1
+      exit 1
+  fi
+
+  if [ "$RS_VICTIM_LIST" != "NULL" ]; then
+      for r in $RS_VICTIM_LIST
+      do	  
+	  RS_HNAME=`echo $r | awk -F ',' '{print $1};'`
+	  RS_NODEID=`echo $r | awk -F ',' '{print $2};'`
+	  RS_PORT=`echo $r | awk -F ',' '{print $3};'`
+	  RS_NAME=`echo $r | awk -F ',' '{print $4};'`
+	  RS_DB_PATH=`echo $r | awk -F ',' '{print $5};'`
+	  remote_cmd $RS_HNAME "mkdir -p $BACKUPDIR/$RS_NAME"
+	  mkdir -p $BACKUPDIR/$RS_NAME
+	  echo "Backing up shard server $RS_HNAME"
+	  LC_ALL=C mongodump --journal  -h $RS_HNAME:$RS_PORT -o $BACKUPDIR/$RS_NAME  >> $BACKUP_LOGFILE  2>&1  &
+      done
+  else
+      set_backup_status 'failed' 1
+      log_job_message "No rs servers" 1
+      exit 1
+  fi
+ 
+  
+  FAIL=0
+  for job in `jobs -p`
+  do
+      wait $job || let "FAIL+=1"
+  done 
+  
+  if [ "$FAIL" == "0" ];
+  then
+      log_job_message "All shards completed backup" 0
+  else
+      log_job_message "$FAIL shards failed to complete backup - backup failed" 1
+      log_job "FAILED" "Backup Failed" 1
+  fi
+  
+  sleep 10
+
+  echo "Unlocking shard server" >> $BACKUP_LOGFILE
+  
+  if [ "$RS_VICTIM_LIST" != "NULL" ]; then
+      for r in $RS_VICTIM_LIST
+      do	  
+	  RS_HNAME=`echo $r | awk -F ',' '{print $1};'`
+	  RS_NODEID=`echo $r | awk -F ',' '{print $2};'`
+	  RS_PORT=`echo $r | awk -F ',' '{print $3};'`
+    	   echo "Unlocking shard server $RS_HNAME"
+          #stop_node $RS_HNAME $RS_NODEID
+              LC_ALL=C /usr/bin/mongo $RS_HNAME:$RS_PORT /tmp/unlock.js >> $BACKUP_LOGFILE  2>&1
+              if [ $? -ne 0 ];  then
+                  echo "Failed to unlock shard server" >> $BACKUP_LOGFILE
+                  log_job_message "Failed to unlock shard  $RS_HNAME:$PORT" 1
+                  set_backup_status 'failed' 1
+                  exit 1
+              fi
+	 # start_node $RS_HNAME $RS_NODEID	 
+      done
+  else
+      set_backup_status 'failed' 1
+      exit 1
+  fi
+  echo "Starting config server" >> $BACKUP_LOGFILE
+  
+  ##  START CONFIG SVR
+  start_node $CONFIG_SVR_HNAME $CONFIG_SVR_NODEID	 
+
+  ## WAIT FOR CLUSTER TO BECOME STARTED"
+  echo "Waiting for cluster to become STARTED" >> $BACKUP_LOGFILE
+  wait_for_cluster_state "STARTED"
+  sleep 30
+  ## START BALANCER
+  echo "Starting balancer" >> $BACKUP_LOGFILE
+  TYPE="mongos"
+  OK=0
+  MONGOS_LIST=$(get_servers $TYPE)
+  if [ "$MONGOS_LIST" != "NULL" ]; then
+      for r in $MONGOS_LIST
+      do	  
+	  HNAME=`echo $r | awk -F ',' '{print $1};'`
+	  NODEID=`echo $r | awk -F ',' '{print $2};'`
+	  PORT=`echo $r | awk -F ',' '{print $3};'`
+	  while [ $retry -lt $START_BALANCER_TIMEOUT ]; 
+	  do
+	      LC_ALL=C /usr/bin/mongo $HNAME:$PORT /tmp/startBalancer.js >> $BACKUP_LOGFILE  2>&1 
+	      if [ $? -ne 0 ];  then
+		  echo "Failed to start balancer" >> $BACKUP_LOGFILE
+		  log_job_message "Failed to start balancer (1) - could not connect to mongos  $HNAME:$PORT" 1
+		  set_backup_status 'failed' 1
+		  exit 1
+	      fi
+	      sleep 1
+	      BAL_STATE=`/usr/bin/mongo $HNAME:$PORT --quiet --eval "sh.getBalancerState()"`
+	      if [ $? -ne 0 ];  then
+		  echo "Failed to start balancer" >> $BACKUP_LOGFILE
+		  log_job_message "Failed to start balancer (2) - could not connect to mongos  $HNAME:$PORT" 1
+		  set_backup_status 'failed' 1
+		  exit 1
+	      fi
+	      if [ "$BAL_STATE" = "true" ]; then
+		  echo "Started balancer" >> $BACKUP_LOGFILE
+		  log_job_message "Balancer started" 0
+		  OK=1
+		  break
+	      else
+		  retry=`expr $retry + 1`
+	      fi
+	  done	  
+	  break
+      done
+      if [ $OK -eq 0 ]; then
+	  log_job_message "Failed to start balancer" 1
+	  set_backup_status 'failed' 1
+	  exit 1
+      fi
+  else
+      log_job_message "No mongos servers" 1
+      set_backup_status 'failed' 1
+      exit 1
+  fi
+  if [ $FAIL -eq 0 ]; then
+     set_backup_status 'completed' 0
+  else
+     set_backup_status 'failed' 1 
+  fi
+  exit 0
+}
+
+case $1 in
+    --remove-lockfile)
+	remove_lockfile $2 $3 $4 $5 $6 $7
+    ;;
+    --stop-cluster)
+	stop_cluster $2 $3 $4 $5 $6 $7
+    ;;
+    --start-cluster)
+	start_cluster $2 $3 $4 $5 $6 $7
+    ;;
+    --backup)
+	backup_cluster $2 $3 $4 $5 $6 $7
+    ;;
+    *)
+    echo "Usage:"
+    echo "bash ./s9s_mongodb_admin <--remove-lockfile|start-cluster|stop-cluster|--backup> <options follows>"
+    exit 1
+    ;;
+esac

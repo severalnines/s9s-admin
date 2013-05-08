@@ -1,0 +1,17 @@
+** s9s_backupc  - centralized backup, backups are stored on the controller, as opposed to on the nodes (which is the case with s9s_backup).
+Examples:
+* Full back up of 192.168.56.103 and storing the backup in /home/johan/backups/ 
+ sudo s9s_backupc  --backup -h 192.168.56.103 -b /home/johan/backups/ -t full
+The final backup will be stored in  /home/johan/backups/192.168.56.103/full
+
+* Incremental back up of 192.168.56.103 and storing the backup in /home/johan/backups/ 
+ sudo s9s_backupc  --backup -h 192.168.56.103 -b /home/johan/backups/ -t incr
+The final backup will be stored in  /home/johan/backups/192.168.56.103/incr
+
+* List backups and backup sets:
+sudo s9s_backupc --list -i <clusterid>
+
+* Restore:
+sudo s9s_backupc --restore -i <clusterid> -b 36  -t /home/johan/restore
+This will combine all backup files in backup set 36.
+

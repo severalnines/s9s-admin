@@ -1,0 +1,54 @@
+#!/bin/bash
+
+BACKUP_LOGFILE=$1
+BACKUP_HOSTNAME=$2
+SSH_USER=$3
+SSH_OPTS=$4
+SCP_OPTS=$5
+SUDO=$6
+NETCAT_PORT=$7
+BACKUPFILE=$8
+SLEEPTIME=10
+TIMEOUT=10800
+TOTAL_TIME=0
+searchexpr="innobackupex: Error: "
+#give xtrabackup a chance to start
+nc -d -l $NETCAT_PORT > $BACKUPFILE &
+ret=$?
+pid=$!
+
+if [ $ret -ne 0 ]; then
+   echo "Failed to start netcat"
+   exit 1
+fi
+echo $SSH_OPTS
+sleep 60
+
+while [ 1 ]; 
+do
+    x=`ssh $SSH_OPTS $SSH_USER@$BACKUP_HOSTNAME "pgrep -f innobackupex" `
+    ret=$?
+    echo "s9s_backupc_wd:  $x " >> $BACKUP_LOGFILE
+   #if [ $ret -eq 0 ]; 
+    if [ -n "$x" ]; 
+    then
+	scp -q $SCP_OPTS $SSH_USER@$BACKUP_HOSTNAME:$BACKUP_LOGFILE $BACKUP_LOGFILE
+	err=`grep "$searchexpr" $BACKUP_LOGFILE`
+	if [ -n "$err" ]; then
+            sleep $SLEEPTIME
+            ssh $SSH_OPTS $SSH_USER@$BACKUP_HOSTNAME "$SUDO killall -q -9 xtrabackup innobackupex xtrabackup_55 xtrabackup_56"
+            echo "BACKUP FAILED: $err " >> $BACKUP_LOGFILE
+	    kill -9 $pid 2>/dev/null
+            exit 1
+      fi
+    else
+	kill -9 $pid 2>/dev/null
+	exit 0
+    fi
+    TOTAL_TIME=`expr $TOTAL_TIME + 5`
+    sleep 5
+    if [ $TOTAL_TIME -gt $TIMEOUT ]; then
+	kill -9 $pid 2>/dev/null
+	exit 1
+    fi 
+done

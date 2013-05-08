@@ -65,7 +65,11 @@ function remote_cmd_getreply()
 {
    desthost=$1
    xcommand=$2
-   x=`ssh -q $SSH_OPTS $SSH_USER@$desthost "$SUDO $xcommand 2>/dev/null"`
+   x=`ssh -q $SSH_OPTS $SSH_USER@$desthost "$SUDO $xcommand"`
+   if [ $? -ne 0 ]; then
+       echo "Command failed: ssh -q $SSH_OPTS $SSH_USER@$desthost \"$SUDO $xcommand\""
+       exit 1
+   fi
    x=`echo $x | grep -v "password"`
    echo $x
 }
@@ -111,6 +115,7 @@ function remote_cmd_nofail()
    xcommand=$2
    printf "%-4s: Executing '%s'" "$desthost" "$xcommand"
    ssh -q $SSH_OPTS $SSH_USER@$desthost "$SUDO $xcommand "  >> $HOME/s9s_deploy.log 2>&1
+#   echo "   ssh -q $SSH_OPTS $SSH_USER@$desthost "
    ret=$?
    printf "\033[32m[ok]\033[0m\n"
    return $ret
@@ -222,8 +227,8 @@ function load_opts
     MYSQL_SCRIPTDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SCRIPTDIR' AND cid=$CLUSTER_ID" 2>/dev/null`
     SSH_IDENTITY=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_IDENTITY' AND cid=$CLUSTER_ID" 2>/dev/null`
     SSH_USER=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_USER' AND cid=$CLUSTER_ID" 2>/dev/null`
-    SUDO=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SUDO' AND cid=$CLUSTER_ID" 2>/dev/null`
-    
+    SSH_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_PORT' AND cid=$CLUSTER_ID" 2>/dev/null`
+    SUDO=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SUDO' AND cid=$CLUSTER_ID" 2>/dev/null`    
     OS_USER_HOME=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='OS_USER_HOME' AND cid=$CLUSTER_ID" 2>/dev/null`
     DATADIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon.cluster_config where variable='datadir' and cid=1 order by id asc limit 1" 2>/dev/null`
     MYCNF=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select data  from cmon.cluster_configuration where cid=1 limit 1" 2>/dev/null`
@@ -236,6 +241,7 @@ function load_opts
     else
 	SSH_IDENTITY="-oIdentityFile=$SSH_IDENTITY"
     fi
+
     SSH_OPTS="-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY"
     if [ "$SSH_USER" != "root" ]; then
 	SSH_OPTS="-t -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY"
@@ -243,6 +249,10 @@ function load_opts
            SUDO=sudo
         fi
     fi
+    if [ "$SSH_PORT" = "" ] || [ "$SSH_PORT" = "NULL" ];  then
+        SSH_PORT="22"
+    fi
+    SSH_OPTS="-p$SSH_PORT $SSH_OPTS"    
 }
 
 function install_mysql
@@ -375,6 +385,7 @@ function stop_cluster
 	    stop_node_int $HNAME $NODEID
 	done
     fi
+    set_clusterstate "STOPPED"
 }
 
 
@@ -530,8 +541,9 @@ function start_node_int
 function check_node_up
 {
     local xHNAME=$1
-    local xNODEID=$2
-    PID=$(remote_cmd_getreply $xHNAME "pgrep mysqld")
+    local xNODEID=$2   
+    PID=`ssh $SSH_OPTS $SSH_USER@$xHNAME "pgrep -f mysqld" 2>/dev/null`
+#    PID=$(remote_cmd_getreply $xHNAME "pgrep -f mysqld")    
     if [ -n "$PID" ]; then
         echo "UP"
         return
@@ -594,7 +606,7 @@ function get_galera_provider_options
     local xHNAME=$1
     local xNODEID=$2
     QUERY="SHOW GLOBAL VARIABLES LIKE 'wsrep_provider_options'"
-    STATE=$($MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$xHNAME --port=$CMON_DB_PORT -A -Bse "$QUERY"  2>/dev/null)
+    STATE=$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$xHNAME --port=$CMON_DB_PORT -A -Bse "$QUERY"  2>/dev/null    
     STATE=`echo $STATE | awk '{$1="";print $0;}'`
     echo $STATE
 }
@@ -609,6 +621,16 @@ function set_nodestate
     if [ $? -ne 0 ]; then
         echo "setting state failed"
         exit 1
+    fi
+}
+
+function set_clusterstate
+{
+    STATE=$1
+    QUERY="UPDATE cluster_state SET report_ts=NOW(), status='$STATE' WHERE id=$CLUSTER_ID"
+    `$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=127.0.0.1 --port=$CMON_DB_PORT --auto-vertical-output -Bse "$QUERY"`
+    if [ $? -ne 0 ]; then
+        echo "setting cluster state failed"
     fi
 }
 
@@ -675,6 +697,7 @@ function reinit_cluster
     esac
     echo "Stopping all nodes to make sure the Cluster is down."
     stop_cluster  $2 $3 $4 $5 $6 $7 $8 $9
+    set_clusterstate "STOPPED"
     echo "Starting cluster, intiializing from $DONOR_HOSTNAME"
     load_opts $CLUSTER_ID
     
@@ -696,7 +719,7 @@ function reinit_cluster
 	echo "$DONOR_HOSTNAME not found in cluster - check server address"
 	exit 1
     fi
-
+    set_clusterstate "STARTING"
     start_node_donor $DONOR_HOSTNAME $DONOR_ID
     MAX_RETRY=60
     RETRY=0
@@ -716,7 +739,6 @@ function reinit_cluster
     done
     echo ""
     echo "$DONOR_HOSTNAME is Synced"
-
     echo "Start another node (one at a time):"
     for S in $SERVER_LIST
     do
@@ -800,11 +822,19 @@ function make_primary
 
     load_opts $CLUSTER_ID
     
+    QUERY="SHOW GLOBAL VARIABLES LIKE 'wsrep_provider_options'"
+    PROVIDER_OPTS=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$XHOSTNAME --port=$CMON_DB_PORT -A -Bse "$QUERY"` 
+    if [ $? -ne 0 ]; then
+	echo "Failed to get provider options"
+	exit 1
+    fi
     
-    PROVIDER_OPTS=$(get_galera_provider_options $XHOSTNAME)
+    PROVIDER_OPTS=`echo $PROVIDER_OPTS | sed 's#wsrep_provider_options##g'`
+    PROVIDER_OPTS=`echo $PROVIDER_OPTS | sed 's#\t##g'`
+    PROVIDER_OPTS=`echo $PROVIDER_OPTS | sed 's#\\\t##g'`
     QUERY="set global wsrep_provider_options='${PROVIDER_OPTS};pc.bootstrap=1'"    
-    $MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$xHNAME --port=$CMON_DB_PORT --auto-vertical-output -Bse "$QUERY"
-    exit
+
+    $MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$XHOSTNAME --port=$CMON_DB_PORT --auto-vertical-output -Bse "$QUERY"
     
     STATE=$(get_galera_nodestate $XHOSTNAME $DONOR_ID "wsrep_local_state_comment")
 
@@ -813,7 +843,7 @@ function make_primary
 	STATE=$(get_galera_clusterstate $XHOSTNAME $DONOR_ID)
 	if [ "$STATE" = "non-Primary" ]; then	   
 	    QUERY="set global wsrep_provider_options='${PROVIDER_OPTS};pc.bootstrap=1'"
-	    $MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$xHNAME --port=$CMON_DB_PORT -e "$QUERY"
+	    $MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$XHOSTNAME --port=$CMON_DB_PORT -e "$QUERY"
 	    if [ $? -ne 0 ]; then
 		echo "$QUERY failed"
 		exit 1
@@ -910,7 +940,7 @@ function start_cluster
     fi
 
     start_node_donor $DONOR_HOSTNAME $DONOR_ID
-    
+    set_clusterstate "RECOVERING"
     
     if [ "$SERVER_LIST" != "NULL" ]; then
 	for S in $SERVER_LIST
@@ -1033,22 +1063,22 @@ function start_node
     
 
     if [ -z "$CMON_PASSWORD" ]; then
-      echo "s9s_galera --start-cluster -p  missing"
+      echo "s9s_galera --start-node -p  missing"
       exit 1
     fi
 
     if [ -z "$CLUSTER_ID" ]; then
-      echo "s9s_clone --start-cluster -i <cluster id> missing"
+      echo "s9s_clone --start-node -i <cluster id> missing"
       exit 1
     fi
 
     if [ -z "$DONOR_HOSTNAME" ]; then
-      echo "s9s_clone --start-cluster -d <donor node is missing, specify one server address part of the cluster> missing"
+      echo "s9s_clone --start-node -d <donor node is missing, specify one server address part of the cluster> missing"
       exit 1
     fi
 
     if [ -z "$XHOSTNAME" ]; then
-      echo "s9s_clone --start-cluster -h <hostname to start is missing>"
+      echo "s9s_clone --start-node -h <hostname to start is missing>"
       exit 1
     fi
 
