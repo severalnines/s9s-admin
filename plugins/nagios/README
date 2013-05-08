@@ -1,4 +1,4 @@
-s9s_cluster_status is a simple Nagios plugin to report database cluster status from ClusterControl host.
+s9s_cluster_status is a simple Nagios plugin to report database cluster status and alarms from ClusterControl host.
 
 ===========
 Requirement
@@ -29,7 +29,7 @@ Step 2: Configure Nagios Plugin
 
   define command{
         command_name    s9s_cluster_status
-        command_line    $USER1$/s9s_cluster_status -H $HOSTADDRESS$ -p $ARG1$
+        command_line    $USER1$/s9s_cluster_status -H $HOSTADDRESS$ -p $ARG1$ -t $ARG2$
   }
 
 
@@ -50,6 +50,13 @@ Step 2: Configure Nagios Plugin
         notifications_enabled           1
         }
 
+  define service{
+        use                             generic-service
+        host_name                       clustercontrol.mydomain.org
+        service_description             Alarms
+        check_command                   s9s_cluster_status!yourcmonpassword!alarm
+        notifications_enabled           1
+        }
 
 =====
 Notes
