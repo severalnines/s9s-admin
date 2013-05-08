@@ -172,9 +172,7 @@ function start_backup
 	x=`ssh $SSH_OPTS  $SSH_USER@$BACKUP_HOSTNAME '$SUDO which innobackupex' 2>/dev/null`
 	if [ "$x" = ""  ]; then
 	    log_job_message "installing xtrabackup" 0	
-	    echo "XX: ssh $SSH_OPTS  $ssh_user@$slave"
-	    ssh $SSH_OPTS  $SSH_USER@$BACKUP_HOSTNAME "/usr/bin/s9s_backup --install -i $CLUSTER_ID "
-	    
+	    ssh $SSH_OPTS $SSH_USER@$BACKUP_HOSTNAME "$SUDO /usr/bin/s9s_backup --install -i $CLUSTER_ID "	    
 	fi
     
 	x=`ssh $SSH_OPTS  $SSH_USER@$BACKUP_HOSTNAME '$SUDO which innobackupex' 2>/dev/null`
