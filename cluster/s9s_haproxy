@@ -846,7 +846,7 @@ function install_haproxy
     fi
     remote_cmd_nofail $LB_HOSTNAME "$PKG_MGR $PHP_CURL"
     if [ -n "$BUILD_FROM_SRC" ]; then
-	HAPROXY_SRC="haproxy-1.4.22.tar.gz"
+	HAPROXY_SRC="haproxy-1.4.23.tar.gz"
 	if [ -n "$BUILD_FROM_SRC_FILE" ]; then
 	    if [ ! -f $BUILD_FROM_SRC_FILE ]; then
 		echo "$BUILD_FROM_SRC_FILE could not be found"
@@ -862,11 +862,12 @@ function install_haproxy
 	remote_cmd $LB_HOSTNAME "$PKG_MGR $BUILD"
 	remote_cmd $LB_HOSTNAME "tar xvfz /tmp/${HAPROXY_SRC} -C /tmp/"
 	remote_cmd_nofail $LB_HOSTNAME "killall -q  -9 haproxy"	
-	remote_cmd $LB_HOSTNAME "sh -c 'cd /tmp/${HAPROXY_SRC} && make TARGET=linux26 && cp haproxy /usr/sbin/'"
+	remote_cmd $LB_HOSTNAME "sh -c 'cd /tmp/`basename ${HAPROXY_SRC} .tar.gz` && make TARGET=linux26 && cp haproxy /usr/sbin/'"
     else
 	remote_cmd $LB_HOSTNAME "$PKG_MGR2 haproxy"
     fi
     remote_copy $TMPDIR/${PREFIX}_${LB_NAME}_haproxy.cfg $LB_HOSTNAME /tmp
+    remote_cmd_nofail $LB_HOSTNAME "mkdir -p /etc/haproxy/"
     remote_cmd $LB_HOSTNAME "rm -f /etc/haproxy/haproxy.cfg"
     remote_cmd $LB_HOSTNAME "mv /tmp/${PREFIX}_${LB_NAME}_haproxy.cfg /etc/haproxy/haproxy.cfg"
     #remote_cmd $LB_HOSTNAME "/usr/sbin/haproxy -f /etc/haproxy/haproxy.cfg -p /var/run/haproxy.pid -st \$(cat /var/run/haproxy.pid"                                                                                         
