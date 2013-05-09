@@ -5,14 +5,14 @@
 
 VERSION=0.3
 
-TEMP=`getopt -o H:,t:,p:,P:,h,v --long host:,type:,password:,port:,help,version -n 's9s_cluster_status' -- "$@"`
+TEMP=`getopt -o H:,p:,t:,P:,h,v --long host:,password:,type:,port:,help,version -n 's9s_cluster_status' -- "$@"`
 eval set -- "$TEMP"
 
 while true ; do
   case "$1" in
     -H|--host) cmon_db_host="$2" ; shift 2 ;;
-    -t|--type) query_type="$2" ; shift 2 ;;
     -p|--password) cmon_db_password="$2" ; shift 2 ;;
+    -t|--type) query_type="$2" ; shift 2 ;;
     -P|--port) cmon_db_port="$2" ; shift 2 ;;
     -h|--help) help="1" ; shift ;;
     -v|--version) version="1" ; shift ;;
@@ -32,12 +32,12 @@ helpMenu(){
         echo "Usage   : `basename $0` -H [host] -p [cmon_password] [options]"
         echo ""
         echo "-H, --host      : ClusterControl/cmon IP address"
-	echo "-t, --type      : Query type [cluster|alarm]"
         echo "-p, --password  : DB password for user cmon"
-        echo "-P, --port      : MySQL port for the host (default 3306)"
+        echo "-t, --type      : Query type [cluster|alarm] (default: cluster)"
+        echo "-P, --port      : MySQL port for the host (default: 3306)"
         echo "-h, --help      : Print help"
         echo ""
-        echo "Example: `basename $0` -H 127.0.0.1 -p 'password'"
+        echo "Example: `basename $0` -H 127.0.0.1 -p 'password' -t cluster"
         echo ""
 }
 
@@ -130,7 +130,7 @@ WHERE ignored=0'
 	check_mysqlbin
 
 	if [ $? -eq 0 ]; then
-		# Put comma delimited on query result
+		# Comma delimited on query result
 		execute_query=`$mysqlbin -h$cmon_db_host -ucmon -p$cmon_db_password -P$cmon_db_port -A -Bse "$query" | sed "s/'/\'/;s/\t/,/g;s/^//;s/$//;s/\n//g"`
 		if [ ! "$execute_query" ]; then
 			echo "Failed to query cmon database. The following query failed : $query"
@@ -179,6 +179,6 @@ WHERE ignored=0'
 	fi
 
 else
-	echo "Unknown query type. Use following query type: (alarm|cluster)"
+	echo "Unknown query type. Use following query type: [alarm|cluster]"
 	exit 1
 fi
