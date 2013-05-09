@@ -85,7 +85,7 @@ if [ $query_type == "cluster" ]; then
 	
 	if [ $? -eq 0 ]; then
 		execute_query=`$mysqlbin -h$cmon_db_host -ucmon -p$cmon_db_password -P$cmon_db_port -A -Bse "$query"`
-		if [ ! $execute_query ]; then
+		if [ ! "$execute_query" ]; then
 			echo "Failed to query cmon database. The following query failed : $query"
 			echo "Unknown: Cluster status is UNKNOWN"
 			stateid=3
@@ -97,13 +97,13 @@ if [ $query_type == "cluster" ]; then
 
 	if [ "$clustate" == "STARTED" ]; then
 		echo "OK: Cluster status is STARTED"
-        stateid=0
+	        stateid=0
 	elif  [ "$clustate" == "CRITICAL" ] || [ "$clustate" == "FAILURE" ] || [ "$clustate" == "STOPPED" ] || [ "$clustate" == "SHUTTING_DOWN" ]; then
-        echo "Critical: Cluster status is $clustate"
-        stateid=2
+        	echo "Critical: Cluster status is $clustate"
+	        stateid=2
 	else
-        echo "Warning: Cluster status is $clustate"
-        stateid=1
+	        echo "Warning: Cluster status is $clustate"
+	        stateid=1
 	fi
 
 	exit $stateid
@@ -144,6 +144,7 @@ WHERE ignored=0'
 			[ -f $INPUT ] && rm -Rf $INPUT
 			[ -f $OUTPUT ] && rm -Rf $OUTPUT
 			echo "$execute_query" > $INPUT
+
 			OLDIFS=$IFS
 			IFS=,
 			critical=0; warning=0;
