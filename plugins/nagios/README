@@ -70,3 +70,5 @@ Notes
 
 - If you create an individual object config file under "objects" directory, do not forget to call the config file inside nagios.cfg, for example:
 	cfg_file=/usr/local/nagios/etc/objects/clustercontrol.cfg
+
+- Alarms' notifications will be cleared if you dismiss each of them in ClusterControl UI.
