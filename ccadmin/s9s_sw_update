@@ -420,7 +420,7 @@ function install_mysql_pkg
 	    remote_cmd $XHOSTNAME "rpm -Uvh $RPMLIST"
 	fi
 	if [ -n "$DEBLIST" ]; then
-	    remote_cmd $XHOSTNAME "/usr/sbin/dpkg -i $DEBLIST"
+	    remote_cmd $XHOSTNAME "/usr/bin/dpkg -i $DEBLIST"
 	fi
 	echo "Installed $PKG_NAME on $XHOSTNAME"		    
     fi
