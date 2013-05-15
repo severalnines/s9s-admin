@@ -217,7 +217,7 @@ if [ ! -e $LOCKFILE ]; then
     x=`ssh $ssh_opts  $ssh_user@$slave 'which innobackupex'`
     if [ "$x" = ""  ]; then
 	log_job_message "installing xtrabackup" 0	
-	ssh $ssh_opts  $ssh_user@$slave "/usr/bin/s9s_backup --install $MYCNF"	
+	ssh $ssh_opts  $ssh_user@$slave "/usr/bin/s9s_backup --install -i$CID -b$datadir"	
 	
     fi
     
