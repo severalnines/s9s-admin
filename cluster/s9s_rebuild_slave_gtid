@@ -1,0 +1,510 @@
+#!/bin/bash
+# Copyright 2012 Severalnines AB
+#
+# MODIFY THE BELOW TO SUIT YOU ENV:
+LOCKFILE="/tmp/s9s_rebuild_slave.lock"
+
+if [ ! -e /etc/cmon.cnf ] ; then
+    echo "Could not find /etc/cmon.cnf"
+    exit 1
+    else
+    source /etc/cmon.cnf
+fi
+CID=$cluster_id
+CMON_USER=cmon
+CMON_PASSWORD=$mysql_password
+CMON_DB_HOST=$mysql_hostname
+CMON_DB_PORT=$mysql_port
+CMON_DB_DB=cmon
+MYSQL_BIN=$mysql_basedir/bin/mysql
+MYCNF="/etc/my.cnf"
+JOBID=0
+
+function load_opts
+{
+    local CLUSTER_ID=$1
+    echo "load opts $CLUSTER_ID"
+    OS=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='OS' AND cid=$CLUSTER_ID" 2>/dev/null`
+    CONFIGDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='CONFIGDIR' AND cid=$CLUSTER_ID" 2>/dev/null`
+    MYSQL_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MYSQL_PORT' AND cid=$CLUSTER_ID" 2>/dev/null`
+    GALERA_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='GALERA_PORT' AND cid=$CLUSTER_ID" 2>/dev/null`
+    MYSQL_BASEDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MYSQL_BASEDIR' AND cid=$CLUSTER_ID" 2>/dev/null`
+    MYSQL_SCRIPTDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SCRIPTDIR' AND cid=$CLUSTER_ID" 2>/dev/null`
+    SSH_IDENTITY=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_IDENTITY' AND cid=$CLUSTER_ID" 2>/dev/null`
+    SSH_USER=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_USER' AND cid=$CLUSTER_ID" 2>/dev/null`
+    SSH_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_PORT' AND cid=$CLUSTER_ID" 2>/dev/null`
+    SUDO=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SUDO' AND cid=$CLUSTER_ID" 2>/dev/null`
+   TMPDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='STAGING_DIR' AND cid=$CLUSTER_ID"`
+    S9S_TMPDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='STAGING_DIR' AND cid=$CLUSTER_ID"`
+    OS_USER_HOME=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='OS_USER_HOME' AND cid=$CLUSTER_ID" 2>/dev/null`
+
+    SSH_OPTS="-q -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10"
+    if [ "$SSH_IDENTITY" = "" ]; then
+        SSH_IDENTITY="-oIdentityFile=${OS_USER_HOME}/.ssh/id_rsa"
+    else
+        SSH_IDENTITY="-oIdentityFile=$SSH_IDENTITY"
+    fi
+
+    SSH_OPTS="-q -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY"
+    SCP_OPTS="-q -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY"
+    if [ "$SSH_USER" != "root" ]; then
+        SSH_OPTS="-q -t -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY"
+        SCP_OPTS="-q -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY"
+        if [ "$SUDO" = "" ] || [ "$SUDO" = "NULL" ];  then
+           SUDO=sudo
+        fi
+    fi
+
+    if [ "$SSH_PORT" = "" ] || [ "$SSH_PORT" = "NULL" ];  then
+        SSH_PORT="22"
+    fi
+    SSH_OPTS="-p$SSH_PORT $SSH_OPTS -n"
+    SSH_OPTS2="-q -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY -p$SSH_PORT"
+    if [ "$SSH_USER" != "root" ]; then
+        SSH_OPTS="$SSH_OPTS -t"
+    fi
+    if [ "$TMPDIR" = "" ]; then
+        TMPDIR="/tmp/$CLUSTER_ID/replication"
+    fi	
+    SCP_OPTS="-P$SSH_PORT $SCP_OPTS"
+}
+ 
+function update_mysql_status
+{    
+    STATUS=$1
+    if [ $NODEID -ne 0 ]; then 
+	QUERY="UPDATE mysql_server SET status=$STATUS WHERE cid=$CID and nodeid=$NODEID"
+	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
+    fi
+}
+
+
+function set_active
+{    
+    if [ $NODEID -ne 0 ]; then 
+	QUERY="UPDATE processes SET active=1 WHERE cid=$CID and nodeid=$NODEID"
+	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
+    fi
+}
+
+
+function set_inactive
+{    
+    if [ $NODEID -ne 0 ]; then 
+	QUERY="UPDATE processes SET active=0 WHERE cid=$CID and nodeid=$NODEID"
+	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
+    fi
+}
+
+function grant_master_slave
+{    
+    GRANT="GRANT REPLICATION SLAVE ON *.* TO  '$repl_user'@'$SLAVE' IDENTIFIED BY '$repl_password'"
+    $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --host=$MASTER --database=mysql --port=$MYSQL_PORT  -e "$GRANT" 2>&1 >/tmp/err.log
+    if [ $? -ne 0 ]; then 
+	log_job_message "Failed: $GRANT" 1
+	log_job 'FAILED' 'rebuild slave failed' 1
+	exit 1
+    fi
+}
+
+
+function reset_master
+{
+    s=$1
+    QUERY="RESET MASTER"
+    $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --host=$s --database=mysql --port=$MYSQL_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
+    if [ $? -ne 0 ]; then
+        log_job_message "Failed: $QUERY" 1
+        log_job 'FAILED' 'rebuild slave failed' 1
+        exit 1
+    fi
+}
+function reset_slave
+{
+    s=$1
+    QUERY="RESET SLAVE"
+    $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --host=$s --database=mysql --port=$MYSQL_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
+    if [ $? -ne 0 ]; then
+        log_job_message "Failed: $QUERY" 1
+        log_job 'FAILED' 'rebuild slave failed' 1
+        exit 1
+    fi
+}
+
+function grant_cmon_cc
+{    
+    GRANT="GRANT SUPER ON *.* TO  '$CMON_USER'@'$SLAVE' IDENTIFIED BY '$CMON_PASSWORD'"
+    $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --host=$CMON_DB_HOST --database=mysql --port=$MYSQL_PORT  -e "$GRANT" 2>&1 >/tmp/err.log
+    if [ $? -ne 0 ]; then 
+	log_job_message "Failed: $GRANT" 1
+	log_job 'FAILED' 'rebuild slave failed' 1
+	exit 1
+    fi
+}
+
+function grant_slave
+{    
+    GRANT="GRANT ALL PRIVILEGES ON *.* TO 'cmon'@'$SLAVE' IDENTIFIED BY '$CMON_PASSWORD'"
+    $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --host=$SLAVE --port=$MYSQL_PORT  -e "$GRANT" 2>&1 >/tmp/err.log
+    if [ $? -ne 0 ]; then 
+	log_job_message "Failed: $GRANT" 1
+	log_job 'FAILED' 'rebuild slave failed' 1
+	exit 1
+    fi
+}
+
+## CHANGE THE REAL MASTER TO BECOME THE SLAVE OF THE MULTI
+function change_master_real_master
+{    
+    slave_role=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$MYSQL_HOST --port=$CMON_DB_PORT -e "select role from mysql_server where hostname='$SLAVE' AND cid=$CID"`    
+    if [ "$SLAVE_role" = "multi" ]; then
+	QUERY="STOP SLAVE"
+	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --host=$MASTER --port=$MYSQL_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
+	QUERY="CHANGE MASTER TO MASTER_HOST='$SLAVE'"
+	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --host=$MASTER --port=$MYSQL_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
+    fi
+}
+
+
+function change_master
+{    
+    $MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD  --host=$SLAVE --port=$MYSQL_PORT -e "CHANGE MASTER TO master_host='$MASTER', master_port=$master_port,  master_user='$repl_user', master_password='$repl_password'"
+    if [ $? -ne 0 ]; then
+	log_job_message "Failed: CHANGE MASTER TO master_host='$MASTER', master_port=$MASTER_port,  master_user='$repl_user', master_password='$repl_password', master_log_file='$binlog_file', master_log_pos=$binlog_pos" 1
+	log_job 'FAILED' 'rebuild slave failed' 1
+	exit 1
+    fi
+    
+}
+
+
+function set_gtid
+{
+    gtid=$1
+    $MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD  --host=$SLAVE --port=$MYSQL_PORT -e "SET @@GLOBAL.GTID_PURGED='$gtid'"
+    if [ $? -ne 0 ]; then
+        log_job_message "Failed: SET @@GLOBAL.GTID_PURGED='$gtid'" 1
+        log_job 'FAILED' 'rebuild slave failed' 1
+        exit 1
+    fi
+
+    $MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD  --host=$SLAVE --port=$MYSQL_PORT -e "START SLAVE"
+    if [ $? -ne 0 ]; then
+        log_job_message "Failed: START SLAVE" 1
+        log_job 'FAILED' 'rebuild slave failed' 1
+        exit 1
+    fi
+}
+
+function log_job_message
+{    
+    MSG=$1
+    EXIT_CODE=$2
+    QUERY="INSERT INTO cmon_job_message(cid, jobid,message,exit_code,report_ts) VALUES($CID,$JOBID,'$MSG',$EXIT_CODE,now())"
+    if [ $JOBID -ne 0 ]; then 
+	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
+    else
+	echo "$MSG"
+    fi
+}
+
+function log_job
+{    
+    STATUS=$1
+    STATUS_TXT=$2
+    EXIT_CODE=$3
+    QUERY="UPDATE cmon_job SET status='$STATUS', status_txt='$STATUS_TXT', exit_code=$EXIT_CODE, report_ts=NOW()  WHERE cid=$CID AND jobid=$JOBID"
+    if [ $JOBID -ne 0 ]; then 
+	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
+    fi
+}
+
+function write_logfile
+{
+   LOGFILE=$1
+   cat $LOGFILE | sed  -e "s/'/\\\'/g" -e 's/"/\\"/g' > /tmp/s9s_backup_log_escaped
+   LOG_CONTENT=`cat /tmp/s9s_backup_log_escaped`
+   SIZE=`stat --printf='%s' /tmp/s9s_backup_log_escaped`
+   HNAME=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$CMON_DB_PORT -e "SHOW GLOBAL VARIABLES LIKE 'hostname'" | awk '{print $2;}'`
+   QUERY="REPLACE INTO cmon_host_log(cid, hostname, filename, result_len, result, report_ts,description, tag) VALUES
+($CID,'$HNAME', '$BACKUP_LOGFILE', $SIZE, \"$LOG_CONTENT\", NOW(), 's9s_rebuild_slave log', 's9s_rebuild_slave')"
+   $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
+   rm -rf /tmp/s9s_backup_log_escaped
+}
+
+
+NODEID=0
+
+ args=`getopt p:i:P:m:s:d:n:j: $*`
+    set -- $args
+    for i
+    do
+        case "$i" in
+            -p)
+                CMON_PASSWORD="$2"; shift;
+                shift;;
+            -m)
+                MASTER="$2"; shift;
+                shift;;
+            -s)
+                SLAVE="$2"; shift;
+                shift;;
+            -i)
+                CLUSTER_ID="$2"; shift;
+                shift;;
+            -d)
+                DATADIR="$2"; shift;
+                shift;;
+            -n)
+                NODEID="$2"; shift;
+                shift;;
+            -j)
+                JOBID="$2"; shift;
+                shift;;
+            --)
+                shift; break;;
+        esac
+    done
+
+
+
+if [ "$CLUSTER_ID" = "" ]; then
+    log_job_message "-i <clusterid> not set" 1
+    log_job 'FAILED' 'rebuild slave failed' 1
+    exit 1
+fi
+
+
+if [ "$MASTER" = "" ]; then
+    log_job_message "-m <master> not set" 1
+    log_job 'FAILED' 'rebuild slave failed' 1
+    exit 1
+fi
+
+if [ "$SLAVE" = "" ]; then
+   log_job_message "-s <slave> no set" 1
+   log_job 'FAILED' 'rebuild slave failed' 1
+   exit 1
+fi
+
+if [ "$DATADIR" = "" ]; then
+   log_job_message "-d <datadir> no set" 1
+   log_job 'FAILED' 'rebuild slave failed' 1
+   exit 1
+fi
+
+CID=$CLUSTER_ID
+
+load_opts $CLUSTER_ID
+
+
+if [ ! -e $LOCKFILE ]; then    
+    trap "rm -f $LOCKFILE; exit" INT TERM EXIT
+    touch $LOCKFILE
+
+    sleep 5
+    log_job 'RUNNING' 'The job is running' 0
+        
+    repl_user=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='REPL_USER' AND cid=$CID"`
+    
+    repl_password=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='REPL_PASSWORD' AND cid=$CID"`
+    
+    master_port=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MYSQL_PORT' AND cid=$CID"`
+    
+    OS=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='OS' AND cid=$CID"`    
+    
+    case $OS in
+	redhat)
+	    MYCNF="/etc/my.cnf"
+	    ;;
+	debian)
+	    MYCNF="/etc/mysql/my.cnf"
+	    ;;
+	*)
+	    echo "Unrecognized OS, must be 'redhat' or 'debian' class"
+	    log_job_message "Unrecognized OS, must be 'redhat' or 'debian' class" 1
+	    log_job 'FAILED' 'rebuild slave failed' 1
+	    exit 1;	           	     
+    esac
+    x=`ssh $SSH_OPTS  $SSH_USER@$MASTER 'which innobackupex'`
+    if [ "$x" = ""  ]; then
+	log_job_message "installing xtrabackup on $MASTER" 0	
+	ssh $SSH_OPTS  $SSH_USER@$MASTER "/usr/bin/s9s_backup --install -i$CID -b$DATADIR"	
+	
+    fi
+   
+    x=`ssh $SSH_OPTS  $SSH_USER@$SLAVE 'which innobackupex'`
+    if [ "$x" = ""  ]; then
+        log_job_message "installing xtrabackup" 0
+        ssh $SSH_OPTS  $SSH_USER@$SLAVE "/usr/bin/s9s_backup --install -i$CID -b$DATADIR"
+
+    fi
+ 
+    x=`ssh $SSH_OPTS  $SSH_USER@$SLAVE 'which innobackupex'`
+    if [ "$x" = "" ]; then
+	log_job_message "innobackupex not found" 1
+	log_job 'FAILED' 'rebuild slave failed' 1
+	exit 1
+    fi
+
+    if [ "$repl_user" = "" ]; then
+	log_job_message "REPL_USER not set" 1
+	log_job 'FAILED' 'rebuild slave failed' 1
+	exit 1
+    fi
+    
+    
+    if [ "$repl_password" = "" ]; then
+	if [ "$repl_user" == "cmon" ]; then
+	    repl_password="$CMON_PASSWORD"
+	else
+	    log_job_message "REPL_PASSWORD not set" 1
+	    log_job 'FAILED' 'rebuild slave failed' 1
+	    exit 1
+	fi
+    fi
+    
+### NO MODS BELOW UNLESS YOU KNOW WHAT YOU DO:
+    
+#pv= "pv -q -L10m |"
+    pv=""
+    
+
+    log_job_message "preparing $SLAVE and starting backup" 0
+    ssh $SSH_OPTS  $SSH_USER@$SLAVE "$SUDO mkdir -p $TMPDIR/"
+    if [ $? -ne 0 ]; then
+	log_job_message "mkdir -p $TMPDIR" 1
+	log_job 'FAILED' 'rebuild slave failed' 1
+	exit 1
+    fi
+    ssh $SSH_OPTS  $SSH_USER@$SLAVE "$SUDO rm -rf /$TMPDIR/backup.tar"
+    if [ $? -ne 0 ]; then
+	log_job_message "rm -rf /$TMPDIR/backup.tar" 1
+	log_job 'FAILED' 'rebuild slave failed' 1
+	exit 1
+    fi
+    ssh $SSH_OPTS  $SSH_USER@$SLAVE "$SUDO rm -rf ${DATADIR}"
+    if [ $? -ne 0 ]; then
+	log_job_message "Failed: rm -rf ${DATADIR}" 1
+	log_job 'FAILED' 'rebuild slave failed' 1
+	exit 1
+    fi
+    ssh $SSH_OPTS  $SSH_USER@$SLAVE "$SUDO mkdir -p ${DATADIR}"
+    if [ $? -ne 0 ]; then
+	log_job_message "Failed: mkdir -p ${DATADIR} " 1
+	log_job 'FAILED' 'rebuild slave failed' 1
+	exit 1
+    fi
+
+    log_job 'RUNNING' 'The job is running' 0
+    ssh -X $SSH_OPTS  $SSH_USER@$MASTER "$SUDO /usr/bin/innobackupex --host=127.0.0.1 --user=cmon --password=$CMON_PASSWORD --stream=tar /var/lib/mysql/"  | $pv ssh root@$SLAVE  "$SUDO tar xvfi - -C $DATADIR"
+    if [ $? -ne 0 ]; then
+	log_job_message "innobackupex failed to start" 1
+	log_job 'FAILED' 'rebuild slave failed' 1
+	exit 1
+    fi
+    log_job 'RUNNING' 'The job is running' 0
+
+#    ssh $SSH_OPTS  $SSH_USER@$SLAVE "$SUDO mkdir -p ${DATADIR}"
+#    if [ $? -ne 0 ]; then
+#	log_job_message "Failed: mkdir -p ${DATADIR}" 1
+#	log_job 'FAILED' 'rebuild slave failed' 1
+#	exit 1
+#    fi
+#    ssh $SSH_OPTS  $SSH_USER@$SLAVE "$SUDO rm -rf ${DATADIR}_bak"
+#    if [ $? -ne 0 ]; then
+#	log_job_message "Failed: rm -rf ${DATADIR}_bak" 1
+#	log_job 'FAILED' 'rebuild slave failed' 1
+#	exit 1
+#    fi
+    log_job 'RUNNING' 'The job is running' 0
+    set_inactive
+    ssh $SSH_OPTS  $SSH_USER@$SLAVE "$SUDO killall -q -9 mysqld_safe mysqld cmon"
+    ssh $SSH_OPTS  $SSH_USER@$SLAVE "$SUDO killall -q -9 mysqld_safe mysqld cmon"
+#    ssh $SSH_OPTS  $SSH_USER@$SLAVE "$SUDO mv -f ${DATADIR} ${DATADIR}_bak"
+#    if [ $? -ne 0 ]; then
+#	log_job_message "Failed: mv $DATADIR ${DATADIR}_bak failed" 1
+#	log_job 'FAILED' 'rebuild slave failed' 1
+#	exit 1
+#    fi
+
+
+#    log_job_message "unpacking.." 0
+#    log_job 'RUNNING' 'The job is running' 0
+#    ssh $SSH_OPTS  $SSH_USER@$SLAVE "$SUDO tar xvfi /$TMPDIR/backup.tar -C $DATADIR/"
+#    if [ $? -ne 0 ]; then
+#	log_job_message "Failed: tar xvfi /$TMPDIR/backup.tar -C $DATADIR/ " 1
+#	log_job 'FAILED' 'rebuild slave failed' 1
+#	exit 1
+#    fi
+    log_job 'RUNNING' 'The job is running' 0
+    log_job_message "preparing the backup - applying log" 0
+    ssh $SSH_OPTS  $SSH_USER@$SLAVE "$SUDO innobackupex --user=$CMON_USER --password=$CMON_PASSWORD --apply-log $DATADIR/ 2>&1 >>/tmp/err.log"
+    if [ $? -ne 0 ]; then
+	log_job_message "Failed: innobackupex --user=$CMON_USER --password=$CMON_PASSWORD --apply-log $DATADIR/" 1
+	write_logfile /tmp/err.log
+	log_job 'FAILED' 'rebuild slave failed' 1
+	exit 1
+    fi
+    ssh $SSH_OPTS  $SSH_USER@$SLAVE "$SUDO chown mysql:mysql -R $DATADIR"
+    if [ $? -ne 0 ]; then
+	log_job_message "Failed: chown mysql:mysql -R $DATADIR" 1	
+	log_job 'FAILED' 'rebuild slave failed' 1
+	exit 1
+    fi
+    
+    
+    log_job_message "getting slave params " 0
+
+
+   binlog_info=`ssh $SSH_OPTS  $SSH_USER@$SLAVE "$SUDO cat $DATADIR/xtrabackup_binlog_info"`
+   binlog_gtid=`echo $binlog_info | awk '{print $3}'`
+   echo $binlog_gtid
+   binlog_gtid=`echo $binlog_gtid | tr -d ,`
+   echo $binlog_gtid
+
+    #if [ "$binlog_file" = "" ]; then
+#	log_job_message "Failed: could not get binlog file" 1       
+#	log_job 'FAILED' 'rebuild slave failed' 1
+#	exit 1
+#   fi
+    
+#    if [ "$binlog_pos" = "" ]; then
+#	log_job_message "Failed: could not get binlog pos" 1       
+#	log_job 'FAILED' 'rebuild slave failed' 1
+#	exit 1
+#    fi
+    
+    log_job 'RUNNING' 'The job is running' 0
+    log_job_message "starting up mysql server" 0
+    ssh $SSH_OPTS  $SSH_USER@$SLAVE "$SUDO killall -q -9 mysqld_safe mysqld cmon"
+    ssh $SSH_OPTS  $SSH_USER@$SLAVE "$SUDO nohup nice /etc/init.d/mysql start"
+    if [ $? -ne 0 ]; then
+	log_job_message "Failed: mysql server failed to start" 1
+	log_job 'FAILED' 'rebuild slave failed' 1
+	exit 1
+    fi
+    log_job 'RUNNING' 'The job is running' 0
+    log_job_message "changing master" 0   
+    grant_cmon_cc
+    grant_master_slave
+    reset_master $SLAVE
+    reset_slave $SLAVE
+    change_master
+    set_gtid $binlog_gtid
+
+    log_job_message "rebuild slave ok" 0
+    log_job 'FINISHED' 'Command ok' 0
+    update_mysql_status 0
+    grant_slave
+    set_active
+    change_master_real_master
+    ssh $SSH_OPTS  $SSH_USER@$SLAVE "$SUDO nohup nice /etc/init.d/cmon start"
+    ssh $SSH_OPTS  $SSH_USER@$SLAVE "$SUDO rm -rf /$TMPDIR/backup.tar"
+    rm $LOCKFILE
+    trap - INT TERM EXIT
+    exit 0
+fi
+log_job 'FAILED' 'rebuild slave failed - lockfile exists' 1
+log_job_message "remove $LOCKFILE on $CMON_DB_HOST" 1
+exit 1
