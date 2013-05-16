@@ -172,7 +172,7 @@ function start_backup
 	x=`ssh $SSH_OPTS  $SSH_USER@$BACKUP_HOSTNAME '$SUDO which innobackupex' 2>/dev/null`
 	if [ "$x" = ""  ]; then
 	    log_job_message "installing xtrabackup" 0	
-	    ssh $SSH_OPTS $SSH_USER@$BACKUP_HOSTNAME "$SUDO /usr/bin/s9s_backup --install -i $CLUSTER_ID "	    
+	    ssh $SSH_OPTS $SSH_USER@$BACKUP_HOSTNAME "$SUDO /usr/bin/s9s_backup --install -i$CLUSTER_ID -b$BACKUPDIR "	    
 	fi
     
 	x=`ssh $SSH_OPTS  $SSH_USER@$BACKUP_HOSTNAME '$SUDO which innobackupex' 2>/dev/null`
@@ -312,7 +312,7 @@ function start_backup
         pid="$!"
 	sleep 5
 	if [ "$TYPE" = "full" ]; then   
- 	    ssh $SSH_OPTS  $SSH_USER@$BACKUP_HOSTNAME "$SUDO sh -c '$XTRABACKUP_BIN $GALERA_INFO  --ibbackup=xtrabackup_55 --defaults-file=$MYCNF --host=127.0.0.1 --user=$CMON_USER --password=$CMON_PASSWORD $THROTTLE  --stream=tar ./  2>$BACKUP_LOGFILE | gzip  - | nc $STORAGE_HNAME $NETCAT_PORT  '" 
+ 	    ssh $SSH_OPTS  $SSH_USER@$BACKUP_HOSTNAME "$SUDO sh -c '$XTRABACKUP_BIN $GALERA_INFO   --defaults-file=$MYCNF --host=127.0.0.1 --user=$CMON_USER --password=$CMON_PASSWORD $THROTTLE  --stream=tar ./  2>$BACKUP_LOGFILE | gzip  - | nc $STORAGE_HNAME $NETCAT_PORT  '" 
 	    ret=$?
 	    scp -q $SCP_OPTS $SSH_USER@$BACKUP_HOSTNAME:$BACKUP_LOGFILE $BACKUP_LOGFILE
 	    LSN=`cat $BACKUP_LOGFILE | grep 'xtrabackup: The latest check point (for incremental):' | awk -F ':' '{print $3;}'`
@@ -321,7 +321,7 @@ function start_backup
 		ret=1
 	    fi
 	else
- 	    ssh  $SSH_OPTS  $SSH_USER@$BACKUP_HOSTNAME "$SUDO sh -c '$XTRABACKUP_BIN $GALERA_INFO --ibbackup=xtrabackup_55 --defaults-file=$MYCNF --host=127.0.0.1 --user=$CMON_USER --password=$CMON_PASSWORD --incremental --incremental-lsn=$LSN $THROTTLE --stream=xbstream ./  2>$BACKUP_LOGFILE | gzip  - | nc $STORAGE_HNAME $NETCAT_PORT  '" 
+ 	    ssh  $SSH_OPTS  $SSH_USER@$BACKUP_HOSTNAME "$SUDO sh -c '$XTRABACKUP_BIN $GALERA_INFO  --defaults-file=$MYCNF --host=127.0.0.1 --user=$CMON_USER --password=$CMON_PASSWORD --incremental --incremental-lsn=$LSN $THROTTLE --stream=xbstream ./  2>$BACKUP_LOGFILE | gzip  - | nc $STORAGE_HNAME $NETCAT_PORT  '" 
 	    ret=$?
 	    scp -q $SCP_OPTS $SSH_USER@$BACKUP_HOSTNAME:$BACKUP_LOGFILE $BACKUP_LOGFILE
 	    LSN=`cat $BACKUP_LOGFILE | grep 'xtrabackup: The latest check point (for incremental):' | awk -F ':' '{print $3;}'`	    
@@ -591,7 +591,7 @@ function restore
   sleep 2
   x=`which innobackupex' 2>/dev/null`
   if [ "$x" = ""  ]; then     
-      $SUDO /usr/bin/s9s_backupc --install -h 127.0.0.1
+      $SUDO /usr/bin/s9s_backupc --install -h 127.0.0.1 
   fi
   
   rm -rf $TARGETDIR/$BACKUPID
@@ -646,7 +646,7 @@ function restore
         echo "untar $directory/$filename failed"
 	  exit 1
       fi
-      $XTRABACKUP_BIN --defaults-file=$MYCNF --ibbackup=xtrabackup_55 --apply-log --redo-only $TARGETDIR/$BACKUPID/
+      $XTRABACKUP_BIN --defaults-file=$MYCNF  --apply-log --redo-only $TARGETDIR/$BACKUPID/
       ret=$?
       if [ $ret -ne 0 ]; then
         echo "restore full $directory/$filename failed"
@@ -715,7 +715,7 @@ function restore
 	  echo "Restore FAILED"
 	    exit 1
       fi
-      $XTRABACKUP_BIN --defaults-file=$MYCNF --ibbackup=xtrabackup_55  --apply-log --redo-only --incremental-dir=$TARGETDIR/tmp/ /$TARGETDIR/$BACKUPID/ 
+      $XTRABACKUP_BIN --defaults-file=$MYCNF   --apply-log --redo-only --incremental-dir=$TARGETDIR/tmp/ /$TARGETDIR/$BACKUPID/ 
       ret=$?
       if [ $ret -ne 0 ]; then
         echo "restore incremental $directory/$filename failed"

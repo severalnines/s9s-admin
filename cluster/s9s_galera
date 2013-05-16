@@ -355,6 +355,7 @@ function stop_cluster
 
     if [ -z "$CLUSTER_ID" ]; then
       echo "s9s_galera --stop-cluster -i <clusterid>  missing"
+      exit 1
     fi
 
 

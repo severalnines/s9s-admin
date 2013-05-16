@@ -301,7 +301,7 @@ function start_backup
         fi
         pid="$!"
 	if [ "$TYPE" = "full" ]; then   
-	    $XTRABACKUP_BIN $GALERA_INFO --ibbackup=xtrabackup_55 --defaults-file=$MYCNF --host=127.0.0.1 --user=$CMON_USER --password=$CMON_PASSWORD $THROTTLE  --stream=tar ./  2>$BACKUP_LOGFILE | gzip - > $BACKUPDIR/$FILENAME 
+	    $XTRABACKUP_BIN $GALERA_INFO  --defaults-file=$MYCNF --host=127.0.0.1 --user=$CMON_USER --password=$CMON_PASSWORD $THROTTLE  --stream=tar ./  2>$BACKUP_LOGFILE | gzip - > $BACKUPDIR/$FILENAME 
 	    ret=$?
 	    LSN=`cat $BACKUP_LOGFILE | grep 'xtrabackup: The latest check point (for incremental):' | awk -F ':' '{print $3;}'`
 	    if [ -z "$LSN" ]; then
@@ -309,7 +309,7 @@ function start_backup
 		ret=1
 	    fi
 	else
-	    $XTRABACKUP_BIN $GALERA_INFO --ibbackup=xtrabackup_55 --defaults-file=$MYCNF --host=127.0.0.1 --user=$CMON_USER --password=$CMON_PASSWORD $THROTTLE --incremental --incremental-lsn=$LSN  --stream=xbstream ./ 2>$BACKUP_LOGFILE  | gzip - > $BACKUPDIR/$FILENAME 
+	    $XTRABACKUP_BIN $GALERA_INFO  --defaults-file=$MYCNF --host=127.0.0.1 --user=$CMON_USER --password=$CMON_PASSWORD $THROTTLE --incremental --incremental-lsn=$LSN  --stream=xbstream ./ 2>$BACKUP_LOGFILE  | gzip - > $BACKUPDIR/$FILENAME 
 	    ret=$?
 	    LSN=`cat $BACKUP_LOGFILE | grep 'xtrabackup: The latest check point (for incremental):' | awk -F ':' '{print $3;}'`
 	    if [ -z "$LSN" ]; then
@@ -608,7 +608,7 @@ function restore
         echo "untar $directory/$filename failed"
 	  exit 1
       fi
-      $XTRABACKUP_BIN --defaults-file=$MYCNF --ibbackup=xtrabackup_55 --apply-log --redo-only $TARGETDIR/$BACKUPID/
+      $XTRABACKUP_BIN --defaults-file=$MYCNF  --apply-log --redo-only $TARGETDIR/$BACKUPID/
       ret=$?
       if [ $ret -ne 0 ]; then
         echo "restore full $directory/$filename failed"
@@ -673,7 +673,7 @@ function restore
 	  echo "Restore FAILED"
 	    exit 1
       fi
-      $XTRABACKUP_BIN --defaults-file=$MYCNF --ibbackup=xtrabackup_55  --apply-log --redo-only --incremental-dir=$TARGETDIR/tmp/ /$TARGETDIR/$BACKUPID/ 
+      $XTRABACKUP_BIN --defaults-file=$MYCNF   --apply-log --redo-only --incremental-dir=$TARGETDIR/tmp/ /$TARGETDIR/$BACKUPID/ 
       ret=$?
       if [ $ret -ne 0 ]; then
         echo "restore incremental $directory/$filename failed"

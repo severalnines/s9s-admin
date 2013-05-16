@@ -365,7 +365,6 @@ if [ ! -e $LOCKFILE ]; then
     if [ "$x" = ""  ]; then
 	log_job_message "installing xtrabackup on $MASTER" 0	
 	ssh $SSH_OPTS  $SSH_USER@$MASTER "/usr/bin/s9s_backup --install -i$CID -b$DATADIR"	
-	
     fi
    
     x=`ssh $SSH_OPTS  $SSH_USER@$SLAVE 'which innobackupex'`
