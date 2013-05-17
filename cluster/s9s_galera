@@ -608,7 +608,7 @@ function get_galera_provider_options
     local xHNAME=$1
     local xNODEID=$2
     QUERY="SHOW GLOBAL VARIABLES LIKE 'wsrep_provider_options'"
-    STATE=$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$xHNAME --port=$CMON_DB_PORT -A -Bse "$QUERY"  2>/dev/null    
+    STATE=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$xHNAME --port=$CMON_DB_PORT -A -Bse "$QUERY"  2>/tmp/x`
     STATE=`echo $STATE | awk '{$1="";print $0;}'`
     echo $STATE
 }
