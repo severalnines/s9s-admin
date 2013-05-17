@@ -999,7 +999,7 @@ function status_cluster
         SERVER_LIST=`echo $HOSTLIST | sed "s/,/ /g" | sed "s/^//g" | sed "s/$//g"`
     else
 	load_opts $CLUSTER_ID
-	QUERY="select group_concat(hostname) SEPARATOR ' ') from ${CMON_DB_DB}.mysql_server where cid=${CLUSTER_ID}"
+	QUERY="select group_concat(hostname SEPARATOR ' ') from ${CMON_DB_DB}.mysql_server where cid=${CLUSTER_ID}"
         SERVER_LIST=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$CMON_DB_PORT --auto-vertical-output -Bse "$QUERY"  2>/tmp/err`
         if [ $? -ne 0 ]; then
             echo "Could not reach CMON DB. It may be down."
