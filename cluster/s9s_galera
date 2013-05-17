@@ -349,7 +349,7 @@ function stop_cluster
 
 
     if [ -z "$CMON_PASSWORD" ]; then
-      echo "s9s_clone --create -p  missing"
+      echo "s9s_galera --stop-cluster -p  missing"
       exit 1
     fi
 
@@ -471,7 +471,7 @@ function stop_node_int
     local xNODEID=$2
     remote_cmd_nofail $xHNAME "/etc/init.d/mysql stop"
     sleep 2
-    STATE=$(check_node_up $xHNAME $xNODEID)
+    STATE=$(check_node_up $xHNAME)
     echo "Waiting for node to fully stop and setting node state"
     if [ "$STATE" = "DOWN" ]; then
 	i=0
@@ -494,14 +494,14 @@ function start_node_donor
 {    
     local xHNAME=$1
     local xNODEID=$2
-    STATE=$(check_node_up $xHNAME $xNODEID)
+    STATE=$(check_node_up $xHNAME)
     if [ "$STATE" = "UP" ]; then
 	echo "Node $xHNAME is already started"
 	exit 1
     fi
     remote_cmd3 $xHNAME "nohup nice /etc/init.d/mysql start --wsrep-cluster-address=gcomm:// > /dev/null 2>&1"    
     sleep 2
-    STATE=$(check_node_up $xHNAME $xNODEID)
+    STATE=$(check_node_up $xHNAME)
     if [ "$STATE" = "UP" ]; then	
         set_nodestate $xNODEID 15
 	sleep 1
@@ -522,11 +522,11 @@ function start_node_int
     local xNODEID=$2
     local xGALERA_PORT=$3
 
-    STATE=$(check_node_up $xHNAME $xNODEID)
+    STATE=$(check_node_up $xHNAME)
     if [ "$STATE" = "DOWN" ]; then
        remote_cmd3 $xHNAME "nohup nice /etc/init.d/mysql start --wsrep-cluster-address=gcomm://$DONOR_HOSTNAME:$xGALERA_PORT > /dev/null 2>&1"
        sleep 2
-       STATE=$(check_node_up $xHNAME $xNODEID)
+       STATE=$(check_node_up $xHNAME)
        if [ "$STATE" = "UP" ]; then
            set_nodestate $xNODEID 15
        else
@@ -543,7 +543,6 @@ function start_node_int
 function check_node_up
 {
     local xHNAME=$1
-    local xNODEID=$2   
     PID=`ssh $SSH_OPTS $SSH_USER@$xHNAME "pgrep -f mysqld" 2>/dev/null`
 #    PID=$(remote_cmd_getreply $xHNAME "pgrep -f mysqld")    
     if [ -n "$PID" ]; then
@@ -564,12 +563,11 @@ function check_host_exists
 function get_galera_nodestate
 {
     local xHNAME=$1
-    local xNODEID=$2
-    local xVAR=$3
+    local xVAR=$2
     QUERY="SHOW GLOBAL STATUS LIKE '$xVAR'"
     STATE=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$xHNAME --port=$CMON_DB_PORT --auto-vertical-output -Bse "$QUERY"  2>/dev/null`
     if [ $? -ne 0 ]; then
-	STATE=$(check_node_up $xHNAME $xNODEID)
+	STATE=$(check_node_up $xHNAME)
 	if [ "$STATE" = "DOWN" ]; then
 	    echo "DOWN"
 	else
@@ -590,7 +588,7 @@ function get_galera_clusterstate
     STATE=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$xHNAME --port=$CMON_DB_PORT --auto-vertical-output -Bse "$QUERY"  2>/dev/null`
     
     if [ $? -ne 0 ]; then
-	STATE=$(check_node_up $xHNAME $xNODEID)
+	STATE=$(check_node_up $xHNAME)
 	if [ "$STATE" = "DOWN" ]; then
 	    echo "DOWN"
 	else
@@ -619,10 +617,10 @@ function set_nodestate
     NODEID=$1
     STATE=$2
     QUERY="UPDATE mysql_server SET status=$STATE WHERE cid=$CLUSTER_ID AND nodeid=$NODEID"
-    `$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=127.0.0.1 --port=$CMON_DB_PORT --auto-vertical-output -Bse "$QUERY"`
+    `$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=127.0.0.1 --port=$CMON_DB_PORT --auto-vertical-output -Bse "$QUERY" > /tmp/err`
     if [ $? -ne 0 ]; then
-        echo "setting state failed"
-        exit 1
+        echo "Warning! setting state failed - could not reach CMON DB (which can be ok)."
+ 	cat /tmp/err
     fi
 }
 
@@ -727,7 +725,7 @@ function reinit_cluster
     RETRY=0
     while [ 1 ]; 
     do
-	X=$(get_galera_nodestate $DONOR_HOSTNAME $DONOR_ID "wsrep_local_state_comment")
+	X=$(get_galera_nodestate $DONOR_HOSTNAME "wsrep_local_state_comment")
 	if [ "$X" = "Synced" ]; then
 	    break
 	fi
@@ -835,14 +833,10 @@ function make_primary
     PROVIDER_OPTS=`echo $PROVIDER_OPTS | sed 's#\t##g'`
     PROVIDER_OPTS=`echo $PROVIDER_OPTS | sed 's#\\\t##g'`
     QUERY="set global wsrep_provider_options='${PROVIDER_OPTS};pc.bootstrap=1'"    
-
-    $MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$XHOSTNAME --port=$CMON_DB_PORT --auto-vertical-output -Bse "$QUERY"
-    
-    STATE=$(get_galera_nodestate $XHOSTNAME $DONOR_ID "wsrep_local_state_comment")
-
+    STATE=$(get_galera_nodestate $XHOSTNAME "wsrep_local_state_comment")
+    echo "State: $STATE"
     if [ "$STATE" = "Initialized" ]; then
-
-	STATE=$(get_galera_clusterstate $XHOSTNAME $DONOR_ID)
+	STATE=$(get_galera_clusterstate $XHOSTNAME $NODEID)
 	if [ "$STATE" = "non-Primary" ]; then	   
 	    QUERY="set global wsrep_provider_options='${PROVIDER_OPTS};pc.bootstrap=1'"
 	    $MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$XHOSTNAME --port=$CMON_DB_PORT -e "$QUERY"
@@ -923,7 +917,13 @@ function start_cluster
     load_opts $CLUSTER_ID
     
     QUERY="select group_concat(concat(hostname, ',', nodeid) SEPARATOR ' ') from ${CMON_DB_DB}.mysql_server where cid=${CLUSTER_ID}"
-    SERVER_LIST=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$CMON_DB_PORT --auto-vertical-output -Bse "$QUERY"  2>/dev/null`
+    SERVER_LIST=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$CMON_DB_PORT --auto-vertical-output -Bse "$QUERY"  2>/tmp/err`
+    if [ $? -ne 0 ]; then
+        echo "Could not reach CMON DB. It may be down."
+        cat /tmp/err
+        echo ""
+        exit 1
+    fi
     if [ -z "$OS" ]; then
 	if [ `hash /usr/sbin/update-rc.d 2>/dev/null`  ]; then
 	    OS="redhat"
@@ -960,7 +960,7 @@ function start_cluster
 
 function status_cluster
 {
-    args=`getopt p:i:P:t:d:j: $*`
+    args=`getopt p:i:P:t:d:j:h: $*`
     set -- $args
     for i
     do
@@ -970,6 +970,9 @@ function status_cluster
 		shift;;
             -i)
 		CLUSTER_ID="$2"; shift;
+		shift;;
+            -h)
+		HOSTLIST="$2"; shift;
 		shift;;
             -j)
 		jobid="$2"; shift;
@@ -1003,10 +1006,22 @@ function status_cluster
 	    echo "./s9s_galera -- only galera is supported"
 	    exit 1;	           	     
     esac
-    load_opts $CLUSTER_ID
-    
-    QUERY="select group_concat(concat(hostname, ',', nodeid) SEPARATOR ' ') from ${CMON_DB_DB}.mysql_server where cid=${CLUSTER_ID}"
-    SERVER_LIST=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$CMON_DB_PORT --auto-vertical-output -Bse "$QUERY"  2>/dev/null`
+
+    if [ -n "$HOSTLIST" ]; then
+        SERVER_LIST=`echo $HOSTLIST | sed "s/,/ /g" | sed "s/^//g" | sed "s/$//g"`
+    else
+	load_opts $CLUSTER_ID
+	QUERY="select group_concat(hostname) SEPARATOR ' ') from ${CMON_DB_DB}.mysql_server where cid=${CLUSTER_ID}"
+        SERVER_LIST=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$CMON_DB_PORT --auto-vertical-output -Bse "$QUERY"  2>/tmp/err`
+        if [ $? -ne 0 ]; then
+            echo "Could not reach CMON DB. It may be down."
+            cat /tmp/err
+	    echo ""
+	    echo "If you are unable to reach CMON DB due to e.g site failure then do"
+	    echo "./s9s-galera --status -i$CLUSTER_ID -h<comma-separated list of galera server addresses>" 
+	    exit 1
+	fi
+    fi
     if [ -z "$OS" ]; then
 	if [ `hash /usr/sbin/update-rc.d 2>/dev/null`  ]; then
 	    OS="redhat"
@@ -1015,16 +1030,13 @@ function status_cluster
 	fi	
     fi
 
-
     
     if [ "$SERVER_LIST" != "NULL" ]; then
 	for S in $SERVER_LIST
 	do
 	    HNAME=`echo $S | awk -F ',' '{print $1};'`
-            NODEID=`echo $S | awk -F ',' '{print $2};'`
-	    ###
-	    X=$(get_galera_nodestate $HNAME $NODEID "wsrep_local_state_comment") 
-	    Y=$(get_galera_nodestate $HNAME $NODEID "wsrep_cluster_size") 
+	    X=$(get_galera_nodestate $HNAME "wsrep_local_state_comment") 
+	    Y=$(get_galera_nodestate $HNAME "wsrep_cluster_size") 
 	    echo "$HNAME       $X    cluster_size: $Y"	    
 	done
     fi
@@ -1101,6 +1113,13 @@ function start_node
     
     QUERY="select group_concat(concat(hostname, ',', nodeid) SEPARATOR ' ') from ${CMON_DB_DB}.mysql_server where cid=${CLUSTER_ID} and hostname='$XHOSTNAME'"
     SERVER_LIST=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$CMON_DB_PORT --auto-vertical-output -Bse "$QUERY"  2>/dev/null`
+	
+    if [ $? -ne 0 ]; then
+        echo "Could not reach CMON DB. It may be down."
+        cat /tmp/err
+        echo ""
+        exit 1
+    fi
     if [ -z "$OS" ]; then
 	if [ `hash /usr/sbin/update-rc.d 2>/dev/null`  ]; then
 	    OS="redhat"

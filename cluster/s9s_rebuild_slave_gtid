@@ -78,6 +78,34 @@ function update_mysql_status
     fi
 }
 
+function get_mysql_variable
+{
+    local xHNAME=$1
+    local xVAR=$2
+    QUERY="SHOW GLOBAL VARIABLES LIKE '$xVAR'"
+    STATE=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$xHNAME --port=$MYSQL_PORT -A -Bse "$QUERY"  2>/tmp/x `
+    STATE=`echo $STATE | awk '{$1="";print $0;}'`
+    echo $STATE
+}
+
+function create_mysql_server
+{
+    HNAME=$1
+    if [ $ADDNODE -eq 1 ]; then
+        XHOSTID=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "SELECT id FROM hosts  WHERE cid=$CID AND (hostname='$HNAME' OR ip='$HNAME')"` 
+        get_mysql_variable $HNAME "server_id"
+ 	SERVERID=$(get_mysql_variable $HNAME "server_id")
+ 	VERSION=$(get_mysql_variable $HNAME "version")
+  	if [ "$XHOSTID" = "" ] || [ "$SERVERID" = "" ] || [ "$VERSION" = ""]; then
+           myexit 1 "Could not create server hostid=$XHOSTID serverid=$SERVERID version=$VERSION"
+	fi
+        QUERY="INSERT INTO mysql_server(id, cid, nodeid, serverid,hostname, role, port,version) VALUES($XHOSTID, $CID,$XHOSTID, $SERVERID, '$HNAME', 'slave', $MYSQL_PORT,'$VERSION')"
+        $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
+        myexit $? "Could not create mysql server"
+    fi
+}
+
+
 
 function set_active
 {    
@@ -100,14 +128,19 @@ function grant_master_slave
 {    
     GRANT="GRANT REPLICATION SLAVE ON *.* TO  '$repl_user'@'$SLAVE' IDENTIFIED BY '$repl_password'"
     $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --host=$MASTER --database=mysql --port=$MYSQL_PORT  -e "$GRANT" 2>&1 >/tmp/err.log
-    if [ $? -ne 0 ]; then 
-	log_job_message "Failed: $GRANT" 1
-	log_job 'FAILED' 'rebuild slave failed' 1
-	exit 1
-    fi
+    myexit $? "$GRANT"
 }
 
-
+function myexit
+{
+    RET=$1
+    MSG=$2
+    if [ $RET -ne 0 ]; then
+        log_job_message "Failed: $MSG" 1
+        log_job 'FAILED' 'rebuild slave failed' 1
+        exit 1
+    fi
+}
 function reset_master
 {
     s=$1
@@ -234,8 +267,9 @@ function write_logfile
 
 
 NODEID=0
+ADDNODE=0
 
- args=`getopt p:i:P:m:s:d:n:j: $*`
+ args=`getopt p:i:P:m:s:d:n:j:a $*`
     set -- $args
     for i
     do
@@ -257,6 +291,9 @@ NODEID=0
                 shift;;
             -n)
                 NODEID="$2"; shift;
+                shift;;
+            -a)
+                ADDNODE=1; shift;
                 shift;;
             -j)
                 JOBID="$2"; shift;
@@ -492,6 +529,19 @@ if [ ! -e $LOCKFILE ]; then
     reset_slave $SLAVE
     change_master
     set_gtid $binlog_gtid
+    if [ $? -ne 0 ]; then
+        log_job_message "Failed to set GTID $binlog_gtid" 1
+        log_job 'FAILED' 'rebuild slave failed' 1
+        exit 1
+    fi
+    if [ $ADDNODE -eq 1 ]; then
+       create_mysql_server $SLAVE
+        if [ $? -ne 0 ]; then
+           log_job_message "Failed to create mysql server in cmon db, but the slave is running" 1
+           log_job 'FAILED' 'rebuild slave failed' 1
+           exit 1
+        fi
+    fi
 
     log_job_message "rebuild slave ok" 0
     log_job 'FINISHED' 'Command ok' 0
