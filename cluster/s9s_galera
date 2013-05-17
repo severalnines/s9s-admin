@@ -583,7 +583,6 @@ function get_galera_nodestate
 function get_galera_clusterstate
 {
     local xHNAME=$1
-    local xNODEID=$2
     QUERY="SHOW GLOBAL STATUS LIKE 'wsrep_cluster_status'"
     STATE=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$xHNAME --port=$CMON_DB_PORT --auto-vertical-output -Bse "$QUERY"  2>/dev/null`
     
@@ -598,17 +597,6 @@ function get_galera_clusterstate
 	STATE=`echo $STATE | awk '{print $2;}'`
 	echo "$STATE"
     fi
-}
-
-
-function get_galera_provider_options
-{
-    local xHNAME=$1
-    local xNODEID=$2
-    QUERY="SHOW GLOBAL VARIABLES LIKE 'wsrep_provider_options'"
-    STATE=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$xHNAME --port=$CMON_DB_PORT -A -Bse "$QUERY"  2>/tmp/x`
-    STATE=`echo $STATE | awk '{$1="";print $0;}'`
-    echo $STATE
 }
 
 
@@ -836,8 +824,8 @@ function make_primary
     STATE=$(get_galera_nodestate $XHOSTNAME "wsrep_local_state_comment")
     echo "State: $STATE"
     if [ "$STATE" = "Initialized" ]; then
-	STATE=$(get_galera_clusterstate $XHOSTNAME $NODEID)
-	if [ "$STATE" = "non-Primary" ]; then	   
+	CSTATE=$(get_galera_clusterstate $XHOSTNAME)
+	if [ "$CSTATE" = "non-Primary" ]; then	   
 	    QUERY="set global wsrep_provider_options='${PROVIDER_OPTS};pc.bootstrap=1'"
 	    $MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$XHOSTNAME --port=$CMON_DB_PORT -e "$QUERY"
 	    if [ $? -ne 0 ]; then
@@ -1037,7 +1025,8 @@ function status_cluster
 	    HNAME=`echo $S | awk -F ',' '{print $1};'`
 	    X=$(get_galera_nodestate $HNAME "wsrep_local_state_comment") 
 	    Y=$(get_galera_nodestate $HNAME "wsrep_cluster_size") 
-	    echo "$HNAME       $X    cluster_size: $Y"	    
+	    Z=$(get_galera_nodestate $HNAME "wsrep_last_committed")
+	    echo "$HNAME    status: $X, cluster_size: $Y, last committed: $Z "	    	    
 	done
     fi
 }
