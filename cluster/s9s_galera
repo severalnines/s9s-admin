@@ -625,9 +625,10 @@ function set_clusterstate
 function reinit_cluster
 {
 
-    args=`getopt p:i:P:t:d:j:f $*`
+    args=`getopt p:i:P:t:d:j:fr $*`
     set -- $args
     FORCE=0
+    RESET=0
     for i
     do
 	case "$i" in
@@ -645,6 +646,9 @@ function reinit_cluster
 		shift;;
             -f)
 		FORCE="1"; shift;
+		shift;;
+            -r)
+		RESET="1"; shift;
 		shift;;
 	    -P)
 		GALERA_PORT="$2"; shift;
@@ -727,6 +731,25 @@ function reinit_cluster
     done
     echo ""
     echo "$DONOR_HOSTNAME is Synced"
+    if [ $RESET -eq 1 ]; then
+      echo "Preparing non-donor nodes"
+      QUERY="SHOW GLOBAL VARIABLES LIKE 'datadir'"
+      DATADIR=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$DONOR_HOSTNAME --port=$CMON_DB_PORT -A -Bse "$QUERY"`
+      if [ $? -ne 0 ]; then
+         echo "Failed to get datadir"
+         exit 1
+      fi
+      DATADIR=`echo $DATADIR | awk   '{print $2;}'`
+      for S in $SERVER_LIST
+      do
+          HNAME=`echo $S | awk -F ',' '{print $1};'`
+	  if [ "$HNAME" != "$DONOR_HOSTNAME" ]; then
+             echo "-r (RESET) was specified, removing $DATADIR/grastate.dat"
+	     remote_cmd $HNAME "rm -rf $DATADIR/grastate.dat"
+	     remote_cmd $HNAME "rm -rf /tmp/xtrabackup_pid"
+	  fi
+      done
+    fi
     echo "Start another node (one at a time):"
     for S in $SERVER_LIST
     do
@@ -736,16 +759,6 @@ function reinit_cluster
 	fi
     done
     
-#    if [ "$SERVER_LIST" != "NULL" ]; then
-#	for S in $SERVER_LIST
-#	do
-#	    HNAME=`echo $S | awk -F ',' '{print $1};'`
-#            NODEID=`echo $S | awk -F ',' '{print $2};'`
-#	    if [ "$HNAME" != "$DONOR_HOSTNAME" ]; then 
-#		start_node_int $HNAME $NODEID $GALERA_PORT
-#	    fi
-#	done
-#    fi
 }
 
 
