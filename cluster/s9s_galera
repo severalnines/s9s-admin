@@ -685,7 +685,7 @@ function remove_garbd
 	cat ${S9S_TMPDIR}/err.log
 	exit 1
     fi
-    remote_cmd2 $XHOSTNAME "killall -9 garbd"   
+    remote_cmd_nofail $XHOSTNAME "killall -9 garbd"   
     echo "Successfully removed garbd from $XHOSTNAME"
 }
 
