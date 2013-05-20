@@ -519,7 +519,7 @@ function start_node_donor
 
 function install_garbd
 {
-    args=`getopt p:i:P:t:d:j:h: $*`
+    args=`getopt p:i:P:t:d:j:h:f:V $*`
     set -- $args
     for i
     do
@@ -532,6 +532,12 @@ function install_garbd
 		shift;;
             -h)
 		XHOSTNAME="$2"; shift;
+		shift;;
+            -f)
+		XFILENAME="$2"; shift;
+		shift;;
+            -V)
+		XVENDOR="$2"; shift;
 		shift;;
             -j)
 		jobid="$2"; shift;
@@ -574,6 +580,15 @@ function install_garbd
 	    exit 1;	           	     
     esac
     load_opts $CLUSTER_ID
+    if [ -z "$VENDOR" ]; then
+	VENDOR=$XVENDOR
+    fi
+
+    if [ -z "$VENDOR" ]; then
+	echo "No vendor was specified"
+	echo "./s9s-galera --install-garbd -V [percona|mariadb|codership]"
+	exit 1
+    fi
     
     DONOR_HOSTNAME=`$MYSQL_BIN -B -N $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$DONOR_HOSTNAME --port=$CMON_DB_PORT --database=$CMON_DB_DB  -e "SELECT hostname FROM $CMON_DB_DB.mysql_server WHERE cid=${CLUSTER_ID} AND status=0 LIMIT 1"`
     if [ -z "$DONOR_HOSTNAME" ]; then
@@ -591,6 +606,14 @@ function install_garbd
 
     case $VENDOR in
 	percona)
+	    if [ "$OS" = "redhat" ]; then
+		remote_cmd $XHOSTNAME "rpm -Uhv --force http://www.percona.com/downloads/percona-release/percona-release-0.0-1.x86_64.rpm"
+		remote_cmd $XHOSTNAME "yum -y install Percona-XtraDB-Cluster-galera"
+	    else
+		echo "debian not supported yet"
+	    fi
+	    ;;
+	codership)
 	    if [ "$OS" = "redhat" ]; then
 		remote_cmd $XHOSTNAME "rpm -Uhv --force http://www.percona.com/downloads/percona-release/percona-release-0.0-1.x86_64.rpm"
 		remote_cmd $XHOSTNAME "yum -y install Percona-XtraDB-Cluster-galera"
