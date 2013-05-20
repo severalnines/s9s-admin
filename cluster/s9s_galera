@@ -576,7 +576,7 @@ function install_garbd
     load_opts $CLUSTER_ID
     
     DONOR_HOSTNAME=`$MYSQL_BIN -B -N $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$DONOR_HOSTNAME --port=$CMON_DB_PORT --database=$CMON_DB_DB  -e "SELECT hostname FROM $CMON_DB_DB.mysql_server WHERE cid=${CLUSTER_ID} AND status=0 LIMIT 1"`
-    if [ -z "$CLUSTER_ADDRESS" ]; then
+    if [ -z "$DONOR_HOSTNAME" ]; then
 	echo "Could not get a cluster address"
 	exit 1
     fi
