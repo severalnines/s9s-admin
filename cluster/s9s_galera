@@ -676,7 +676,7 @@ function remove_garbd
     esac
     load_opts $CLUSTER_ID
     
-    QUERY="DELETE FROM ext_proc WHERE cid=$CLUSTER_ID AND hostname='$HOSTNAME' AND proc_name='garbd'"
+    QUERY="DELETE FROM ext_proc WHERE cid=$CLUSTER_ID AND hostname='$XHOSTNAME' AND proc_name='garbd'"
     
     $MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$CMON_DB_HOST --port=$CMON_DB_PORT --database=$CMON_DB_DB --auto-vertical-output -Bse "$QUERY"  2>&1 >${S9S_TMPDIR}/err.log    
     if [  $? -ne 0 ]; then
@@ -685,7 +685,7 @@ function remove_garbd
 	cat ${S9S_TMPDIR}/err.log
 	exit 1
     fi
-    remote_cmd $XHOSTNAME "killall -9 garbd"   
+    remote_cmd2 $XHOSTNAME "killall -9 garbd"   
     echo "Successfully removed garbd from $XHOSTNAME"
 }
 
