@@ -592,8 +592,8 @@ function install_garbd
     case $VENDOR in
 	percona)
 	    if [ "$OS" = "redhat" ]; then
-		remote_cmd $HOSTNAME "rpm -Uhv --force http://www.percona.com/downloads/percona-release/percona-release-0.0-1.x86_64.rpm"
-		remote_cmd $HOSTNAME "yum -y install Percona-XtraDB-Cluster-galera"
+		remote_cmd $XHOSTNAME "rpm -Uhv --force http://www.percona.com/downloads/percona-release/percona-release-0.0-1.x86_64.rpm"
+		remote_cmd $XHOSTNAME "yum -y install Percona-XtraDB-Cluster-galera"
 	    else
 		echo "debian not supported yet"
 	    fi
