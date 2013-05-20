@@ -650,6 +650,7 @@ function install_garbd
 		remote_cmd $XHOSTNAME "rpm -Uhv --force $TMPDIR/$XFILE"
 	    else
 		remote_cmd $XHOSTNAME "dpkg -i $TMPDIR/$XFILE"
+	    fi
 	    ;;
 	*)
 	    echo "non supported vendor"
