@@ -690,10 +690,12 @@ function restore
       SEQNO=`cat $TARGETDIR/$BACKUPID/xtrabackup_galera_info | awk -F: '{print $2;}'`
       cat << 'EOF' > $TARGETDIR/$BACKUPID/grastate.dat
 version: 2.1
-uuid:    $UUID
-seqno:   $SEQNO
+uuid:    _UUID
+seqno:   _SEQNO
 cert_index:
 EOF
+      sed -i.bak "s/_UUID/$UUID" $TARGETDIR/$BACKUPID/grastate.dat
+      sed -i.bak "s/_SEQNO/$SEQNO" $TARGETDIR/$BACKUPID/grastate.dat
   fi
   
 
