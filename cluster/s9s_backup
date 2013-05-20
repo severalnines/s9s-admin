@@ -671,18 +671,6 @@ function restore
       done
   fi
   rm -rf $TARGETDIR/tmp/
-  echo "Restore completed OK"
-  echo "To copy back the restored data into your datadir of mysqld do:"
-  echo "* Shutdown the cmon controller to prevent automatic recovery"
-  echo "* Shutdown the cmon agent on this host to prevent automatic recovery"
-  echo "* Shutdown the mysql server "
-  echo "* innobackupex --copy-back $TARGETDIR/$BACKUPID/"
-  echo "and don't forget to:"
-  echo "* chwon mysql:mysql -R <mysqld datadir>"
-  echo ""
-  echo "Restore OK"
-  echo "To copy back the restored data into your datadir of mysqld do:"
-  echo "innobackupex --copy-back $TARGETDIR/$BACKUPID/"
 
   
   if [ -f $TARGETDIR/$BACKUPID/xtrabackup_galera_info ]; then
@@ -697,7 +685,13 @@ EOF
       sed -i.bak "s/_UUID/$UUID/g" $TARGETDIR/$BACKUPID/grastate.dat
       sed -i.bak "s/_SEQNO/$SEQNO/g" $TARGETDIR/$BACKUPID/grastate.dat
   fi
-  
+  echo "Restore OK"
+  echo "To copy back the restored data into your datadir of mysqld do:"
+  echo "* Shutdown the cmon controller to prevent automatic recovery"
+  echo "* Shutdown the cmon agent on this host to prevent automatic recovery"
+  echo "* Shutdown the mysql server "
+  echo "* innobackupex --copy-back $TARGETDIR/$BACKUPID/"
+  echo "* chwon mysql:mysql -R <mysqld datadir>"  
 
   exit 0
 }
