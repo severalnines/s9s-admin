@@ -615,6 +615,82 @@ function install_garbd
     fi
     echo "Successfully installed garbd on $XHOSTNAME"
 }
+
+
+
+function remove_garbd
+{
+    args=`getopt p:i:P:t:d:j:h: $*`
+    set -- $args
+    for i
+    do
+	case "$i" in
+            -p)
+		CMON_PASSWORD="$2"; shift;
+		shift;;
+            -i)
+		CLUSTER_ID="$2"; shift;
+		shift;;
+            -h)
+		XHOSTNAME="$2"; shift;
+		shift;;
+            -j)
+		jobid="$2"; shift;
+		shift;;
+	    -P)
+		GALERA_PORT="$2"; shift;
+		shift;;
+            --)
+		shift; break;;
+	esac
+    done    
+    
+
+    if [ -z "$CMON_PASSWORD" ]; then
+      echo "s9s_galera --remove-garbd -p  missing"
+      exit 1
+    fi
+
+    if [ -z "$CLUSTER_ID" ]; then
+      echo "s9s_clone --remove-garbd -i <cluster id> missing"
+      exit 1
+    fi
+
+    if [ -z "$XHOSTNAME" ]; then
+      echo "s9s_clone --remove-garbd -h <hostname to install garbd on is missing>"
+      exit 1
+    fi
+
+    if [ -z "$GALERA_PORT" ]; then
+	GALERA_PORT="4567"
+    fi
+
+##    CMON_DB_DB="cmon_${CLUSTER_ID}"
+    
+    case $CLUSTER_TYPE in
+	galera)
+	    ;;
+	*)
+	    echo "./s9s_galera -- only galera is supported"
+	    exit 1;	           	     
+    esac
+    load_opts $CLUSTER_ID
+    
+    QUERY="DELETE FROM ext_proc WHERE cid=$clusterid AND hostname='$host' AND proc_name='garbd'"
+    
+    $MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$xHNAME --port=$CMON_DB_PORT --database=$CMON_DB_DB --auto-vertical-output -Bse "$QUERY"  2>&1 >${S9S_TMPDIR}/err.log    
+    if [  $? -ne 0 ]; then
+	echo "Query failed."
+	echo "Could not delete garbd from ext_proc"
+	cat ${S9S_TMPDIR}/err.log
+	exit 1
+    fi
+    remote_cmd $XHOSTNAME "killall -9 garbd"   
+    echo "Successfully removed garbd from $XHOSTNAME"
+}
+
+
+
 function start_garbd
 {    
     local xHNAME=$1
@@ -1323,6 +1399,9 @@ if [ ! -e $LOCKFILE ]; then
 	    ;;
 	--install-garbd)
 	    install_garbd  $2 $3 $4 $5 $6 $7 $8 $9
+	    ;;
+	--remove-garbd)
+	    remove_garbd  $2 $3 $4 $5 $6 $7 $8 $9
 	    ;;
 	--status)
 	    status_cluster  $2 $3 $4 $5 $6 $7 $8 $9
