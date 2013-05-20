@@ -605,8 +605,8 @@ function install_garbd
     
     start_garbd $XHOSTNAME $DONOR_HOSTNAME $GALERA_PORT $CLUSTER_NAME
     sleep 2
-    QUERY="REPLACE INTO $CMON_DB.ext_proc (cid, hostname,bin, opts,cmd, proc_name, port, status) VALUES($CLUSTERID, '$HOSTNAME','/usr/bin/garbd', '-a gcomm://${DONOR_HOSTNAME}:${GALERA_PORT} -g  -d', '/usr/bin/garbd  -a gcomm://${DONOR_HOSTNAME}:${GALERA_PORT} -g $CLUSTER_NAME -d','garbd', $GALERA_PORT , 0)"
-    $MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$xHNAME --port=$CMON_DB_PORT --auto-vertical-output -Bse "$QUERY"  2>&1 >${S9S_TMPDIR}/err.log    
+    QUERY="REPLACE INTO ext_proc (cid, hostname,bin, opts,cmd, proc_name, port, status) VALUES($CLUSTERID, '$HOSTNAME','/usr/bin/garbd', '-a gcomm://${DONOR_HOSTNAME}:${GALERA_PORT} -g  -d', '/usr/bin/garbd  -a gcomm://${DONOR_HOSTNAME}:${GALERA_PORT} -g $CLUSTER_NAME -d','garbd', $GALERA_PORT , 0)"
+    $MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$xHNAME --port=$CMON_DB_PORT --database=$CMON_DB_DB --auto-vertical-output -Bse "$QUERY"  2>&1 >${S9S_TMPDIR}/err.log    
     if [  $? -ne 0 ]; then
 	echo "Query failed."
 	echo "Garbd started but ClusterControl will not be able to manage the garbd"
