@@ -613,6 +613,7 @@ function install_garbd
 	cat ${S9S_TMPDIR}/err.log
 	exit 1
     fi
+    echo "Successfully installed garbd on $XHOSTNAME"
 }
 function start_garbd
 {    
