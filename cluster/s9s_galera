@@ -230,6 +230,8 @@ function load_opts
     SSH_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_PORT' AND cid=$CLUSTER_ID" 2>/dev/null`
     SUDO=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SUDO' AND cid=$CLUSTER_ID" 2>/dev/null`    
     OS_USER_HOME=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='OS_USER_HOME' AND cid=$CLUSTER_ID" 2>/dev/null`
+    TMPDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='STAGING_DIR' AND cid=$CLUSTER_ID"`
+    S9S_TMPDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='STAGING_DIR' AND cid=$CLUSTER_ID"`
     VENDOR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='VENDOR' AND cid=$CLUSTER_ID" 2>/dev/null`
     DATADIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon.cluster_config where variable='datadir' and cid=1 order by id asc limit 1" 2>/dev/null`
     MYCNF=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select data  from cmon.cluster_configuration where cid=1 limit 1" 2>/dev/null`
@@ -253,6 +255,11 @@ function load_opts
     fi
     if [ "$SSH_PORT" = "" ] || [ "$SSH_PORT" = "NULL" ];  then
         SSH_PORT="22"
+    fi
+
+    if [ "$S9S_TMPDIR" = "" ] || [ "$TMPDIR" = "NULL" ];  then
+	S9S_TMPDIR="/tmp/"
+	TMPDIR="/tmp/"
     fi
     SSH_OPTS="-p$SSH_PORT $SSH_OPTS"    
 }
@@ -604,22 +611,45 @@ function install_garbd
     fi
     CLUSTER_NAME=`echo $CLUSTER_NAME | awk   '{print $2;}'`
 
+    mkdir -p $S9S_TMPDIR
+    chown $SSH_USER:$SSH_USER $S9S_TMPDIR
+    
     case $VENDOR in
 	percona)
 	    if [ "$OS" = "redhat" ]; then
 		remote_cmd $XHOSTNAME "rpm -Uhv --force http://www.percona.com/downloads/percona-release/percona-release-0.0-1.x86_64.rpm"
 		remote_cmd $XHOSTNAME "yum -y install Percona-XtraDB-Cluster-galera"
 	    else
+		remote_cmd $XHOSTNAME "$UPDATE_PACKAGE_MGR"
+		remote_cmd_nofail $XHOSTNAME "apt-get -y install  libssl0.9.8  wget rsync psmisc"
+		remote_cmd_nofail $XHOSTNAME "sed -i.bak '/repo.percona.com/d'  /etc/apt/sources.list"
+		wget --no-check-certificate --tries=5  -O ${S9S_TMPDIR}/RPM-GPG-KEY-percona http://www.percona.com/redir/downloads/RPM-GPG-KEY-perconaa
+		remote_copy $S9S_TMPDIR/RPM-GPG-KEY-percona ${host} ${S9S_TMPDIR}/RPM-GPG-KEY-percona
+		remote_cmd $XHOSTNAME "gpg --import ${S9S_TMPDIR}/RPM-GPG-KEY-percona"
+		remote_cmd $XHOSTNAME "/bin/sh -c 'gpg -a --export CD2EFD2A | apt-key add -'"
+		remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"deb http://repo.percona.com/apt `lsb_release -c -s` main\" >> /etc/apt/sources.list'"
+		remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"deb-src http://repo.percona.com/apt `lsb_release -c -s` main\" >> /etc/apt/sources.list'"
+		remote_cmd $XHOSTNAME "apt-get -q -y update"
+		remote_cmd $XHOSTNAME "LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::='--force-confnew' -y -q install  percona-xtradb-cluster-galera-2.x"
+		remote_cmd $XHOSTNAME "sync"
 		echo "debian not supported yet"
 	    fi
 	    ;;
-	codership)
-	    if [ "$OS" = "redhat" ]; then
-		remote_cmd $XHOSTNAME "rpm -Uhv --force http://www.percona.com/downloads/percona-release/percona-release-0.0-1.x86_64.rpm"
-		remote_cmd $XHOSTNAME "yum -y install Percona-XtraDB-Cluster-galera"
-	    else
-		echo "debian not supported yet"
+	codership)	    
+	    if [ -z "$XFILENAME" ]; then
+		echo "s9s_clone --install-garbd -f <galera package missing>"
+		exit 1
 	    fi
+	    if [ ! -f "$XFILENAME" ]; then
+		echo "s9s_clone --install-garbd -f <galera package missing>"
+		exit 1
+	    fi	    
+	    remote_copy $XFILENAME $XHOSTNAME $TMPDIR	    
+	    XFILE=`basename $XFILENAME`
+	    if [ "$OS" = "redhat" ]; then
+		remote_cmd $XHOSTNAME "rpm -Uhv --force $TMPDIR/$XFILE"
+	    else
+		remote_cmd $XHOSTNAME "dpkg -i $TMPDIR/$XFILE"
 	    ;;
 	*)
 	    echo "non supported vendor"
