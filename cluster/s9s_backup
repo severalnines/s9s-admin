@@ -630,61 +630,73 @@ function restore
   fi
   
   
-  if [ "$LIST" = "NULL" ]; then
-      echo "No increments found"
-      echo "Restore completed OK"
-      echo "To copy back the restored data into your datadir of mysqld do:"
-      echo "* Shutdown the cmon controller to prevent automatic recovery"
-      echo "* Shutdown the cmon agent on this host to prevent automatic recovery"
-      echo "* Shutdown the mysql server "
-      echo "* innobackupex --copy-back $TARGETDIR/$BACKUPID/"
-      echo "and don't forget to:"
-      echo "* chwon mysql:mysql -R <mysqld datadir>"
-      echo ""
-      exit 0
-  fi
-
-
-  for f in $LIST
-  do      
-      backupid=`echo $f | awk -F ',' '{print $1;}'`
-      backup_type=`echo $f | awk -F ',' '{print $2;}'`
-      location=`echo $f | awk -F ',' '{print $3;}'`
-      status=`echo $f | awk -F ',' '{print $4;}'`
-      size=`echo $f | awk -F ',' '{print $5;}'`
-      report_ts=`echo $f | awk -F ',' '{print $6;}'`
-      directory=`echo $f | awk -F ',' '{print $7;}'`
-      filename=`echo $f | awk -F ',' '{print $8;}'`
-      md5=`echo $f | awk -F ',' '{print $9;}'`
-      echo "Restoring INCREMENTS $directory/$filename into  $TARGETDIR/$BACKUPID/:"
-      SUM=`md5sum $directory/$filename | awk '{print $1;}'`      
-      if [ -n "$md5" ]; then
-	  if [ "$SUM" != "$md5" ]; then
-	      echo "Md5sum does not match! The md5sum of $directory/$filename does not match md5sum stored in cmon db."
-              echo "Refusing to restore."
+  if [ "$LIST" = "NULL" ]  || [ -z "$LIST" ]; then
+      echo "No increments found"   
+  else
+      for f in $LIST
+      do      
+	  backupid=`echo $f | awk -F ',' '{print $1;}'`
+	  backup_type=`echo $f | awk -F ',' '{print $2;}'`
+	  location=`echo $f | awk -F ',' '{print $3;}'`
+	  status=`echo $f | awk -F ',' '{print $4;}'`
+	  size=`echo $f | awk -F ',' '{print $5;}'`
+	  report_ts=`echo $f | awk -F ',' '{print $6;}'`
+	  directory=`echo $f | awk -F ',' '{print $7;}'`
+	  filename=`echo $f | awk -F ',' '{print $8;}'`
+	  md5=`echo $f | awk -F ',' '{print $9;}'`
+	  echo "Restoring INCREMENTS $directory/$filename into  $TARGETDIR/$BACKUPID/:"
+	  SUM=`md5sum $directory/$filename | awk '{print $1;}'`      
+	  if [ -n "$md5" ]; then
+	      if [ "$SUM" != "$md5" ]; then
+		  echo "Md5sum does not match! The md5sum of $directory/$filename does not match md5sum stored in cmon db."
+		  echo "Refusing to restore."
+		  exit 1
+	      fi
+	  fi
+	  
+	  rm -rf $TARGETDIR/tmp/*
+	  zcat $directory/$filename  |xbstream -x -C  $TARGETDIR/tmp/
+	  if [ $? -ne 0 ]; then
+              echo "xbstream failed"
+	      echo "Restore FAILED"
 	      exit 1
 	  fi
-      fi
-
-      rm -rf $TARGETDIR/tmp/*
-      zcat $directory/$filename  |xbstream -x -C  $TARGETDIR/tmp/
-      if [ $? -ne 0 ]; then
-        echo "xbstream failed"
-	  echo "Restore FAILED"
-	    exit 1
-      fi
-      $XTRABACKUP_BIN --defaults-file=$MYCNF   --apply-log --redo-only --incremental-dir=$TARGETDIR/tmp/ /$TARGETDIR/$BACKUPID/ 
-      ret=$?
-      if [ $ret -ne 0 ]; then
-        echo "restore incremental $directory/$filename failed"
-	echo "Restore FAILED"
-	exit 1
-      fi
-  done
+	  $XTRABACKUP_BIN --defaults-file=$MYCNF   --apply-log --redo-only --incremental-dir=$TARGETDIR/tmp/ /$TARGETDIR/$BACKUPID/ 
+	  ret=$?
+	  if [ $ret -ne 0 ]; then
+              echo "restore incremental $directory/$filename failed"
+	      echo "Restore FAILED"
+	      exit 1
+	  fi
+      done
+  fi
   rm -rf $TARGETDIR/tmp/
+  echo "Restore completed OK"
+  echo "To copy back the restored data into your datadir of mysqld do:"
+  echo "* Shutdown the cmon controller to prevent automatic recovery"
+  echo "* Shutdown the cmon agent on this host to prevent automatic recovery"
+  echo "* Shutdown the mysql server "
+  echo "* innobackupex --copy-back $TARGETDIR/$BACKUPID/"
+  echo "and don't forget to:"
+  echo "* chwon mysql:mysql -R <mysqld datadir>"
+  echo ""
   echo "Restore OK"
   echo "To copy back the restored data into your datadir of mysqld do:"
   echo "innobackupex --copy-back $TARGETDIR/$BACKUPID/"
+
+  
+  if [ -f $TARGETDIR/$BACKUPID/xtrabackup_galera_info ]; then
+      UUID=`cat $TARGETDIR/$BACKUPID/xtrabackup_galera_info | awk -F: '{print $1;}'`
+      SEQNO=`cat $TARGETDIR/$BACKUPID/xtrabackup_galera_info | awk -F: '{print $2;}'`
+      cat << 'EOF' > $TARGETDIR/$BACKUPID/grastate.dat
+version: 2.1
+uuid:    $UUID
+seqno:   $SEQNO
+cert_index:
+EOF
+  fi
+  
+
   exit 0
 }
 
