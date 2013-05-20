@@ -694,8 +694,8 @@ uuid:    _UUID
 seqno:   _SEQNO
 cert_index:
 EOF
-      sed -i.bak "s/_UUID/$UUID" $TARGETDIR/$BACKUPID/grastate.dat
-      sed -i.bak "s/_SEQNO/$SEQNO" $TARGETDIR/$BACKUPID/grastate.dat
+      sed -i.bak "s/_UUID/$UUID/g" $TARGETDIR/$BACKUPID/grastate.dat
+      sed -i.bak "s/_SEQNO/$SEQNO/g" $TARGETDIR/$BACKUPID/grastate.dat
   fi
   
 
