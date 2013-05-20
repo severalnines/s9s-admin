@@ -230,8 +230,10 @@ function load_opts
     SSH_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_PORT' AND cid=$CLUSTER_ID" 2>/dev/null`
     SUDO=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SUDO' AND cid=$CLUSTER_ID" 2>/dev/null`    
     OS_USER_HOME=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='OS_USER_HOME' AND cid=$CLUSTER_ID" 2>/dev/null`
+    VENDOR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='VENDOR' AND cid=$CLUSTER_ID" 2>/dev/null`
     DATADIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon.cluster_config where variable='datadir' and cid=1 order by id asc limit 1" 2>/dev/null`
     MYCNF=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select data  from cmon.cluster_configuration where cid=1 limit 1" 2>/dev/null`
+
 
     echo $MYCNF |  sed 's#\\n#\n\r#g' > /tmp/my.cnf
     
@@ -511,8 +513,118 @@ function start_node_donor
     else
 	echo "Failed to start node $xHNAME"
 	exit 1
+    fi    
+}
+
+
+function install_garbd
+{
+    args=`getopt p:i:P:t:d:j:h: $*`
+    set -- $args
+    for i
+    do
+	case "$i" in
+            -p)
+		CMON_PASSWORD="$2"; shift;
+		shift;;
+            -i)
+		CLUSTER_ID="$2"; shift;
+		shift;;
+            -h)
+		XHOSTNAME="$2"; shift;
+		shift;;
+            -j)
+		jobid="$2"; shift;
+		shift;;
+	    -P)
+		GALERA_PORT="$2"; shift;
+		shift;;
+            --)
+		shift; break;;
+	esac
+    done    
+    
+
+    if [ -z "$CMON_PASSWORD" ]; then
+      echo "s9s_galera --install-garbd -p  missing"
+      exit 1
+    fi
+
+    if [ -z "$CLUSTER_ID" ]; then
+      echo "s9s_clone --install-garbd -i <cluster id> missing"
+      exit 1
+    fi
+
+    if [ -z "$XHOSTNAME" ]; then
+      echo "s9s_clone --install-garbd -h <hostname to install garbd on is missing>"
+      exit 1
+    fi
+
+    if [ -z "$GALERA_PORT" ]; then
+	GALERA_PORT="4567"
+    fi
+
+##    CMON_DB_DB="cmon_${CLUSTER_ID}"
+    
+    case $CLUSTER_TYPE in
+	galera)
+	    ;;
+	*)
+	    echo "./s9s_galera -- only galera is supported"
+	    exit 1;	           	     
+    esac
+    load_opts $CLUSTER_ID
+    
+    DONOR_HOSTNAME=`$MYSQL_BIN -B -N $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$DONOR_HOSTNAME --port=$CMON_DB_PORT  -e "SELECT hostname FROM $CMON_DB.mysql_server WHERE cid=${CLUSTER_ID} AND status=0 LIMIT 1"`
+    if [ -z "$CLUSTER_ADDRESS" ]; then
+	echo "Could not get a cluster address"
+	exit 1
     fi
     
+    QUERY="SHOW GLOBAL VARIABLES LIKE 'wsrep_cluster_name'"
+    CLUSTER_NAME=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$DONOR_HOSTNAME --port=$CMON_DB_PORT -A -Bse "$QUERY"`
+    if [ $? -ne 0 ]; then
+        echo "Failed to get wsrep_cluster_namer"
+        exit 1
+    fi
+    CLUSTER_NAME=`echo $CLUSTER_NAME | awk   '{print $2;}'`
+
+    case $VENDOR in
+	percona)
+	    if [ "$OS" = "redhat" ]; then
+		remote_cmd $HOSTNAME "rpm -Uhv --force http://www.percona.com/downloads/percona-release/percona-release-0.0-1.x86_64.rpm"
+		remote_cmd $HOSTNAME "yum -y install Percona-XtraDB-Cluster-galera"
+	    else
+		echo "debian not supported yet"
+	    fi
+	    ;;
+	*)
+	    echo "non supported vendor"
+	    exit 1;	           	     
+    esac
+    
+    start_garbd $HOSTNAME $DONOR_HOSTNAME $GALERA_PORT $CLUSTER_NAME
+    sleep 2
+    QUERY="REPLACE INTO $CMON_DB.ext_proc (cid, hostname,bin, opts,cmd, proc_name, port, status) VALUES($CLUSTERID, '$HOSTNAME','/usr/bin/garbd', '-a gcomm://${DONOR_HOSTNAME}:${GALERA_PORT} -g  -d', '/usr/bin/garbd  -a gcomm://${DONOR_HOSTNAME}:${GALERA_PORT} -g $CLUSTER_NAME -d','garbd', $GALERA_PORT , 0)"
+    $MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$xHNAME --port=$CMON_DB_PORT --auto-vertical-output -Bse "$QUERY"  2>&1 >${S9S_TMPDIR}/err.log    
+    if [  $? -ne 0 ]; then
+	echo "Query failed."
+	echo "Garbd started but ClusterControl will not be able to manage the garbd"
+	cat ${S9S_TMPDIR}/err.log
+	exit 1
+    fi
+}
+function start_garbd
+{    
+    local xHNAME=$1
+    local xDONOR=$2
+    local xGALERA_PORT=$3
+    local xCLUSTER_NAME=$4
+    if [ "$STATE" = "UP" ]; then
+	echo "Node $xHNAME is already started"
+	exit 1
+    fi
+    remote_cmd3 $xHNAME "nohup nice nohup nice /usr/bin/garbd  -a gcomm://${xDONOR}:${xGALERA_PORT} -g $xCLUSTER_NAME -d > /dev/null 2>&1"    
 }
 
 
