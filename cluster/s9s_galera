@@ -488,7 +488,7 @@ function stop_node_int
     local xNODEID=$2
     WAIT_FOR_STOP=1200
     WAIT_TIME=0
-    remote_cmd_nofail $xHNAME "killall $KILLSIG mysqld mysqld_safe"
+    remote_cmd_nofail $xHNAME "killall -${KILLSIG} mysqld mysqld_safe"
     sleep 2
     STATE=$(check_node_up $xHNAME)
     if [ "$STATE" = "UP" ]; then
@@ -502,7 +502,7 @@ function stop_node_int
 	    if [ "$STATE" = "DOWN" ]; then
 		break
 	    fi
-	    remote_cmd_nofail $xHNAME "killall $KILLSIG mysqld mysqld_safe"
+	    remote_cmd_nofail $xHNAME "killall -${KILLSIG} mysqld mysqld_safe"
 	done
     fi
 
