@@ -155,7 +155,7 @@ function remote_cmd3()
    desthost=$1
    xcommand=$2
    printf "%-4s: Executing '%s' " "$desthost" "$xcommand"
-   ssh $SSH_OPTS $SSH_USER@$desthost "$SUDO $xcommand "   
+   ssh $SSH_OPTS $SSH_OPTS_EXTRA $SSH_USER@$desthost "$SUDO $xcommand "   
    if [ $? -eq 0 ]; then
       printf "\033[32m[ok]\033[0m\n"
       return 0
@@ -228,6 +228,7 @@ function load_opts
     SSH_IDENTITY=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_IDENTITY' AND cid=$CLUSTER_ID" 2>/dev/null`
     SSH_USER=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_USER' AND cid=$CLUSTER_ID" 2>/dev/null`
     SSH_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_PORT' AND cid=$CLUSTER_ID" 2>/dev/null`
+    SSH_OPTSX=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_OPTS' AND cid=$CLUSTER_ID"`
     SUDO=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SUDO' AND cid=$CLUSTER_ID" 2>/dev/null`    
     OS_USER_HOME=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='OS_USER_HOME' AND cid=$CLUSTER_ID" 2>/dev/null`
     TMPDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='STAGING_DIR' AND cid=$CLUSTER_ID"`
@@ -248,9 +249,10 @@ function load_opts
 
     SSH_OPTS="-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY"
     if [ "$SSH_USER" != "root" ]; then
-	SSH_OPTS="-t -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY"
+	SSH_OPTS_EXTRA="-ft"
+	SSH_OPTS=" -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY"
 	if [ "$SUDO" = "" ] || [ "$SUDO" = "NULL" ];  then
-           SUDO=sudo
+           SUDO="sudo"
         fi
     fi
     if [ "$SSH_PORT" = "" ] || [ "$SSH_PORT" = "NULL" ];  then
@@ -261,7 +263,7 @@ function load_opts
 	S9S_TMPDIR="/tmp/"
 	TMPDIR="/tmp/"
     fi
-    SSH_OPTS="-p$SSH_PORT $SSH_OPTS"    
+    SSH_OPTS="$SSH_OPTSX -p$SSH_PORT $SSH_OPTS"    
 }
 
 function install_mysql
@@ -534,7 +536,7 @@ function start_node_donor
 	exit 1
     fi
     ##remote_cmd3 $xHNAME "nohup nice /etc/init.d/mysql start --wsrep-cluster-address=gcomm:// > /dev/null 2>&1"    
-    remote_cmd $xHNAME "nohup nice $MYSQL_BASEDIR/bin/mysqld_safe --wsrep-cluster-address=gcomm:// > /dev/null 2>&1 &"    
+    remote_cmd3 $xHNAME "nohup nice $MYSQL_BASEDIR/bin/mysqld_safe --wsrep-cluster-address=gcomm:// > /dev/null 2>&1 &"    
     sleep 2
     STATE=$(check_node_up $xHNAME)
     if [ "$STATE" = "UP" ]; then	
@@ -793,7 +795,7 @@ function start_node_int
 
     STATE=$(check_node_up $xHNAME)
     if [ "$STATE" = "DOWN" ]; then
-	remote_cmd $xHNAME "nohup nice $MYSQL_BASEDIR/bin/mysqld_safe --wsrep-cluster-address=gcomm://$DONOR_HOSTNAME:$xGALERA_PORT > /dev/null 2>&1 &"    
+	remote_cmd3 $xHNAME "nohup nice $MYSQL_BASEDIR/bin/mysqld_safe --wsrep-cluster-address=gcomm://$DONOR_HOSTNAME:$xGALERA_PORT > /dev/null 2>&1 &"    
 #       remote_cmd3 $xHNAME "nohup nice /etc/init.d/mysql start --wsrep-cluster-address=gcomm://$DONOR_HOSTNAME:$xGALERA_PORT > /dev/null 2>&1"
        sleep 2
        STATE=$(check_node_up $xHNAME)
