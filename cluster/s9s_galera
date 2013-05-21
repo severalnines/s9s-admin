@@ -478,9 +478,26 @@ function stop_node_int
 {    
     local xHNAME=$1
     local xNODEID=$2
-    remote_cmd_nofail $xHNAME "/etc/init.d/mysql stop"
+    WAIT_FOR_STOP=1200
+    WAIT_TIME=0
+    remote_cmd_nofail $xHNAME "killall -15 mysqld mysqld_safe"
     sleep 2
     STATE=$(check_node_up $xHNAME)
+    if [ "$STATE" = "UP" ]; then
+	echo "Waiting for mysqld to shutdown"
+	while [ $WAIT_TIME -lt $WAIT_FOR_STOP ]; 
+	do
+	    WAIT_TIME=`expr $WAIT_TIME + 1`
+	    echo -n "."
+	    sleep 1
+	    STATE=$(check_node_up $xHNAME)
+	    if [ "$STATE" = "DOWN" ]; then
+		break
+	    fi
+	    remote_cmd_nofail $xHNAME "killall -15 mysqld mysqld_safe"
+	done
+    fi
+
     echo "Waiting for node to fully stop and setting node state"
     if [ "$STATE" = "DOWN" ]; then
 	i=0
@@ -508,7 +525,8 @@ function start_node_donor
 	echo "Node $xHNAME is already started"
 	exit 1
     fi
-    remote_cmd3 $xHNAME "nohup nice /etc/init.d/mysql start --wsrep-cluster-address=gcomm:// > /dev/null 2>&1"    
+    ##remote_cmd3 $xHNAME "nohup nice /etc/init.d/mysql start --wsrep-cluster-address=gcomm:// > /dev/null 2>&1"    
+    remote_cmd $xHNAME "nohup nice $MYSQL_BASEDIR/bin/mysqld_safe --wsrep-cluster-address=gcomm:// > /dev/null 2>&1 &"    
     sleep 2
     STATE=$(check_node_up $xHNAME)
     if [ "$STATE" = "UP" ]; then	
@@ -653,7 +671,7 @@ function install_garbd
 	    fi
 	    ;;
 	*)
-	    echo "non supported vendor"
+	    echo "Not a supported vendor"
 	    exit 1;	           	     
     esac
     
@@ -767,7 +785,8 @@ function start_node_int
 
     STATE=$(check_node_up $xHNAME)
     if [ "$STATE" = "DOWN" ]; then
-       remote_cmd3 $xHNAME "nohup nice /etc/init.d/mysql start --wsrep-cluster-address=gcomm://$DONOR_HOSTNAME:$xGALERA_PORT > /dev/null 2>&1"
+	remote_cmd $xHNAME "nohup nice $MYSQL_BASEDIR/bin/mysqld_safe --wsrep-cluster-address=gcomm://$DONOR_HOSTNAME:$xGALERA_PORT > /dev/null 2>&1 &"    
+#       remote_cmd3 $xHNAME "nohup nice /etc/init.d/mysql start --wsrep-cluster-address=gcomm://$DONOR_HOSTNAME:$xGALERA_PORT > /dev/null 2>&1"
        sleep 2
        STATE=$(check_node_up $xHNAME)
        if [ "$STATE" = "UP" ]; then
