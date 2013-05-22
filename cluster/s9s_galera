@@ -1491,7 +1491,7 @@ if [ ! -e $LOCKFILE ]; then
 	    ;;
 	*)
 	    echo "Usage: "
-	    echo "s9s_galera --[start-cluster|stop-cluster|reinit-cluster|make-primary|start-node|stop-node|status] <options follows>"
+	    echo "s9s_galera --[start-cluster|stop-cluster|reinit-cluster|make-primary|start-node|stop-node|status|install-garbd|remove-garbd] <options follows>"
 	    exit 1
 	    ;;
     esac
