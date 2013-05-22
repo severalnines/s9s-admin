@@ -21,7 +21,7 @@ MYSQL_BIN=$mysql_basedir/bin/mysql
 CONNECT_TIMEOUT=10
 CLUSTER_TYPE=$type
 MYSQL_OPTS="--connect-timeout=$CONNECT_TIMEOUT"
-LOCKFILE="/tmp/s9s_create.lock"
+LOCKFILE="/tmp/s9s_clone.lock"
 OSUSER=$USER
 jobid=0
 if [ "$OSUSER" != "root" ]; then
@@ -210,6 +210,7 @@ function load_opts
     SSH_IDENTITY=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_IDENTITY' AND cid=$CLUSTER_ID"`
     SSH_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_PORT' AND cid=$CLUSTER_ID"`
     SSH_USER=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_USER' AND cid=$CLUSTER_ID"`
+    SSH_OPTSX=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_OPTS' AND cid=$CLUSTER_ID"`
     SUDO=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SUDO' AND cid=$CLUSTER_ID"`
     
     OS_USER_HOME=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='OS_USER_HOME' AND cid=$CLUSTER_ID"`
@@ -227,7 +228,7 @@ function load_opts
     SSH_OPTS="-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY"
     SSH_OPTS2="-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY"
     if [ "$SSH_USER" != "root" ]; then
-	SSH_OPTS="-t -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY"
+	SSH_OPTS=" -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY"
 	if [ "$SUDO" = "" ] || [ "$SUDO" = "NULL" ];  then
            SUDO=sudo
         fi
@@ -235,7 +236,7 @@ function load_opts
     if [ "$SSH_PORT" = "" ] || [ "$SSH_PORT" = "NULL" ];  then
         SSH_PORT="22"
     fi
-    SSH_OPTS="-p$SSH_PORT $SSH_OPTS"    
+    SSH_OPTS="$SSH_OPTSX -p$SSzaH_PORT $SSH_OPTS"    
     SSH_OPTS2="-P$SSH_PORT $SSH_OPTS"    
 }
 
