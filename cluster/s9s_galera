@@ -21,7 +21,7 @@ MYSQL_BIN=$mysql_basedir/bin/mysql
 CONNECT_TIMEOUT=10
 CLUSTER_TYPE=$type
 MYSQL_OPTS="--connect-timeout=$CONNECT_TIMEOUT"
-LOCKFILE="/tmp/s9s_create.lock"
+LOCKFILE="/tmp/s9s_galera.lock"
 OSUSER=$USER
 jobid=0
 
