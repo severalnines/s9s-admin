@@ -21,7 +21,7 @@ MYSQL_BIN=$mysql_basedir/bin/mysql
 CONNECT_TIMEOUT=10
 CLUSTER_TYPE=$type
 MYSQL_OPTS="--connect-timeout=$CONNECT_TIMEOUT"
-LOCKFILE="/tmp/s9s_create.lock"
+LOCKFILE="/tmp/s9s_galera.lock"
 OSUSER=$USER
 jobid=0
 
@@ -155,7 +155,7 @@ function remote_cmd3()
    desthost=$1
    xcommand=$2
    printf "%-4s: Executing '%s' " "$desthost" "$xcommand"
-   ssh $SSH_OPTS $SSH_USER@$desthost "$SUDO $xcommand "   
+   ssh $SSH_OPTS $SSH_OPTS_EXTRA $SSH_USER@$desthost "$SUDO $xcommand "   
    if [ $? -eq 0 ]; then
       printf "\033[32m[ok]\033[0m\n"
       return 0
@@ -228,6 +228,7 @@ function load_opts
     SSH_IDENTITY=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_IDENTITY' AND cid=$CLUSTER_ID" 2>/dev/null`
     SSH_USER=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_USER' AND cid=$CLUSTER_ID" 2>/dev/null`
     SSH_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_PORT' AND cid=$CLUSTER_ID" 2>/dev/null`
+    SSH_OPTSX=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_OPTS' AND cid=$CLUSTER_ID"`
     SUDO=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SUDO' AND cid=$CLUSTER_ID" 2>/dev/null`    
     OS_USER_HOME=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='OS_USER_HOME' AND cid=$CLUSTER_ID" 2>/dev/null`
     TMPDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='STAGING_DIR' AND cid=$CLUSTER_ID"`
@@ -248,9 +249,10 @@ function load_opts
 
     SSH_OPTS="-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY"
     if [ "$SSH_USER" != "root" ]; then
-	SSH_OPTS="-t -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY"
+	#SSH_OPTS_EXTRA="-ft"
+	SSH_OPTS=" -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY"
 	if [ "$SUDO" = "" ] || [ "$SUDO" = "NULL" ];  then
-           SUDO=sudo
+           SUDO="sudo"
         fi
     fi
     if [ "$SSH_PORT" = "" ] || [ "$SSH_PORT" = "NULL" ];  then
@@ -261,7 +263,7 @@ function load_opts
 	S9S_TMPDIR="/tmp/"
 	TMPDIR="/tmp/"
     fi
-    SSH_OPTS="-p$SSH_PORT $SSH_OPTS"    
+    SSH_OPTS="$SSH_OPTSX -p$SSH_PORT $SSH_OPTS"    
 }
 
 function install_mysql
@@ -336,7 +338,8 @@ function install_mysql
 
 function stop_cluster
 {
-    args=`getopt p:u:P:h:t:N:j:i: $*`
+    KILLSIG=15
+    args=`getopt p:u:P:h:t:N:j:i:f $*`
     set -- $args
     for i
     do
@@ -349,6 +352,9 @@ function stop_cluster
 		shift;;
             -j)
 		jobid="$2"; shift;
+		shift;;
+            -f)
+		KILLSIG="9"; shift;
 		shift;;
             --)
 		shift; break;;
@@ -402,7 +408,8 @@ function stop_cluster
 
 function stop_node
 {
-    args=`getopt p:u:P:h:t:N:j:i: $*`
+    KILLSIG=15
+    args=`getopt p:u:P:h:t:N:j:i:f $*`
     set -- $args
     for i
     do
@@ -418,6 +425,9 @@ function stop_node
 		shift;;
             -j)
 		jobid="$2"; shift;
+		shift;;
+            -f)
+		KILLSIG="9"; shift;
 		shift;;
             --)
 		shift; break;;
@@ -478,9 +488,26 @@ function stop_node_int
 {    
     local xHNAME=$1
     local xNODEID=$2
-    remote_cmd_nofail $xHNAME "/etc/init.d/mysql stop"
+    WAIT_FOR_STOP=1200
+    WAIT_TIME=0
+    remote_cmd_nofail $xHNAME "killall -${KILLSIG} mysqld mysqld_safe"
     sleep 2
     STATE=$(check_node_up $xHNAME)
+    if [ "$STATE" = "UP" ]; then
+	echo "Waiting for mysqld to shutdown"
+	while [ $WAIT_TIME -lt $WAIT_FOR_STOP ]; 
+	do
+	    WAIT_TIME=`expr $WAIT_TIME + 1`
+	    echo -n "."
+	    sleep 1
+	    STATE=$(check_node_up $xHNAME)
+	    if [ "$STATE" = "DOWN" ]; then
+		break
+	    fi
+	    remote_cmd_nofail $xHNAME "killall -${KILLSIG} mysqld mysqld_safe"
+	done
+    fi
+
     echo "Waiting for node to fully stop and setting node state"
     if [ "$STATE" = "DOWN" ]; then
 	i=0
@@ -509,6 +536,7 @@ function start_node_donor
 	exit 1
     fi
     remote_cmd3 $xHNAME "nohup nice /etc/init.d/mysql start --wsrep-cluster-address=gcomm:// > /dev/null 2>&1"    
+    ##remote_cmd3 $xHNAME "nohup nice $MYSQL_BASEDIR/bin/mysqld_safe --wsrep-cluster-address=gcomm:// > /dev/null 2>&1 &"    
     sleep 2
     STATE=$(check_node_up $xHNAME)
     if [ "$STATE" = "UP" ]; then	
@@ -653,7 +681,7 @@ function install_garbd
 	    fi
 	    ;;
 	*)
-	    echo "non supported vendor"
+	    echo "Not a supported vendor"
 	    exit 1;	           	     
     esac
     
@@ -767,6 +795,7 @@ function start_node_int
 
     STATE=$(check_node_up $xHNAME)
     if [ "$STATE" = "DOWN" ]; then
+	##remote_cmd3 $xHNAME "nohup nice $MYSQL_BASEDIR/bin/mysqld_safe --wsrep-cluster-address=gcomm://$DONOR_HOSTNAME:$xGALERA_PORT > /dev/null 2>&1 &"    
        remote_cmd3 $xHNAME "nohup nice /etc/init.d/mysql start --wsrep-cluster-address=gcomm://$DONOR_HOSTNAME:$xGALERA_PORT > /dev/null 2>&1"
        sleep 2
        STATE=$(check_node_up $xHNAME)
@@ -806,9 +835,9 @@ function check_host_exists
 function get_galera_nodestate
 {
     local xHNAME=$1
-    local xVAR=$2
+    local xVAR="$2"
     QUERY="SHOW GLOBAL STATUS LIKE '$xVAR'"
-    STATE=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$xHNAME --port=$CMON_DB_PORT --auto-vertical-output -Bse "$QUERY"  2>/dev/null`
+    STATE=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$xHNAME --port=$CMON_DB_PORT --auto-vertical-output -Bse "$QUERY"`
     if [ $? -ne 0 ]; then
 	STATE=$(check_node_up $xHNAME)
 	if [ "$STATE" = "DOWN" ]; then
@@ -960,7 +989,7 @@ function reinit_cluster
     RETRY=0
     while [ 1 ]; 
     do
-	X=$(get_galera_nodestate $DONOR_HOSTNAME "wsrep_local_state_comment")
+	X=$(get_galera_nodestate $DONOR_HOSTNAME 'wsrep_local_state_comment')
 	if [ "$X" = "Synced" ]; then
 	    break
 	fi
@@ -1292,7 +1321,8 @@ function status_cluster
 
 function start_node
 {
-    args=`getopt p:i:P:t:d:j:h: $*`
+    BLOCK=0
+    args=`getopt p:i:P:t:d:j:h:w $*`
     set -- $args
     for i
     do
@@ -1314,6 +1344,9 @@ function start_node
 		shift;;
 	    -P)
 		GALERA_PORT="$2"; shift;
+		shift;;
+	    -w)
+		BLOCK=1; shift;
 		shift;;
             --)
 		shift; break;;
@@ -1382,7 +1415,7 @@ function start_node
 	exit 1
     fi
     
-    X=$(get_galera_nodestate $DONOR_HOSTNAME $DONOR_ID "wsrep_local_state_comment")
+    X=$(get_galera_nodestate $DONOR_HOSTNAME "wsrep_local_state_comment")
     if [ "$X" != "Synced" ]; then
 	echo "Donor $DONOR_HOSTNAME is not Synced, pick another -d <donor_address>"
 	exit 1
@@ -1403,6 +1436,21 @@ function start_node
     else
 	echo "Node $XHOSTNAME is not part of the Cluster"
 	exit 1
+    fi
+
+    if [ $BLOCK -eq 1 ]; then
+        while [ 1 ];
+        do
+          X=$(get_galera_nodestate $HNAME 'wsrep_local_state_comment')
+          if [ "$X" = "Synced" ]; then
+             break
+          fi
+          if [ "$X" = "DOWN" ]; then
+             echo "Recovery failed"
+             exit 1
+          fi
+          sleep 1
+       done
     fi
     exit 0
 }
@@ -1462,11 +1510,13 @@ if [ ! -e $LOCKFILE ]; then
 	    ;;
 	*)
 	    echo "Usage: "
-	    echo "s9s_galera --[start-cluster|stop-cluster|reinit-cluster|make-primary|start-node|stop-node|status] <options follows>"
+	    echo "s9s_galera --[start-cluster|stop-cluster|reinit-cluster|make-primary|start-node|stop-node|status|install-garbd|remove-garbd] <options follows>"
 	    exit 1
 	    ;;
     esac
     rm $LOCKFILE
     trap - INT TERM EXIT
+else
+    echo "$LOCKFILE exists, perhaps someone is using s9s_galera? Else remove the lock file if it is spurious"
 fi
 
