@@ -581,7 +581,7 @@ function check_host_exists
 
 function delete_cluster
 {
-    args=`getopt p:i:P:t:h: $*`
+    args=`getopt p:i:P:t:h:j: $*`
     set -- $args
     for i
     do
@@ -595,6 +595,9 @@ function delete_cluster
             -h)
 		HOSTNAME="$2"; shift;
 		shift;;
+            -j)
+		JOBID="$2"; shift;
+		shift;;
 	    -P)
 		PORT="$2"; shift;
 		shift;;
@@ -602,21 +605,25 @@ function delete_cluster
 		shift; break;;
 	esac
     done    
-    
+    log_job 'RUNNING' 's9s_clone --delete is running' 0
+    log_job_message "Checking arguments" 0
 
     if [ -z "$CMON_PASSWORD" ]; then
-      echo "s9s_clone --delete -p  missing"
-      exit 1
+	log_job_message "s9s_clone --delete -p  missing" 1
+	log_job 'FAILED' 's9s_clone --delete failed' 1
+	exit 1
     fi
-
+    
     if [ -z "$CLUSTER_ID" ]; then
-      echo "s9s_clone --delete -i <cluster id of cluster to be deleted> missing"
-      exit 1
+	log_job_message "s9s_clone --delete -i <cluster id of cluster to be deleted> missing" 1
+	log_job 'FAILED' 's9s_clone --delete failed' 1
+	exit 1
     fi
-
+    
     if [ $CLUSTER_ID -eq 1 ]; then
-      echo "Cowardly refusing to delete cluster 1, if you really want to do this, modify the script"
-      exit 1
+	log_job_message "Cowardly refusing to delete cluster 1, if you really want to do this, modify the script" 1
+	log_job 'FAILED' 's9s_clone --delete failed' 1
+	exit 1
     fi
 
 ##    CMON_DB_DB="cmon_${CLUSTER_ID}"
@@ -625,18 +632,30 @@ function delete_cluster
 	galera)
 	    ;;
 	*)
-	    echo "./s9s_clone -- only galera is supported"
+	    log_job_message "./s9s_clone --delete only galera is supported" 1
+	    log_job 'FAILED' 's9s_clone --delete failed' 1
 	    exit 1;	           	     
     esac
     load_opts $CLUSTER_ID
     
+
+    QUERY="select count(id) FROM mysql_server WHERE cid=${CLUSTER_ID}"
+    CNT=`$MYSQL_BIN  -A -B -N --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" `           
+    if [ $CNT -gt 0 ]; then
+	log_job_message "Cluster $CLUSTER_ID contains running nodes. Remove the nodes or move them to other clusters before deleting the cluster" 1
+	log_job 'FAILED' 's9s_clone --delete failed' 1
+	exit 1
+    fi
+
+
+
     QUERY="select group_concat(hostname SEPARATOR ' ') from ${CMON_DB_DB}.mysql_server where cid=${CLUSTER_ID}"
     SERVER_LIST=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$CMON_DB_PORT --auto-vertical-output -Bse "$QUERY"`
     QUERY="CALL ${CMON_DB_DB}.sp_cmon_deletecluster(${CLUSTER_ID})"
     `$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$CMON_DB_PORT --auto-vertical-output -Bse "$QUERY"`
     
     if [ $? -ne 0 ]; then
-	echo "Failed to delete cluster"
+	log_job_message "Failed to delete cluster" 1
 	exit 1
     fi
 
@@ -663,7 +682,9 @@ function delete_cluster
 		    remote_cmd_nofail $host "/usr/sbin/update-rc.d -f cmon remove"
 		    ;;
 		*)
-		    echo "./s9s_clone -- invalid OS found - cannot uninstall cmon initd, proceeding"
+		    log_job_message "./s9s_clone -- invalid OS found - cannot uninstall cmon initd" 1
+		    log_job 'FAILED' 's9s_clone --delete failed' 1
+		    exit 1
 	    esac	
 	    remote_cmd_nofail $host "rm -rf /etc/init.d/cmon"
 	    remote_cmd_nofail $host "rm -rf /etc/cmon.cnf"
@@ -680,10 +701,12 @@ function delete_cluster
 	    /usr/sbin/update-rc.d -f cmon_${CLUSTER_ID} remove
 	    ;;
 	*)
-	    echo "./s9s_clone -- invalid OS found - cannot uninstall cmon initd, proceeding"
+	    log_job_message "./s9s_clone -- invalid OS found - cannot uninstall cmon initd" 1
+	    log_job 'FAILED' 's9s_clone --delete failed' 1
 	    exit 1;	           	     
     esac	        
     rm -rf /etc/init.d/cmon_${CLUSTER_ID}
+    log_job 'FINISHED' 's9s_clone --delete finished successfully' 0
 }
 function list_cluster
 {
@@ -710,7 +733,7 @@ function list_cluster
 function move_node
 {
 #    args=`getopt -o p:,h:,f:,t: --long password:,hostname:,from-clusterid:,to-clusterid: -n 's9s-clone.sh' -- "$*"`
-    args=`getopt p:s:h:t: $*`
+    args=`getopt p:s:h:t:j: $*`
     set -- $args
     for i
     do
@@ -728,39 +751,51 @@ function move_node
             -h)
 		SOURCE_HOSTNAME="$2"; shift;
 		shift;;
+	    -j)
+		JOBID="$2"; shift;
+		shift;;
             --)
 		shift; break;;
 		esac
     done    
+    log_job 'RUNNING' 's9s_clone --move-node is running' 0
+    log_job_message "Checking arguments" 0
+    
     if [ -z "$CMON_PASSWORD" ]; then
-      echo "s9s_clone  --move-node  -p  missing"
+      log_job_message "s9s_clone  --move-node  -p  missing" 1
+      log_job 'FAILED' 's9s_clone --move-node failed' 1
       exit 1
     fi
 
     if [ -z "$CLUSTER_ID" ]; then
-      echo "s9s_clone  --move-node -s <source clusterid> missing"
+      log_job_message "s9s_clone  --move-node -s <source clusterid> missing" 1
+      log_job 'FAILED' 's9s_clone --move-node failed' 1
       exit 1
     fi
 
     if [ -z "$TARGET_CLUSTER_ID" ]; then
-      echo "s9s_clone --move-node -t <target clusterid> missing"
+      log_job_message "s9s_clone --move-node -t <target clusterid> missing" 1
+      log_job 'FAILED' 's9s_clone --move-node failed' 1
       exit 1
     fi
 
     if [ "$TARGET_CLUSTER_ID" = "$SOURCE_CLUSTER_ID" ]; then
-      echo "s9s_clone  --move-node  source and target is the same!"
+      log_job_message "s9s_clone  --move-node  source and target is the same!" 1
+      log_job 'FAILED' 's9s_clone --move-node failed' 1
       exit 1
     fi
 
     if [ -z "$SOURCE_HOSTNAME" ]; then
-      echo "s9s_clone  --move-node  -h <source cluster hostname> missing"
+      log_job_message "s9s_clone  --move-node  -h <source cluster hostname> missing" 1
+      log_job 'FAILED' 's9s_clone --move-node failed' 1
       exit 1
     fi
     
     QUERY="select count(id) FROM cluster WHERE id=${TARGET_CLUSTER_ID}"
     CNT=`$MYSQL_BIN  -A -B -N --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" `           
     if [ $CNT -eq 0 ]; then
-	echo "Cluster $TARGET_CLUSTER_ID does not exist, use s9s_clone --create first"
+	log_job_message "Cluster $TARGET_CLUSTER_ID does not exist, use s9s_clone --create first" 1
+	log_job 'FAILED' 's9s_clone --move-node failed' 1
 	exit 1
     fi
     
@@ -768,12 +803,14 @@ function move_node
     local HID=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"`
 
     if [ -z "$HID" ]; then
-	echo "Server $SOURCE_HOSTNAME does not exists in cluster $SOURCE_CLUSTER_ID"
+	log_job_message "Server $SOURCE_HOSTNAME does not exists in cluster $SOURCE_CLUSTER_ID" 1
+	log_job 'FAILED' 's9s_clone --move-node failed' 1
 	exit 1
     fi
 
     if [ "$HID" = "NULL" ]; then
-	echo "Server $SOURCE_HOSTNAME does not exists in cluster $SOURCE_CLUSTER_ID"
+	log_job_message "Server $SOURCE_HOSTNAME does not exists in cluster $SOURCE_CLUSTER_ID" 1
+	log_job 'FAILED' 's9s_clone --move-node failed' 1
 	exit 1
     fi
     
@@ -783,7 +820,8 @@ function move_node
     QUERY="DELETE FROM processes WHERE cid=0"
     `$MYSQL_BIN $MYSQL_OPTS -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"`    
     if [ $? -ne 0 ]; then
-	echo "Failed to clear"
+	log_job_message "Failed to clear" 1
+	log_job 'FAILED' 's9s_clone --move-node failed' 1
 	exit 1
     fi
     QUERY="BEGIN; CALL sp_cmon_deletehost(${TARGET_CLUSTER_ID}, ${HID})"
@@ -791,7 +829,8 @@ function move_node
     QUERY="$QUERY;CALL sp_cmon_deletehost($SOURCE_CLUSTER_ID, $HID); COMMIT"
     `$MYSQL_BIN $MYSQL_OPTS -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"`    
     if [ $? -ne 0 ]; then
-	echo "Failed to migrate host: $QUERY";
+	log_job_message "Failed to migrate host: $QUERY" 1
+	log_job 'FAILED' 's9s_clone --move-node failed' 1
 	exit 1
     fi	
 
@@ -806,11 +845,12 @@ function move_node
 	QUERY="SET WSREP_ON=0;SET GLOBAL wsrep_cluster_address='gcomm://'"	    
 	`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=$SOURCE_HOSTNAME --port=$PORT --auto-vertical-output -Bse "$QUERY"`	    
 	if [ $? -ne 0 ]; then
-	    echo "Failed to create cluster on $TARGET_CLUSTER_ID"
+	    log_job_message "Failed to create cluster on $TARGET_CLUSTER_ID" 1
+	    log_job 'FAILED' 's9s_clone --move-node failed' 1
 	    exit 1
 	fi
     else	    
-	echo "Stopping mysql server on $SOURCE_HOSTNAME - ClusterControl will resync it"
+	log_job_message "Stopping mysql server on $SOURCE_HOSTNAME - ClusterControl will resync it"
 	remote_cmd_nofail $SOURCE_HOSTNAME "killall -q -15 mysqld mysqld_safe"
     fi
     
@@ -818,7 +858,8 @@ function move_node
     QUERY="SELECT GROUP_CONCAT(hostname) FROM mysql_server WHERE cid=$TARGET_CLUSTER_ID"
     SERVERS=`$MYSQL_BIN $MYSQL_OPTS -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"`    
     if [ $? -ne 0 ]; then
-	echo "Failed to get mysql_server list"
+	log_job_message "Failed to get mysql_server list" 1
+	log_job 'FAILED' 's9s_clone --move-node failed' 1
 	exit 1
     fi
     if [ $TARGET_CLUSTER_ID -eq 1 ]; then
@@ -828,12 +869,13 @@ function move_node
     fi
 
 
-    echo "Node moved - follow recovery progress in GUI"
+    log_job_message "Node moved - follow recovery progress in GUI"
+    log_job 'FINISHED' 's9s_clone --move-node finished successfully' 0
 }
 
 function detach_cluster
 {
-    args=`getopt p:i:P:t:h: $*`
+    args=`getopt p:i:P:t:h:j: $*`
     set -- $args
     for i
     do
@@ -850,30 +892,37 @@ function detach_cluster
 	    -P)
 		PORT="$2"; shift;
 		shift;;
+	    -j)
+		JOBID="$2"; shift;
+		shift;;
             --)
 		shift; break;;
 		esac
     done    
-    
+    log_job 'RUNNING' 's9s_clone --detach is running' 0
+    log_job_message "Checking arguments" 0
 
     if [ -z "$CMON_PASSWORD" ]; then
-      echo "s9s_clone --detach -p  missing"
-      exit 1
+	log_job_message "s9s_clone --detach -p  missing" 1
+	log_job 'FAILED' 's9s_clone --detach failed' 1
+	exit 1
     fi
-
+    
     if [ -z "$CLUSTER_ID" ]; then
-      echo "s9s_clone --detach -i <clusterid> missing"
-      exit 1
+	log_job_message "s9s_clone --detach -i <clusterid> missing" 1
+	log_job 'FAILED' 's9s_clone --detach failed' 1
+	exit 1
     fi
-
+    
     if [ -z "$TARGET_HOSTNAME" ]; then
-      echo "s9s_clone --detach -h <hostname> missing"
-      exit 1
+	log_job_message "s9s_clone --detach -h <hostname> missing" 1
+	log_job 'FAILED' 's9s_clone --detach failed' 1
+	exit 1
     fi
 
 
 #    if [ -z "$PORT" ]; then
-#      echo "s9s_clone -P <target server mysql port> is  missing"
+#      log_job_message "s9s_clone -P <target server mysql port> is  missing"
 #       exit 1
 #    fi
 
@@ -884,7 +933,8 @@ function detach_cluster
 	galera)
 	    ;;
 	*)
-	    echo "Invalid cluster type - only galera is supported"
+	    log_job_message "Invalid cluster type - only galera is supported" 1
+	    log_job 'FAILED' 's9s_clone --detach failed' 1
 	    exit 1;	           	     
     esac
    
@@ -893,20 +943,21 @@ function detach_cluster
     local HID=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"`
 
     if [ -z "$HID" ]; then
-        echo "Server $TARGET_HOSTNAME does not exists in cluster $CLUSTER_ID"
+        log_job_message "Server $TARGET_HOSTNAME does not exists in cluster $CLUSTER_ID" 1
+	log_job 'FAILED' 's9s_clone --detach failed' 1
         exit 1
     fi
  
-    QUERY="SET GLOBAL wsrep_cluster_address='gcomm://'"
-    
-    `$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=$TARGET_HOSTNAME --port=$PORT --auto-vertical-output -Bse "$QUERY"`
-    
+    QUERY="SET GLOBAL wsrep_cluster_address='gcomm://'"    
+    `$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=$TARGET_HOSTNAME --port=$PORT --auto-vertical-output -Bse "$QUERY"`   
     if [ $? -ne 0 ]; then
-	echo "Failed to detach cluster"
+	log_job_message "Failed to detach cluster" 1
+	log_job 'FAILED' 's9s_clone --detach failed' 1
 	exit 1
     fi
 
-    echo "Detached cluster."
+    log_job_message "Detached cluster." 0
+    log_job 'FINISHED' 's9s_clone --detach finished successfully' 0
 }
 
 function check_mysql_client()
