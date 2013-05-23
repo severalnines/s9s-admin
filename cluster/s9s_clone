@@ -38,7 +38,11 @@ function log_job_message
     if [ $JOBID -ne 0 ]; then 
 	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
     else
-	echo "Failed: $MSG"
+	if [ $EXIT_CODE -eq 0 ]; then
+   	   echo "$MSG"
+	else
+   	   echo "Failed: $MSG"
+	fi
     fi
 }
 
