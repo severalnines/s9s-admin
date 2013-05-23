@@ -34,7 +34,7 @@ function log_job_message
 {    
     MSG=$1
     EXIT_CODE=$2
-    QUERY="INSERT INTO cmon_job_message(cid, jobid,message,exit_code,report_ts) VALUES($CID,$JOBID,'$MSG',$EXIT_CODE,now())"
+    QUERY="INSERT INTO cmon_job_message(cid, jobid,message,exit_code,report_ts) VALUES($CLUSTER_ID,$JOBID,'$MSG',$EXIT_CODE,now())"
     if [ $JOBID -ne 0 ]; then 
 	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
     else
@@ -47,7 +47,7 @@ function log_job
     STATUS=$1
     STATUS_TXT=$2
     EXIT_CODE=$3
-    QUERY="UPDATE cmon_job SET status='$STATUS', status_txt='$STATUS_TXT', exit_code=$EXIT_CODE, report_ts=NOW()  WHERE cid=$CID AND jobid=$JOBID"
+    QUERY="UPDATE cmon_job SET status='$STATUS', status_txt='$STATUS_TXT', exit_code=$EXIT_CODE, report_ts=NOW()  WHERE cid=$CLUSTER_ID AND jobid=$JOBID"
     if [ $JOBID -ne 0 ]; then 
 	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
     fi
@@ -536,7 +536,7 @@ function create_cluster
     QUERY="SELECT GROUP_CONCAT(hostname) FROM mysql_server WHERE cid=$SOURCE_CLUSTER_ID"
     SERVERS=`$MYSQL_BIN $MYSQL_OPTS -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"`    
     if [ $? -ne 0 ]; then
-	log_job_message "Failed to get mysql_server list"
+	log_job_message "Failed to get mysql_server list" 1
 	exit 1
     fi
     
@@ -561,17 +561,17 @@ function check_host_exists
     local QUERY="select id from cmon.hosts where (hostname='$TARGET_HOSTNAME' OR ip='$TARGET_HOSTNAME') AND cid=${SOURCE_CLUSTER_ID}"
     HID=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"`
     if [ $? -ne 0 ]; then
-	log_job_message "$QUERY  - failed!"
+	log_job_message "$QUERY  - failed!" 1
 	exit 1
     fi
 
     if [ -z "$HID" ]; then
-	log_job_message "Server $TARGET_HOSTNAME does not exists"
+	log_job_message "Server $TARGET_HOSTNAME does not exists" 1
 	exit 1
     fi
 
     if [ "$HID" = "NULL" ]; then
-	log_job_message "Server $TARGET_HOSTNAME does not exists"
+	log_job_message "Server $TARGET_HOSTNAME does not exists" 1
 	exit 1
     fi
     echo "Found hostid = $HID"
