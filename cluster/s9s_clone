@@ -642,7 +642,7 @@ function delete_cluster
     QUERY="select count(id) FROM mysql_server WHERE cid=${CLUSTER_ID}"
     CNT=`$MYSQL_BIN  -A -B -N --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" `           
     if [ $CNT -gt 0 ]; then
-	log_job_message "Cluster $NAME (${CLUSTER_ID} contains running nodes. Remove the nodes or move them to other clusters before deleting the cluster" 1
+	log_job_message "Cluster $NAME (${CLUSTER_ID}) contains running nodes. Remove the nodes or move them to other clusters before deleting the cluster" 1
 	log_job 'FAILED' 's9s_clone --delete failed' 1
 	exit 1
     fi
