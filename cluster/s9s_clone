@@ -851,7 +851,7 @@ function move_node
 	    exit 1
 	fi
     else	    
-	log_job_message "Stopping mysql server on $SOURCE_HOSTNAME - ClusterControl will resync it"
+	log_job_message "Stopping mysql server on $SOURCE_HOSTNAME - ClusterControl will resync it" 0
 	remote_cmd_nofail $SOURCE_HOSTNAME "killall -q -15 mysqld mysqld_safe"
     fi
     
@@ -870,7 +870,7 @@ function move_node
     fi
 
 
-    log_job_message "Node moved - follow recovery progress in GUI"
+    log_job_message "Node moved - follow recovery progress in GUI" 0
     log_job 'FINISHED' 's9s_clone --move-node finished successfully' 0
 }
 
