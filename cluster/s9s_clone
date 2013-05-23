@@ -342,7 +342,7 @@ function create_cluster
    
     CLUSTER_ID=${SOURCE_CLUSTER_ID} 
     log_job 'RUNNING' 's9s_clone is running' 0
-
+    log_job_message "Checking arguments" 0
     if [ -z "$CMON_PASSWORD" ]; then
 	echo "s9s_clone --create -p  missing"
 	exit 1
@@ -368,7 +368,7 @@ function create_cluster
       log_job 'FAILED' 's9s_clone --create failed' 1
       exit 1
     fi
-    echo "Creating Cluster $CLUSTER_NAME (${TARGET_CLUSTER_ID}) From Cluster $SOURCE_CLUSTER_ID"
+    log_job_message "Creating Cluster $CLUSTER_NAME (${TARGET_CLUSTER_ID}) From Cluster $SOURCE_CLUSTER_ID" 0
     
     QUERY="select count(id) FROM cluster WHERE id=${TARGET_CLUSTER_ID}"
     CNT=`$MYSQL_BIN  -A -B -N --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" `    
