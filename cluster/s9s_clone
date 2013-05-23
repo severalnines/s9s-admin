@@ -585,7 +585,8 @@ function check_host_exists
 
 function delete_cluster
 {
-    args=`getopt p:i:P:t:j: $*`
+    FORCE=0
+    args=`getopt p:i:P:t:j:f $*`
     set -- $args
     for i
     do
@@ -595,6 +596,9 @@ function delete_cluster
 		shift;;
             -i)
 		CLUSTER_ID="$2"; shift;
+		shift;;
+            -f)
+		FORCE=1; shift;
 		shift;;
             -j)
 		JOBID="$2"; shift;
@@ -621,10 +625,12 @@ function delete_cluster
 	exit 1
     fi
     
-    if [ $CLUSTER_ID -eq 1 ]; then
-	log_job_message "Cowardly refusing to delete cluster 1, if you really want to do this, modify the script" 1
-	log_job 'FAILED' 's9s_clone --delete failed' 1
-	exit 1
+    if [ $FORCE -eq 0 ]; then
+      if [ $CLUSTER_ID -eq 1 ]; then
+	  log_job_message "Cowardly refusing to delete cluster 1, if you really want to do this, modify the script" 1
+  	  log_job 'FAILED' 's9s_clone --delete failed' 1
+ 	  exit 1
+      fi
     fi
 
 ##    CMON_DB_DB="cmon_${CLUSTER_ID}"
