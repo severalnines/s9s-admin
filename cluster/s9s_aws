@@ -296,7 +296,6 @@ function change_ip
     fi	
     QUERY="BEGIN; UPDATE hosts SET hostname='$NEW_HOSTNAME', ip='$NEW_IP'  WHERE cid=$CLUSTER_ID AND (hostname='$OLD_HOSTNAME' OR ip='$OLD_IP')"
     QUERY="$QUERY;UPDATE mysql_server SET hostname='$NEW_HOSTNAME'   WHERE cid=$CLUSTER_ID AND (hostname='$OLD_HOSTNAME'); COMMIT"
-    echo $QUERY 
     $MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=127.0.0.1 --port=$CMON_DB_PORT -e "$QUERY"
     if [ $? -ne 0 ]; then
         echo "updating server addresses failed"
@@ -341,13 +340,13 @@ function change_ip
     esac
     sed -i.bak "s#mysql_server_address=.*#mysql_server_addresses=${SERVER_LIST}#g" /etc/cmon.cnf
     GRANT="GRANT ALL ON *.* TO 'cmon'@'$NEW_HOSTNAME' IDENTIFIED BY '$CMON_PASSWORD'"
-    $MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD -v --database=mysql --host=$NEW_HOSTNAME --port=$MYSQL_PORT -e "$GRANT"
+    $MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --database=mysql --host=$NEW_HOSTNAME --port=$MYSQL_PORT -e "$GRANT"
     if [ $? -ne 0 ]; then
         echo "granting failed"
         exit 1
      fi
     GRANT="GRANT ALL ON *.* TO 'cmon'@'$NEW_IP' IDENTIFIED BY '$CMON_PASSWORD'"
-    $MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD -v --database=mysql --host=$NEW_HOSTNAME --port=$MYSQL_PORT -e "$GRANT"
+    $MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --database=mysql --host=$NEW_HOSTNAME --port=$MYSQL_PORT -e "$GRANT"
     if [ $? -ne 0 ]; then
         echo "granting failed"
         exit 1
@@ -356,7 +355,7 @@ function change_ip
     GRANT="$GRANT; GRANT SUPER ON *.* TO 'cmon'@'$NEW_IP' IDENTIFIED BY '$CMON_PASSWORD'"
     GRANT="$GRANT; GRANT INSERT,DELETE,UPDATE,SELECT ON $CMON_DB_DB.* TO 'cmon'@'$NEW_HOSTNAME' IDENTIFIED BY '$CMON_PASSWORD'"
     GRANT="$GRANT; GRANT INSERT,DELETE,UPDATE,SELECT ON $CMON_DB_DB.* TO 'cmon'@'$NEW_IP' IDENTIFIED BY '$CMON_PASSWORD'"
-    $MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER -v --password=$CMON_PASSWORD --database=mysql --host=127.0.0.1 --port=$MYSQL_PORT -e "$GRANT"
+    $MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --database=mysql --host=127.0.0.1 --port=$MYSQL_PORT -e "$GRANT"
     if [ $? -ne 0 ]; then
         echo "granting failed"
         exit 1
