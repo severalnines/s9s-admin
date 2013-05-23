@@ -23,7 +23,7 @@ CLUSTER_TYPE=$type
 MYSQL_OPTS="--connect-timeout=$CONNECT_TIMEOUT"
 LOCKFILE="/tmp/s9s_clone.lock"
 OSUSER=$USER
-jobid=0
+JOBID=0
 if [ "$OSUSER" != "root" ]; then
     echo "must be executed as 'root' or with 'sudo'"
     exit 1
@@ -34,8 +34,8 @@ function log_job_message
 {    
     MSG=$1
     EXIT_CODE=$2
-    QUERY="INSERT INTO cmon_job_message(cid, jobid,message,exit_code,report_ts) VALUES($CID,$jobid,'$MSG',$EXIT_CODE,now())"
-    if [ $jobid -ne 0 ]; then 
+    QUERY="INSERT INTO cmon_job_message(cid, jobid,message,exit_code,report_ts) VALUES($CID,$JOBID,'$MSG',$EXIT_CODE,now())"
+    if [ $JOBID -ne 0 ]; then 
 	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
     else
 	echo "Failed: $MSG"
@@ -47,8 +47,8 @@ function log_job
     STATUS=$1
     STATUS_TXT=$2
     EXIT_CODE=$3
-    QUERY="UPDATE cmon_job SET status='$STATUS', status_txt='$STATUS_TXT', exit_code=$EXIT_CODE, report_ts=NOW()  WHERE cid=$CID AND jobid=$jobid"
-    if [ $jobid -ne 0 ]; then 
+    QUERY="UPDATE cmon_job SET status='$STATUS', status_txt='$STATUS_TXT', exit_code=$EXIT_CODE, report_ts=NOW()  WHERE cid=$CID AND jobid=$JOBID"
+    if [ $JOBID -ne 0 ]; then 
 	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
     fi
 }
@@ -312,7 +312,7 @@ function install_mysql
 
 function create_cluster
 {
-    args=`getopt p:s:P:h:t:N: $*`
+    args=`getopt p:s:P:h:t:N:j: $*`
     set -- $args
     for i
     do
@@ -332,21 +332,25 @@ function create_cluster
             -N)
 		CLUSTER_NAME="$2"; shift;
 		shift;;
+            -j)
+		JOBID="$2"; shift;
+		shift;;
             --)
 		shift; break;;
 		esac
     done    
    
     CLUSTER_ID=${SOURCE_CLUSTER_ID} 
-
+    log_job 'RUNNING' 's9s_clone is running' 0
 
     if [ -z "$CMON_PASSWORD" ]; then
-      echo "s9s_clone --create -p  missing"
-      exit 1
+	echo "s9s_clone --create -p  missing"
+	exit 1
     fi
-
+    
     if [ -z "$TARGET_HOSTNAME" ]; then
-	echo "s9s_clone --create  -h <source cluster hostname> missing"
+	log_job_message "s9s_clone --create  -h <source cluster hostname> missing" 1
+	log_job 'FAILED' 's9s_clone --create failed' 1
 	exit 1
     fi
 
@@ -360,7 +364,8 @@ function create_cluster
     fi
 
     if [ -z "$SOURCE_CLUSTER_ID" ]; then
-      echo "s9s_clone --create -s <source cluster id> missing"
+      log_job_message "s9s_clone --create -s <source cluster id> missing" 1
+      log_job 'FAILED' 's9s_clone --create failed' 1
       exit 1
     fi
     echo "Creating Cluster $CLUSTER_NAME (${TARGET_CLUSTER_ID}) From Cluster $SOURCE_CLUSTER_ID"
@@ -380,21 +385,18 @@ function create_cluster
     if [ $CNT -eq 0 ]; then
 	log_job_message "Cluster $SOURCE_CLUSTER_ID does not exists" 1
 	log_job 'FAILED' 's9s_clone --create failed' 1
-	echo "Cluster $SOURCE_CLUSTER_ID does not exists"
 	exit 1
     fi
     
     if [ $TARGET_CLUSTER_ID -eq 1 ]; then
 	log_job_message "Cannot clone to cluster id = 1" 1
 	log_job 'FAILED' 's9s_clone --create failed' 1
-	echo "s9s_clone - cannot clone to CLUSTER ID = 1"
 	exit 1
     fi
 
     if [ $TARGET_CLUSTER_ID -eq $SOURCE_CLUSTER_ID ]; then
 	log_job_message "Source and target clusterid is the same" 1
 	log_job 'FAILED' 's9s_clone --create failed' 1
-	echo "s9s_clone - cannot clone to same CLUSTER ID"
 	exit 1
     fi
 
@@ -410,6 +412,8 @@ function create_cluster
     esac
     load_opts $SOURCE_CLUSTER_ID 
     
+    log_job 'RUNNING' 's9s_clone is running' 0
+
     check_host_exists  $TARGET_CLUSTER_ID  $TARGET_HOSTNAME
 
     QUERY="SHOW GLOBAL STATUS LIKE 'wsrep_local_state'"
@@ -417,16 +421,19 @@ function create_cluster
     STATE=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=$TARGET_HOSTNAME --port=$CMON_DB_PORT --auto-vertical-output -N -A -Bse "$QUERY"`
     
     if [ $? -ne 0 ]; then
-	echo "Failed to get wsrep_local_state of $TARGET_HOSTNAME"
+	log_job_message "Failed to get wsrep_local_state of $TARGET_HOSTNAME" 1
+	log_job 'FAILED' 's9s_clone --create failed' 1
 	exit 1
     fi
     if [ "$STATE" = "NULL" ]; then
-	echo "$TARGET_HOSTNAME not SYNCHED"
+	log_job_message "$TARGET_HOSTNAME not SYNCHED" 1
+	log_job 'FAILED' 's9s_clone --create failed' 1
 	exit 1
     fi
     STATE=`echo $STATE | awk '{print $2;}'`    
     if [ $STATE -ne 4 ]; then
-	echo "$TARGET_HOSTNAME not SYNCHED"
+	log_job_message "$TARGET_HOSTNAME not SYNCHED" 1
+	log_job 'FAILED' 's9s_clone --create failed' 1
 	exit 1
     fi
     
@@ -454,21 +461,24 @@ function create_cluster
     QUERY="DELETE FROM hosts WHERE cid=$TARGET_CLUSTER_ID;DELETE FROM hosts WHERE cid=0"
     `$MYSQL_BIN $MYSQL_OPTS -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"`    
     if [ $? -ne 0 ]; then
-	echo "Failed to clear"
+	log_job_message "Failed to clear" 1
+	log_job 'FAILED' 's9s_clone --create failed' 1
 	exit 1
     fi
 
     QUERY="DELETE FROM hosts WHERE cid=$TARGET_CLUSTER_ID;DELETE FROM processes WHERE cid=0"
     `$MYSQL_BIN $MYSQL_OPTS -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"`    
     if [ $? -ne 0 ]; then
-	echo "Failed to clear"
+	log_job_message "Failed to clear" 1
+	log_job 'FAILED' 's9s_clone --create failed' 1
 	exit 1
     fi
 
     QUERY="DELETE FROM mysql_server WHERE cid=$TARGET_CLUSTER_ID"    
     `$MYSQL_BIN $MYSQL_OPTS -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"`    
     if [ $? -ne 0 ]; then
-	echo "Failed to clear"
+	log_job_message "Failed to clear" 1
+	log_job 'FAILED' 's9s_clone --create failed' 1
 	exit 1
     fi
 
@@ -482,7 +492,8 @@ function create_cluster
     QUERY="$QUERY;COMMIT"
     `$MYSQL_BIN $MYSQL_OPTS -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"`    
     if [ $? -ne 0 ]; then
-	echo "Failed to create cluster: $QUERY"
+	log_job_message "Failed to create cluster: $QUERY" 1
+	log_job 'FAILED' 's9s_clone --create failed' 1
 	exit 1
     fi
     
@@ -517,14 +528,15 @@ function create_cluster
 	    /usr/sbin/service cmon_${TARGET_CLUSTER_ID} start	    
 	    ;;
 	*)
-	    echo "./s9s_create -- invalid OS found"
+	    log_job_message "./s9s_create -- invalid OS (found: $OS)" 1
+	    log_job 'FAILED' 's9s_clone --create failed' 1
 	    exit 1;	           	     
     esac
 
     QUERY="SELECT GROUP_CONCAT(hostname) FROM mysql_server WHERE cid=$SOURCE_CLUSTER_ID"
     SERVERS=`$MYSQL_BIN $MYSQL_OPTS -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"`    
     if [ $? -ne 0 ]; then
-	echo "Failed to get mysql_server list"
+	log_job_message "Failed to get mysql_server list"
 	exit 1
     fi
     
@@ -534,8 +546,9 @@ function create_cluster
 	 sed -i.bak "s#mysql_server_addresses=.*#mysql_server_addresses=${SERVERS}#g" /etc/cmon_${SOURCE_CLUSTER_ID}.cnf
     fi
     echo ""
-    echo "Don't forget to detach cluster, by running:"
-    echo "    s9s_clone --detach -i $TARGET_CLUSTER_ID -h $TARGET_HOSTNAME "
+    log_job_message "Don't forget to detach cluster, by running:" 0
+    log_job_message " s9s_clone --detach -i $TARGET_CLUSTER_ID -h $TARGET_HOSTNAME " 0    
+    log_job 'FINISHED' 's9s_clone --create finished successfully' 0
     echo ""
 }
 
@@ -548,17 +561,17 @@ function check_host_exists
     local QUERY="select id from cmon.hosts where (hostname='$TARGET_HOSTNAME' OR ip='$TARGET_HOSTNAME') AND cid=${SOURCE_CLUSTER_ID}"
     HID=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"`
     if [ $? -ne 0 ]; then
-	echo "$QUERY  - failed!"
+	log_job_message "$QUERY  - failed!"
 	exit 1
     fi
 
     if [ -z "$HID" ]; then
-	echo "Server $TARGET_HOSTNAME does not exists"
+	log_job_message "Server $TARGET_HOSTNAME does not exists"
 	exit 1
     fi
 
     if [ "$HID" = "NULL" ]; then
-	echo "Server $TARGET_HOSTNAME does not exists"
+	log_job_message "Server $TARGET_HOSTNAME does not exists"
 	exit 1
     fi
     echo "Found hostid = $HID"

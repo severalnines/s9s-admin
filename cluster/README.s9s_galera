@@ -1,5 +1,8 @@
-s9s_galera is a helper tool to start/stop the cluster, or invididual nodes.
-
+s9s_galera is a helper tool to:
+ -  start/stop the cluster or invididual nodes
+ -  install/remove garbd
+ -  make node a primary component
+ -  view status
 
 ** Stop cluster
 s9s_galera --stop-cluster -i <clusterid>  
@@ -44,3 +47,12 @@ s9s_galera --start-node -i <clusterid>  -h <hostname> -d <donor_address>
 
 Example:
 s9s_galera --start-node -i 1 -h 192.168.56.102 -d 192.168.56.103
+
+
+** Install garbd:
+s9s_galera --install-garbd -i <clusterid> -h <hostname>
+-h <hostname> : specifies the hostname to install garbd on
+
+** Install remove:
+s9s_galera --remove-garbd -i <clusterid> -h <hostname>
+-h <hostname> : specifies the hostname to remove garbd from
