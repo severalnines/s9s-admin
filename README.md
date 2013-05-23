@@ -15,6 +15,10 @@ s9s-admin/cluster
 
 * s9s_rebuild_slave - used by cmon to rebuild failed slaves (Replication cluster)
 
+* s9s_galera - manage galera from command line
+
+* s9s_aws - change ip / hostname in cmon if EC2 instance changed ip
+
 You can copy the s9s-admin/cluster  to /usr/bin/ or run them from s9s-admin/cluster.
 
 s9s_backup* must be installed on all nodes in /usr/bin/ 
