@@ -1,0 +1,6 @@
+s9s_haproxy allows you to:
+  - install/remove haproxy
+  - add/remove nodes from haproxy
+  - install keepalived
+    
+See http://www.severalnines.com/blog/using-haproxy-database-clusters
