@@ -35,6 +35,7 @@ function log_job_message
     MSG=$1
     EXIT_CODE=$2
     QUERY="INSERT INTO cmon_job_message(cid, jobid,message,exit_code,report_ts) VALUES($CLUSTER_ID,$JOBID,\"$MSG\",$EXIT_CODE,now())"
+    echo $QUERY >> /tmp/queries
     if [ $JOBID -ne 0 ]; then 
 	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
     else
@@ -345,7 +346,7 @@ function create_cluster
     done    
    
     CLUSTER_ID=${SOURCE_CLUSTER_ID} 
-    log_job 'RUNNING' 's9s_clone is running' 0
+    log_job 'RUNNING_EXT' 's9s_clone is running' 0
     log_job_message "Checking arguments" 0
     if [ -z "$CMON_PASSWORD" ]; then
 	echo "s9s_clone --create -p  missing"
@@ -373,7 +374,7 @@ function create_cluster
       exit 1
     fi
     log_job_message "Creating Cluster $CLUSTER_NAME (${TARGET_CLUSTER_ID}) From Cluster $SOURCE_CLUSTER_ID" 0
-    
+    log_job 'RUNNING_EXT' 's9s_clone --create is running' 0
     QUERY="select count(id) FROM cluster WHERE id=${TARGET_CLUSTER_ID}"
     CNT=`$MYSQL_BIN  -A -B -N --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" `    
     if [ $CNT -ne 0 ]; then
@@ -416,7 +417,7 @@ function create_cluster
     esac
     load_opts $SOURCE_CLUSTER_ID 
     
-    log_job 'RUNNING' 's9s_clone is running' 0
+    log_job 'RUNNING_EXT' 's9s_clone is running' 0
 
     check_host_exists  $TARGET_CLUSTER_ID  $TARGET_HOSTNAME
 
@@ -461,7 +462,7 @@ function create_cluster
 
   #  `$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$PORT $CMON_DB_DB < /tmp/cmon_db.sql`
   #  `$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$PORT $CMON_DB_DB < /tmp/cmon_data.sql`
-
+    log_job 'RUNNING_EXT' 's9s_clone --create is running' 0
     QUERY="DELETE FROM hosts WHERE cid=$TARGET_CLUSTER_ID;DELETE FROM hosts WHERE cid=0"
     `$MYSQL_BIN $MYSQL_OPTS -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"`    
     if [ $? -ne 0 ]; then
@@ -501,7 +502,7 @@ function create_cluster
 	exit 1
     fi
     
-    
+    log_job 'RUNNING_EXT' 's9s_clone --create is running' 0
     ## install config files
     cp /etc/cmon.cnf /etc/cmon_${TARGET_CLUSTER_ID}.cnf
     sed -i.bak "s#cluster_id=.*#cluster_id=${TARGET_CLUSTER_ID}#g" /etc/cmon_${TARGET_CLUSTER_ID}.cnf
@@ -610,7 +611,7 @@ function delete_cluster
 		shift; break;;
 	esac
     done    
-    log_job 'RUNNING' 's9s_clone --delete is running' 0
+    log_job 'RUNNING_EXT' 's9s_clone --delete is running' 0
     log_job_message "Checking arguments" 0
 
     if [ -z "$CMON_PASSWORD" ]; then
@@ -765,7 +766,7 @@ function move_node
 		shift; break;;
 		esac
     done    
-    log_job 'RUNNING' 's9s_clone --move-node is running' 0
+    log_job 'RUNNING_EXT' 's9s_clone --move-node is running' 0
     log_job_message "Checking arguments" 0
     
     if [ -z "$CMON_PASSWORD" ]; then
@@ -844,9 +845,6 @@ function move_node
     QUERY="select count(id) FROM mysql_server WHERE cid=${TARGET_CLUSTER_ID}"
     CNT=`$MYSQL_BIN  -A -B -N --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" `
     
-
-    remote_cmd $SOURCE_HOSTNAME "sed -i.bak 's#cluster_id=.*#cluster_id=${TARGET_CLUSTER_ID}#g' /etc/cmon.cnf"
-    remote_cmd $SOURCE_HOSTNAME "/etc/init.d/cmon restart"
     if [ $CNT -eq 0 ]; then 
 	## IF THE CLUSTER WE MOVE THE NODE TO IS EMPTY, THEN INIT THE GALERA NODE
 	QUERY="SET WSREP_ON=0;SET GLOBAL wsrep_cluster_address='gcomm://'"	    
@@ -860,7 +858,8 @@ function move_node
 	log_job_message "Stopping mysql server on $SOURCE_HOSTNAME - ClusterControl will resync it" 0
 	remote_cmd_nofail $SOURCE_HOSTNAME "killall -q -15 mysqld mysqld_safe"
     fi
-    
+    remote_cmd $SOURCE_HOSTNAME "sed -i.bak 's#cluster_id=.*#cluster_id=${TARGET_CLUSTER_ID}#g' /etc/cmon.cnf"
+    remote_cmd $SOURCE_HOSTNAME "/etc/init.d/cmon restart"
 
     QUERY="SELECT GROUP_CONCAT(hostname) FROM mysql_server WHERE cid=$TARGET_CLUSTER_ID"
     SERVERS=`$MYSQL_BIN $MYSQL_OPTS -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"`    
@@ -904,9 +903,9 @@ function detach_cluster
 		shift;;
             --)
 		shift; break;;
-		esac
+	esac
     done    
-    log_job 'RUNNING' 's9s_clone --detach is running' 0
+    log_job 'RUNNING_EXT' 's9s_clone --detach is running' 0
     log_job_message "Checking arguments" 0
 
     if [ -z "$CMON_PASSWORD" ]; then
@@ -954,7 +953,7 @@ function detach_cluster
 	log_job 'FAILED' 's9s_clone --detach failed' 1
         exit 1
     fi
- 
+    log_job 'RUNNING_EXT' 's9s_clone --detach is running' 0
     QUERY="SET GLOBAL wsrep_cluster_address='gcomm://'"    
     `$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=$TARGET_HOSTNAME --port=$PORT --auto-vertical-output -Bse "$QUERY"`   
     if [ $? -ne 0 ]; then
