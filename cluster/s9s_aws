@@ -30,13 +30,13 @@ if [ "$OSUSER" != "root" ]; then
     echo "must be executed as 'root' or with 'sudo'"
     exit 1
 fi
- 
+
 function log_job_message
-{    
+{
     MSG=$1
     EXIT_CODE=$2
     QUERY="INSERT INTO cmon_job_message(cid, jobid,message,exit_code,report_ts) VALUES($CID,$jobid,'$MSG',$EXIT_CODE,now())"
-    if [ $jobid -ne 0 ]; then 
+    if [ $jobid -ne 0 ]; then
 	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
     else
 	if [ "$EXIT_CODE" -eq 0 ]; then
@@ -48,12 +48,12 @@ function log_job_message
 }
 
 function log_job
-{    
+{
     STATUS=$1
     STATUS_TXT=$2
     EXIT_CODE=$3
     QUERY="UPDATE cmon_job SET status='$STATUS', status_txt='$STATUS_TXT', exit_code=$EXIT_CODE, report_ts=NOW()  WHERE cid=$CID AND jobid=$jobid"
-    if [ $jobid -ne 0 ]; then 
+    if [ $jobid -ne 0 ]; then
 	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
     fi
 }
@@ -128,7 +128,7 @@ function remote_cmd()
    MAX_RETRIES=1
    printf "%-4s: Executing '%s' " "$desthost" "$xcommand"
    retry=0
-   while [ $retry -lt $MAX_RETRIES ]; 
+   while [ $retry -lt $MAX_RETRIES ];
    do
       x=`ssh -q $SSH_OPTS $SSH_USER@$desthost "$SUDO $xcommand " 2>&1  >> $HOME/s9s_deploy.log`
       if [ $? -eq 0 ]; then
@@ -140,7 +140,7 @@ function remote_cmd()
       ssh -q $SSH_OPTS $SSH_USER@$desthost " sync " 2>&1  >> $HOME/s9s_deploy.log
       sleep 1
    done
-   
+
    printf "\033[31m[failed]\033[0m\n"
    echo $x
    echo 'The following command failed:'
@@ -155,7 +155,7 @@ function remote_cmd3()
    desthost=$1
    xcommand=$2
    printf "%-4s: Executing '%s' " "$desthost" "$xcommand"
-   ssh $SSH_OPTS $SSH_OPTS_EXTRA $SSH_USER@$desthost "$SUDO $xcommand "   
+   ssh $SSH_OPTS $SSH_OPTS_EXTRA $SSH_USER@$desthost "$SUDO $xcommand "
    if [ $? -eq 0 ]; then
       printf "\033[32m[ok]\033[0m\n"
       return 0
@@ -165,7 +165,21 @@ function remote_cmd3()
    fi
 }
 
-function load_opts 
+function check_cluster_id
+{
+    QUERY="select id from ${CMON_DB_DB}.cluster where id=${CLUSTER_ID}"
+    ID=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$CMON_DB_PORT --auto-vertical-output -Bse "$QUERY"  2>/dev/null`
+    if [ -z $ID ]
+    then
+      echo "Unknown cluster ID $1. These are your available cluster IDs: "
+      QUERY="select id from ${CMON_DB_DB}.cluster"
+      ID=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$CMON_DB_PORT --auto-vertical-output -Bse "$QUERY"  2>/dev/null`
+      echo $ID
+      exit 1
+    fi
+}
+
+function load_opts
 {
     local CLUSTER_ID=$1
     echo "load opts $CLUSTER_ID"
@@ -179,7 +193,7 @@ function load_opts
     SSH_USER=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_USER' AND cid=$CLUSTER_ID" 2>/dev/null`
     SSH_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_PORT' AND cid=$CLUSTER_ID" 2>/dev/null`
     SSH_OPTSX=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_OPTS' AND cid=$CLUSTER_ID"`
-    SUDO=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SUDO' AND cid=$CLUSTER_ID" 2>/dev/null`    
+    SUDO=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SUDO' AND cid=$CLUSTER_ID" 2>/dev/null`
     OS_USER_HOME=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='OS_USER_HOME' AND cid=$CLUSTER_ID" 2>/dev/null`
     TMPDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='STAGING_DIR' AND cid=$CLUSTER_ID"`
     S9S_TMPDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='STAGING_DIR' AND cid=$CLUSTER_ID"`
@@ -189,7 +203,7 @@ function load_opts
 
 
     echo $MYCNF |  sed 's#\\n#\n\r#g' > /tmp/my.cnf
-    
+
     SSH_OPTS="-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10"
     if [ "$SSH_IDENTITY" = "" ]; then
 	SSH_IDENTITY="-oIdentityFile=${OS_USER_HOME}/.ssh/id_rsa"
@@ -213,8 +227,8 @@ function load_opts
 	S9S_TMPDIR="/tmp/"
 	TMPDIR="/tmp/"
     fi
-    SSH_OPTS2=" -p$SSH_PORT $SSH_OPTS"    
-    SSH_OPTS="$SSH_OPTSX -p$SSH_PORT $SSH_OPTS"    
+    SSH_OPTS2=" -p$SSH_PORT $SSH_OPTS"
+    SSH_OPTS="$SSH_OPTSX -p$SSH_PORT $SSH_OPTS"
 }
 
 
@@ -247,8 +261,8 @@ function change_ip
             --)
 		shift; break;;
 		esac
-    done    
-   
+    done
+
 
 
     if [ -z "$CMON_PASSWORD" ]; then
@@ -269,22 +283,26 @@ function change_ip
       exit 1
     fi
 
-    
+
     case $CLUSTER_TYPE in
 	galera)
 	    ;;
 	*)
     esac
-    load_opts $CLUSTER_ID 
-    
+
+    check_cluster_id $CLUSTER_ID
+    load_opts $CLUSTER_ID
+
     QUERY="select ip from ${CMON_DB_DB}.hosts where cid=${CLUSTER_ID} and (hostname='$OLD_HOSTNAME' OR ip='$OLD_HOSTNAME')"
     OLD_IP=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$CMON_DB_PORT --auto-vertical-output -Bse "$QUERY"  2>/dev/null`
+    [ -z $OLD_IP ] && echo "Unable to find old host/ip address $OLD_HOSTNAME, please check that it's correct." && exit 1
+
     if [ -z "$OS" ]; then
 	if [ `hash /usr/sbin/update-rc.d 2>/dev/null`  ]; then
 	    OS="redhat"
 	else
 	    OS="debian"
-	fi	
+	fi
     fi
     if [ -z "$NEW_IP" ]; then
         NEW_IP=$(nslookup $NEW_HOSTNAME | tail --lines=2 | head --lines=1 | cut -f 2 -d " ")
@@ -293,7 +311,12 @@ function change_ip
         echo "failed to determine ip, specify the ip manually with -k <new ip>"
         echo "even if new_hostname is also the new ip"
         exit 1
-    fi	
+    fi
+
+    # ping new IP
+    echo "Pinging new host..."
+    remote_cmd $NEW_IP "echo 2>&1"
+
     QUERY="BEGIN; UPDATE hosts SET hostname='$NEW_HOSTNAME', ip='$NEW_IP'  WHERE cid=$CLUSTER_ID AND (hostname='$OLD_HOSTNAME' OR ip='$OLD_IP')"
     QUERY="$QUERY;UPDATE mysql_server SET hostname='$NEW_HOSTNAME'   WHERE cid=$CLUSTER_ID AND (hostname='$OLD_HOSTNAME'); COMMIT"
     $MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=127.0.0.1 --port=$CMON_DB_PORT -e "$QUERY"
@@ -301,13 +324,13 @@ function change_ip
         echo "updating server addresses failed"
         exit 1
      fi
- 
+
     case $CLUSTER_TYPE in
         galera)
             remote_cmd $NEW_HOSTNAME "sed -i.bak 's#wsrep_node_address=.*#wsrep_node_address=$NEW_HOSTNAME#g' $CONFIGDIR/my.cnf"
-	;; 
+	;;
         *)
-	  ;;	
+	  ;;
     esac
     remote_cmd $NEW_HOSTNAME "sed -i.bak 's#^hostname=.*#hostname=$NEW_HOSTNAME#g' /etc/cmon.cnf"
 
@@ -325,7 +348,7 @@ function change_ip
            echo "Starting galera node on $NEW_HOSTNAME"
            QUERY="select hostname from ${CMON_DB_DB}.mysql_server where cid=${CLUSTER_ID} and status=0"
            DONOR=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$CMON_DB_PORT --auto-vertical-output -Bse "$QUERY"  2>/dev/null`
-             
+
             if [ "$DONOR" = "NULL" ] || [ "$DONOR" = "" ]; then
                echo "could not find donor"
                exit 1
@@ -370,10 +393,10 @@ function check_mysql_client()
         if [ ! -f $MYSQL_BIN ]; then
              MYSQL_BIN="/usr/local/mysql/bin/mysql"
              if [ ! -f $MYSQL_BIN ]; then
-		 echo "The MySQL client binary could not be found"         
+		 echo "The MySQL client binary could not be found"
 		 if [ "$mysql_basedir" = "" ]; then
 		     echo "mysql_basedir in /etc/cmon.cnf is not set. Add it to /etc/cmon.cnf"
-		     exit 1		     
+		     exit 1
 		 fi
              fi
 	fi
@@ -383,9 +406,9 @@ function check_mysql_client()
 if [ ! -e $LOCKFILE ]; then
     trap "rm -f $LOCKFILE; exit" INT TERM EXIT
     touch $LOCKFILE
-    
-    check_mysql_client		 
-    
+
+    check_mysql_client
+
     case $1 in
 	--change-ip)
 	    change_ip  $2 $3 $4 $5 $6 $7 $8 $9
