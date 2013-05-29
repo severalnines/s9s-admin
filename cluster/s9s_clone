@@ -127,6 +127,8 @@ function remote_cmd()
       sleep 1
    done
    
+   log_job_message "Command failed: $xcommand" 1
+   log_job 'FAILED' 's9s_clone --create failed' 1
    printf "\033[31m[failed]\033[0m\n"
    echo $x
    echo 'The following command failed:'
@@ -431,13 +433,13 @@ function create_cluster
 	exit 1
     fi
     if [ "$STATE" = "NULL" ]; then
-	log_job_message "$TARGET_HOSTNAME not SYNCHED" 1
+	log_job_message "$TARGET_HOSTNAME not SYNCED" 1
 	log_job 'FAILED' 's9s_clone --create failed' 1
 	exit 1
     fi
     STATE=`echo $STATE | awk '{print $2;}'`    
     if [ $STATE -ne 4 ]; then
-	log_job_message "$TARGET_HOSTNAME not SYNCHED" 1
+	log_job_message "$TARGET_HOSTNAME not SYNCED" 1
 	log_job 'FAILED' 's9s_clone --create failed' 1
 	exit 1
     fi
