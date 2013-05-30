@@ -375,6 +375,13 @@ function create_cluster
       log_job 'FAILED' 's9s_clone --create failed' 1
       exit 1
     fi
+    QUERY="select count(id) FROM mysql_server WHERE cid=${SOURCE_CLUSTER_ID}"
+    CNT=`$MYSQL_BIN  -A -B -N --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" `           
+    if [ $CNT -lt 2 ]; then
+	log_job_message "Source cluster must contain 2 or more nodes." 1
+	log_job 'FAILED' 's9s_clone --create failed' 1
+	exit 1
+    fi
     log_job_message "Creating Cluster $CLUSTER_NAME (${TARGET_CLUSTER_ID}) From Cluster $SOURCE_CLUSTER_ID" 0
     log_job 'RUNNING' 's9s_clone --create is running' 0
     QUERY="select count(id) FROM cluster WHERE id=${TARGET_CLUSTER_ID}"
@@ -444,9 +451,6 @@ function create_cluster
 	exit 1
     fi
     
-    
-
-
 #    QUERY="CREATE DATABASE IF NOT EXISTS $CMON_DB_DB"
     
 #    `$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$CMON_DB_PORT --auto-vertical-output -Bse "$QUERY"`
@@ -497,6 +501,7 @@ function create_cluster
     QUERY="$QUERY;REPLACE INTO cmon_configuration(cid, param, value) VALUES ($TARGET_CLUSTER_ID, \"CLUSTER_NAME\", \"${CLUSTER_NAME}\")"    
     QUERY="$QUERY;CALL sp_cmon_movehost(${TARGET_CLUSTER_ID}, ${HID})"
     QUERY="$QUERY;COMMIT"
+
     `$MYSQL_BIN $MYSQL_OPTS -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"`    
     if [ $? -ne 0 ]; then
 	log_job_message "Failed to create cluster: $QUERY" 1
