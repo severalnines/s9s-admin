@@ -558,7 +558,7 @@ function start_node_donor
 
 function install_garbd
 {
-    args=`getopt p:i:P:t:d:j:h:f:V $*`
+    args=`getopt p:i:P:t:d:j:h:f:V: $*`
     set -- $args
     for i
     do
@@ -629,6 +629,7 @@ function install_garbd
 	exit 1
     fi
     
+
     DONOR_HOSTNAME=`$MYSQL_BIN -B -N $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$DONOR_HOSTNAME --port=$CMON_DB_PORT --database=$CMON_DB_DB  -e "SELECT hostname FROM $CMON_DB_DB.mysql_server WHERE cid=${CLUSTER_ID} AND status=0 LIMIT 1"`
     if [ -z "$DONOR_HOSTNAME" ]; then
 	echo "Could not get a cluster address"
@@ -645,7 +646,7 @@ function install_garbd
 
     mkdir -p $S9S_TMPDIR
     chown $SSH_USER:$SSH_USER $S9S_TMPDIR
-    
+    remote_cmd_nofail $XHOSTNAME "mkdir -p $S9S_TMPDIR"
     case $VENDOR in
 	percona)
 	    if [ "$OS" = "redhat" ]; then
@@ -726,7 +727,11 @@ EOF
 	    echo "Not a supported vendor"
 	    exit 1;	           	     
     esac
-    
+    QUERY="INSERT IGNORE INTO cmon_configuration(cid,param,value,report_ts) VALUES($CLUSTER_ID,'VENDOR', '$VENDOR', now())"
+    `$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"`
+    if [  $? -ne 0 ]; then
+	log_job_message  "Query failed. $QUERY"  1	
+    fi
     start_garbd $XHOSTNAME $DONOR_HOSTNAME $GALERA_PORT $CLUSTER_NAME
     sleep 2
     QUERY="REPLACE INTO ext_proc (cid, hostname,bin, opts,cmd, proc_name, port, status) VALUES($CLUSTER_ID, '$XHOSTNAME','/usr/bin/garbd', '-a gcomm://${DONOR_HOSTNAME}:${GALERA_PORT} -g  -d', '/usr/bin/garbd  -a gcomm://${DONOR_HOSTNAME}:${GALERA_PORT} -g $CLUSTER_NAME -d','garbd', $GALERA_PORT , 0)"
