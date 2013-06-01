@@ -582,7 +582,7 @@ function install_garbd
 		jobid="$2"; shift;
 		shift;;
 	    -P)
-		GALERA_PORT="$2"; shift;
+		XGALERA_PORT="$2"; shift;
 		shift;;
             --)
 		shift; break;;
@@ -605,11 +605,6 @@ function install_garbd
       exit 1
     fi
 
-    if [ -z "$GALERA_PORT" ]; then
-	GALERA_PORT="4567"
-    fi
-
-##    CMON_DB_DB="cmon_${CLUSTER_ID}"
     
     case $CLUSTER_TYPE in
 	galera)
@@ -628,8 +623,10 @@ function install_garbd
 	echo "./s9s-galera --install-garbd -V [percona|mariadb|codership]"
 	exit 1
     fi
+    if [ -n "$XGALERA_PORT" ]; then
+	GALERA_PORT="$XGALERA_PORT"
+    fi
     
-
     DONOR_HOSTNAME=`$MYSQL_BIN -B -N $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$DONOR_HOSTNAME --port=$CMON_DB_PORT --database=$CMON_DB_DB  -e "SELECT hostname FROM $CMON_DB_DB.mysql_server WHERE cid=${CLUSTER_ID} AND status=0 LIMIT 1"`
     if [ -z "$DONOR_HOSTNAME" ]; then
 	echo "Could not get a cluster address"
