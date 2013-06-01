@@ -644,6 +644,10 @@ function install_garbd
     fi
     CLUSTER_NAME=`echo $CLUSTER_NAME | awk   '{print $2;}'`
 
+    echo "Hostname: $XHOSTNAME"
+    echo "Donor: $DONOR_HOSTNAME"  
+    echo "Galera port: $GALERA_PORT"
+    echo "Cluster name: $CLUSTER_NAME"
     mkdir -p $S9S_TMPDIR
     chown $SSH_USER:$SSH_USER $S9S_TMPDIR
     remote_cmd_nofail $XHOSTNAME "mkdir -p $S9S_TMPDIR"
@@ -732,6 +736,7 @@ EOF
     if [  $? -ne 0 ]; then
 	log_job_message  "Query failed. $QUERY"  1	
     fi
+    echo "Starting garbd"
     start_garbd $XHOSTNAME $DONOR_HOSTNAME $GALERA_PORT $CLUSTER_NAME
     sleep 2
     QUERY="REPLACE INTO ext_proc (cid, hostname,bin, opts,cmd, proc_name, port, status) VALUES($CLUSTER_ID, '$XHOSTNAME','/usr/bin/garbd', '-a gcomm://${DONOR_HOSTNAME}:${GALERA_PORT} -g  -d', '/usr/bin/garbd  -a gcomm://${DONOR_HOSTNAME}:${GALERA_PORT} -g $CLUSTER_NAME -d','garbd', $GALERA_PORT , 0)"
