@@ -21,7 +21,7 @@ if [ $ret -ne 0 ]; then
    echo "Failed to start netcat"
    exit 1
 fi
-echo $SSH_OPTS
+#echo $SSH_OPTS
 sleep 60
 
 while [ 1 ]; 
