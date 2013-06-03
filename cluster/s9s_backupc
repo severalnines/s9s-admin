@@ -168,7 +168,7 @@ function start_backup
 	    jobid=0
 	fi
 	
-        echo $SSH_OPTS
+#        echo $SSH_OPTS
 	x=`ssh $SSH_OPTS  $SSH_USER@$BACKUP_HOSTNAME '$SUDO which innobackupex' 2>/dev/null`
 	if [ "$x" = ""  ]; then
 	    log_job_message "installing xtrabackup" 0	
@@ -178,9 +178,18 @@ function start_backup
 	x=`ssh $SSH_OPTS  $SSH_USER@$BACKUP_HOSTNAME '$SUDO which innobackupex' 2>/dev/null`
 	if [ "$x" = "" ]; then
 	    log_job_message "innobackupex not found" 1
-	    log_job 'FAILED' 'rebuild slave failed' 1
+	    log_job 'FAILED' 'backup failed' 1
 	    exit 1
 	fi
+
+	QUERY="select count(id) from mysql_server where cid=$CLUSTER_ID AND hostname='$BACKUP_HOSTNAME'"
+	CNT=`$MYSQL_BIN  -A -B -N --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" `
+	if [ $CNT -eq 0 ]; then 
+	    log_job_message "-h <backup hostname> not found in cluster $CLUSTER_ID" 1
+	    log_job 'FAILED' 'backup failed' 1
+	    exit 1
+	fi
+
 	QUERY="select count(column_name) from information_schema.columns where table_schema='$CMON_DB_DB' and table_name='mysql_backup' and column_name='md5sum'"
 	CNT=`$MYSQL_BIN  -A -B -N --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" `
 	if [ $CNT -eq 0 ]; then 
