@@ -176,8 +176,6 @@ function install_agent
 	    -P)
 		PORT="$2"; shift;
 		shift;;
-            --)
-		shift; break;;
 	esac
     done    
 
@@ -276,8 +274,6 @@ function install_mysql
 	    -P)
 		PORT="$2"; shift;
 		shift;;
-            --)
-		shift; break;;
 	esac
     done    
     if [ -z "$CMON_PASSWORD" ]; then
@@ -347,9 +343,7 @@ function create_cluster
 		shift;;
             -D)
 		DETACH=1; shift;
-            --)
-		shift; break;;
-		esac
+	esac
     done    
    
     CLUSTER_ID=${SOURCE_CLUSTER_ID} 
@@ -620,8 +614,6 @@ function delete_cluster
 	    -P)
 		PORT="$2"; shift;
 		shift;;
-            --)
-		shift; break;;
 	esac
     done    
     log_job 'RUNNING' 's9s_clone --delete is running' 0
@@ -775,9 +767,7 @@ function move_node
 	    -j)
 		JOBID="$2"; shift;
 		shift;;
-            --)
-		shift; break;;
-		esac
+	esac
     done    
     log_job 'RUNNING' 's9s_clone --move-node is running' 0
     log_job_message "Checking arguments" 0
@@ -915,8 +905,6 @@ function detach_cluster
 	    -j)
 		JOBID="$2"; shift;
 		shift;;
-            --)
-		shift; break;;
 	esac
     done    
     log_job 'RUNNING' 's9s_clone --detach is running' 0
