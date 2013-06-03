@@ -1466,25 +1466,27 @@ function add_node
 
 if [ ! -e $LOCKFILE ]; then
     trap "rm -f $LOCKFILE; exit" INT TERM EXIT
+    ARG=$1
+    shift
     touch $LOCKFILE    
-    case $1 in
+    case $ARG in
 	--prepare)
     	    prepare
 	    ;;
 	--install)
-	    install_haproxy  $2 $3 $4 $5 $6 $7 $8 $9
+	    install_haproxy $*
 	    ;;
 	--install-keepalived)
-	    install_keepalived  $2 $3 $4 $5 $6 $7 $8 $9
+	    install_keepalived $*
 	    ;;
 	--add-node)	
-	    add_node $2 $3 $4 $5 $6 $7 $8 $9
+	    add_node $*
 	    ;;
 	--remove-node)
-	    remove_node $2 $3 $4 $5 $6 $7 $8 $9
+	    remove_node $*
 	    ;;
 	--delete)
-	    delete_haproxy  $2 $3 $4 $5 $6 $7 $8 $9
+	    delete_haproxy $*
 	    ;;
 	*)
 	    echo "Usage: "

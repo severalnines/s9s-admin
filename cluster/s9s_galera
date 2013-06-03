@@ -1526,36 +1526,36 @@ function check_mysql_client()
 if [ ! -e $LOCKFILE ]; then
     trap "rm -f $LOCKFILE; exit" INT TERM EXIT
     touch $LOCKFILE
-    
+    ARG=$1
     check_mysql_client		 
     
-    case $1 in
+    case $ARG in
 	--stop-cluster)
-	    stop_cluster  $2 $3 $4 $5 $6 $7 $8 $9
+	    stop_cluster $*
 	    ;;
 	--start-cluster)
-	    start_cluster  $2 $3 $4 $5 $6 $7 $8 $9
+	    start_cluster $*
 	    ;;
 	--reinit-cluster)
-	    reinit_cluster  $2 $3 $4 $5 $6 $7 $8 $9
+	    reinit_cluster $*
 	    ;;
 	--make-primary)
-	    make_primary  $2 $3 $4 $5 $6 $7 $8 $9
+	    make_primary $*
 	    ;;
 	--stop-node)
-	    stop_node  $2 $3 $4 $5 $6 $7 $8 $9
+	    stop_node $*
 	    ;;
 	--start-node)
-	    start_node  $2 $3 $4 $5 $6 $7 $8 $9
+	    start_node $*
 	    ;;
 	--install-garbd)
-	    install_garbd  $2 $3 $4 $5 $6 $7 $8 $9
+	    install_garbd $*
 	    ;;
 	--remove-garbd)
-	    remove_garbd  $2 $3 $4 $5 $6 $7 $8 $9
+	    remove_garbd $*
 	    ;;
 	--status)
-	    status_cluster  $2 $3 $4 $5 $6 $7 $8 $9
+	    status_cluster $*
 	    ;;
 	*)
 	    echo "Usage: "
