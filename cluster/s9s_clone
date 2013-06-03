@@ -47,6 +47,24 @@ function log_job_message
     fi
 }
 
+function create_job
+{    
+    MSG=$1
+    STATUS=$2
+    EXIT_CODE=$3
+    QUERY="INSERT INTO cmon_job(cid, jobid, jobspec,status,status_txt,exit_code,report_ts) VALUES($CLUSTER_ID,$JOBID,'internal','$STATUS',\"$MSG\",$EXIT_CODE,now())"
+    echo $QUERY >> /tmp/queries
+    if [ $JOBID -ne 0 ]; then 
+	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
+    else
+	if [ $EXIT_CODE -eq 0 ]; then
+   	   echo "$MSG"
+	else
+   	   echo "Failed: $MSG"
+	fi
+    fi
+}
+
 function log_job
 {    
     STATUS=$1
@@ -558,7 +576,10 @@ function create_cluster
     fi
     echo ""
     if [ $DETACH -eq 1 ]; then
+	CLUSTER_ID=$TARGET_CLUSTER_ID
+	create_job "s9s_clone --detach is running" "RUNNING" 0
 	detach_cluster -i $TARGET_CLUSTER_ID  -h $TARGET_HOSTNAME -j $JOBID
+	CLUSTER_ID=$SOURCE_CLUSTER_ID
     else
 	log_job_message "Don't forget to detach cluster, by running:" 0
 	log_job_message " s9s_clone --detach -i $TARGET_CLUSTER_ID -h $TARGET_HOSTNAME " 0    
