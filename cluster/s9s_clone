@@ -316,8 +316,8 @@ function install_mysql
 
 function create_cluster
 {
-    shift
     DETACH=0
+    OPTIONS=$*
     args=`getopt p:s:P:h:t:N:j:D $*`
     set -- $args
     for i
@@ -557,8 +557,12 @@ function create_cluster
 	 sed -i.bak "s#mysql_server_addresses=.*#mysql_server_addresses=${SERVERS}#g" /etc/cmon_${SOURCE_CLUSTER_ID}.cnf
     fi
     echo ""
-    log_job_message "Don't forget to detach cluster, by running:" 0
-    log_job_message " s9s_clone --detach -i $TARGET_CLUSTER_ID -h $TARGET_HOSTNAME " 0    
+    if [ $DETACH -eq 1 ]; then
+	detach_cluster $OPTIONS
+    else
+	log_job_message "Don't forget to detach cluster, by running:" 0
+	log_job_message " s9s_clone --detach -i $TARGET_CLUSTER_ID -h $TARGET_HOSTNAME " 0    
+    fi
     log_job 'FINISHED' 's9s_clone --create finished successfully' 0
     echo ""
 }
@@ -592,7 +596,6 @@ function check_host_exists
 
 function delete_cluster
 {
-    shift
     FORCE=0
     args=`getopt p:i:P:t:j:f $*`
     set -- $args
@@ -745,7 +748,6 @@ function list_cluster
 
 function move_node
 {
-    shift
     args=`getopt p:s:h:t:j: $*`
     set -- $args
     for i
@@ -884,7 +886,6 @@ function move_node
 
 function detach_cluster
 {
-    shift
     args=`getopt p:i:P:t:h:j: $*`
     set -- $args
     for i
@@ -991,9 +992,11 @@ if [ ! -e $LOCKFILE ]; then
     touch $LOCKFILE
     
     check_mysql_client		 
- 
     
-    case $1 in
+    ARG=$1
+    shift
+    
+    case $ARG in
 	--list)
 	    list_cluster  $*
 	    ;;
