@@ -558,7 +558,7 @@ function create_cluster
     fi
     echo ""
     if [ $DETACH -eq 1 ]; then
-	detach_cluster $OPTIONS
+	detach_cluster -i $TARGET_CLUSTER_ID  -h $TARGET_HOSTNAME -j $JOBID
     else
 	log_job_message "Don't forget to detach cluster, by running:" 0
 	log_job_message " s9s_clone --detach -i $TARGET_CLUSTER_ID -h $TARGET_HOSTNAME " 0    
