@@ -7,7 +7,7 @@ searchexpr="innobackupex: Error: "
 #give xtrabackup a chance to start
 sleep 60
 
-while [ 1 ]; 
+while [ 1 ];
 do
    if ps ax | grep -v grep | grep xtrabackup > /dev/null
    then
@@ -17,6 +17,10 @@ do
         killall -9 xtrabackup innobackupex xtrabackup_55 xtrabackup_56
         echo "BACKUP FAILED: $err " >> $BACKUP_LOGFILE
         exit 1
+      fi
+      if  grep " Starting to lock all tables" $BACKUP_LOGFILE ;  then
+          sleep 60
+          rm -rf /tmp/xtrabackup_suspended_2
       fi
    else
       exit 0
