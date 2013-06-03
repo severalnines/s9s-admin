@@ -119,6 +119,7 @@ function remote_cmd()
       x=`ssh -q $SSH_OPTS $SSH_USER@$desthost "$SUDO $xcommand " > $HOME/s9s_cmd.log 2>&1`
       if [ $? -eq 0 ]; then
         printf "\033[32m[ok]\033[0m\n"
+	log_job_message "Executed on $desthost : $xcommand" 0
         return 0
       fi
       retry=`expr $retry + 1`
@@ -319,7 +320,9 @@ function install_mysql
 
 function create_cluster
 {
-    args=`getopt p:s:P:h:t:N:j: $*`
+    shift
+    DETACH=0
+    args=`getopt p:s:P:h:t:N:j:D $*`
     set -- $args
     for i
     do
@@ -342,6 +345,8 @@ function create_cluster
             -j)
 		JOBID="$2"; shift;
 		shift;;
+            -D)
+		DETACH=1; shift;
             --)
 		shift; break;;
 		esac
@@ -593,6 +598,7 @@ function check_host_exists
 
 function delete_cluster
 {
+    shift
     FORCE=0
     args=`getopt p:i:P:t:j:f $*`
     set -- $args
@@ -667,7 +673,7 @@ function delete_cluster
     QUERY="select group_concat(hostname SEPARATOR ' ') from ${CMON_DB_DB}.mysql_server where cid=${CLUSTER_ID}"
     SERVER_LIST=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$CMON_DB_PORT --auto-vertical-output -Bse "$QUERY"`
     QUERY="CALL ${CMON_DB_DB}.sp_cmon_deletecluster(${CLUSTER_ID})"
-    `$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$CMON_DB_PORT --auto-vertical-output -Bse "$QUERY"`
+    $MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$CMON_DB_PORT --auto-vertical-output -Bse "$QUERY"
     
     if [ $? -ne 0 ]; then
 	log_job_message "Failed to delete cluster" 1
@@ -747,7 +753,7 @@ function list_cluster
 
 function move_node
 {
-#    args=`getopt -o p:,h:,f:,t: --long password:,hostname:,from-clusterid:,to-clusterid: -n 's9s-clone.sh' -- "$*"`
+    shift
     args=`getopt p:s:h:t:j: $*`
     set -- $args
     for i
@@ -888,6 +894,7 @@ function move_node
 
 function detach_cluster
 {
+    shift
     args=`getopt p:i:P:t:h:j: $*`
     set -- $args
     for i
@@ -1000,19 +1007,19 @@ if [ ! -e $LOCKFILE ]; then
     
     case $1 in
 	--list)
-	    list_cluster  $2 $3 $4 $5 $6 $7
+	    list_cluster  $*
 	    ;;
 	--create)
-	    create_cluster  $2 $3 $4 $5 $6 $7 $8 $9
+	    create_cluster  $*
 	    ;;
 	--detach)
-	    detach_cluster  $2 $3 $4 $5 $6 $7 $8 $9
+	    detach_cluster  $*
 	    ;;
 	--move-node)
-	    move_node  $2 $3 $4 $5 $6 $7
+	    move_node  $*
 	    ;;
 	--delete)
-	    delete_cluster  $2 $3 $4 $5 $6 $7
+	    delete_cluster  $*
 	    ;;
 	*)
 	    echo "Usage: "
