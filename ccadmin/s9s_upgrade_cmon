@@ -676,7 +676,7 @@ backupCmon()
 	else
 		commandStatus 'Backup CMON binary' "cp -pf /usr/bin/s9s_* $tmp_dir/bin/"
 	fi
-	commandStatus 'Backup CMON sbin binary' "cp -pf /usr/sbin/cmon $tmp_dir/sbin/"
+	#commandStatus 'Backup CMON sbin binary' "cp -pf /usr/sbin/cmon $tmp_dir/sbin/"
 
 	echo "BACKUP_STATUS=COMPLETED" >> $upgrade_details
 	echo "** Backup completed!"
