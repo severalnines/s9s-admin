@@ -39,9 +39,28 @@ helpMenu()
 [ ! -z "$help" ] && helpMenu && exit 1
 [ `whoami` != "root" ] && echo "Please run this script as root or using sudo" && exit 1
 
+if [ ! -z "$backup" ] && [ "$backup" != "all" ] && [ "$backup" != "controller" ] && [ "$backup" != "agent" ]; then
+	echo "Unknown argument. Kindly specify supported argument for -b,--backup: (all|controller|agent)"
+	exit 1
+fi
+
+if [ ! -z "$restore" ] && [ "$restore" != "all" ] && [ "$restore" != "controller" ] && [ "$restore" != "agent" ]; then
+	echo "Unknown argument. Kindly specify supported argument for -r,--restore: (all|controller|agent)"
+	exit 1
+fi
+
 if [ ! -z "$backup" ] && [ ! -z "$restore" ]; then
 	echo "Option backup and restore cannot be used simultaneously."
 	exit 1
+elif [ ! -z "$backup_dir" ] && [ -z "$backup" ] && [ -z "$restore" ] && [ -z "$latest" ]; then
+	echo "Option backupdir need to be used with option latest/backup/restore."
+        exit 1
+elif [ ! -z "$top_dir" ] && [ -z "$backup" ] && [ -z "$restore" ] && [ -z "$latest" ]; then
+	echo "Option topdir need to be used with option latest/backup/restore."
+        exit 1
+elif [ ! -z "$restore" ] && [ ! -z "$latest" ]; then
+	echo "Option restore cannot be used with option latest."
+        exit 1
 fi
 
 arch=`uname -m`
@@ -306,11 +325,11 @@ getModDatabase()
         	done
 	done
 
+	        f2=`echo "scale=0;($val-1000)/100" | bc`
 	# sort and get the filename
 	for val in `printf '%s\0' "${array[@]}" | sort -z | xargs -0n1`
 	do
         	f1=`echo "scale=0;$val/1000" | bc`
-	        f2=`echo "scale=0;($val-1000)/100" | bc`
         	f3=`echo "scale=1;(($val-1000)-100)" | bc`
 	        [ $f3 -ge 100 ] && f3=0
         	mod_ver="$f1.$f2.$f3"
@@ -804,7 +823,7 @@ if [ "$mode" == "controller" ]; then
 	[ ! -z "$top_dir" ] && install_dir_cmon=$top_dir
 fi
 
-[ ! -f $install_dir_cmon/cmon/sbin/cmon ] && echo "Cannot find CMON binary at $install_dir_cmon/cmon/sbin/cmon" && exit 1
+[ ! -f $install_dir_cmon/cmon/sbin/cmon ] && echo "Cannot find CMON binary at $install_dir_cmon/cmon/sbin/cmon. Make sure you specify correct CMON path." && exit 1
 
 if [ "$latest" == 1 ]; then
 	if [ "$mode" == "controller" ]; then
