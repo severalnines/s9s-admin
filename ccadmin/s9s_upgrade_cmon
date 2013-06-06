@@ -5,51 +5,50 @@
 
 
 DEBUG=1
-TEMP=`getopt -o h,l,b:,r: --long help,latest,backup:,restore: -n 's9s_upgrade_cmon' -- "$@"`
+TEMP=`getopt -o h,l,t:,b:,d:,r: --long help,latest,topdir:,backup:,backupdir:,restore: -n 's9s_upgrade_cmon' -- "$@"`
 eval set -- "$TEMP"
 
 while true ; do
 	case "$1" in
 		-h|--help) help="1" ; shift ;;
 		-l|--latest) latest="1" ; shift ;;
+		-t|--topdir) top_dir="$2" ; shift 2 ;;
 		-b|--backup) backup="$2" ; shift 2 ;;
+		-d|--backupdir) backup_dir="$2" ; shift 2 ;;
 		-r|--restore) restore="$2" ; shift 2 ;;
 		--) shift ; break ;;
-		*) echo "$0: error - unrecognized option $1" 1>&2; exit 1;;
+		*) echo "$0: error - unrecognized option -$OPTARG" 1>&2; exit 1;;
 	esac
 done
 
-if [ ! -z "$help" ]; then
-	echo "ClusterControl Auto Updater"
-	echo "Usage: `basename $0` [options]"
-	echo ""
-	echo "Options:"
-	echo "-l, --latest		: Upgrade ClusterControl to latest version (recommended)"
-	echo "-b, --backup		: Perform ClusterControl backup (all|controller|agent)"
-	echo "-r, --restore		: Restore from ClusterControl backup (all|controller|agent)"
-	echo "-h, --help		: Print help"
-	echo ""
-	exit 1
-fi
+helpMenu()
+{
+        echo "ClusterControl Auto Updater"
+        echo "Usage: `basename $0` [options]"
+        echo ""
+        echo "Options:"
+        echo "-l, --latest              : Upgrade ClusterControl to latest version (recommended)"
+        echo "-t, --topdir              : Custom path for CMON installation (default: /usr/local)"
+        echo "-b, --backup              : Perform ClusterControl backup (all|controller|agent)"
+        echo "-d, --backupdir           : Custom path for ClusterControl  backup directory (default: /tmp/s9s_backup)"
+        echo "-r, --restore             : Restore from ClusterControl backup (all|controller|agent)"
+        echo "-h, --help                : Print help"
+        echo ""
+
+}
+[ ! -z "$help" ] && helpMenu && exit 1
+[ `whoami` != "root" ] && echo "Please run this script as root or using sudo" && exit 1
 
 if [ ! -z "$backup" ] && [ ! -z "$restore" ]; then
 	echo "Option backup and restore cannot be used simultaneously."
 	exit 1
-elif [ ! -z "$latest" ]; then
-	if [ ! -z "$backup" ] || [ ! -z "$restore" ]; then
-		echo "Option latest cannot be used with backup or restore."
-        	exit 1
-	fi
 fi
-
-if [ `whoami` != "root" ]; then
-    echo "Please run this script as root or using sudo"
-    exit 1
-fi
-
 
 arch=`uname -m`
 [ "$arch" == "i686" ] && echo "Architecture not supported. Kindly use OS with x86_64 architecture." && exit 1
+
+tmp_dir=/tmp/s9s_backup
+[ ! -z "$backup_dir" ] && tmp_dir=$backup_dir
 
 CMON_CONFIG=/etc/cmon.cnf
 if [ ! -e $CMON_CONFIG ] ; then
@@ -78,7 +77,6 @@ rel_dir=`dirname "$0"`
 root_dir=`cd $rel_dir;pwd`
 repo_dir_name=s9s_repo
 repo_dir=$root_dir/$repo_dir_name
-install_dir_cmon=/usr/local
 install_config_path=/etc
 
 [ ! -d $repo_dir ] && mkdir $repo_dir
@@ -87,6 +85,8 @@ if [ -z "$wwwroot" ]; then
 	[ "$os" == "debian" ] && wwwroot=/var/www
 	[ "$os" == "redhat" ] && wwwroot=/var/www/html
 fi
+
+[ "$mode" == "agent" ] && source $repo_dir/agent.config
 
 ## Function 
 
@@ -233,6 +233,8 @@ collectInfo()
 	echo "type=$type" >> $AGENT_CONFIG
 	[ "$os" == "debian" ] && echo "cmon_package=$cmon_package" >> $AGENT_CONFIG
 	[ "$os" == "redhat" ] && echo "rpm_agent=$rpm_agent" >> $AGENT_CONFIG
+	echo "install_dir_cmon=$install_dir_cmon" >> $AGENT_CONFIG
+	echo "tmp_dir=$tmp_dir" >> $AGENT_CONFIG
 	echo "INSTALL_METHOD=$INSTALL_METHOD" >> $AGENT_CONFIG	
 
 	if [ $lv1 -gt $v1 ]; then
@@ -325,7 +327,7 @@ upgradeCmonDatabase()
 {
 	echo ""
         echo "==================================="
-        echo "      Upgrade CMON Schema"
+        echo "        Upgrade CMON Schema"
         echo "==================================="
 
 	checkMysqlBin
@@ -472,8 +474,6 @@ upgradeCcUi()
 
 upgradeCmon()
 {
-	[ "$mode" == "agent" ] && source $repo_dir/agent.config
-
 	echo ""
         echo "==================================="
         echo "          Upgrade CMON"
@@ -583,8 +583,6 @@ downloadLatest(){
 restoreCmon()
 {
         [ "$mode" == "controller" ] && checkMysqlBin
-	[ "$mode" == "agent" ] && source $repo_dir/agent.config
-        tmp_dir=/tmp/s9s_backup
 
 	echo ""
         echo "==================================="
@@ -622,7 +620,7 @@ restoreCmon()
                 [ -f $tmp_dir/my.cnf ] && commandStatus 'Restoring my.cnf'  "cp -pfR $tmp_dir/my.cnf $MYSQL_ETC/my.cnf"
 
                 commandStatus 'Restoring CMON binary' "cp -pfR $tmp_dir/bin/* /usr/bin/"
-		commandStatus 'Restoring CMON sbin binary' "cp -pf $tmp_dir/sbin/cmon /usr/sbin/"
+		[ "$os" == "redhat" ] && commandStatus 'Restoring CMON sbin binary' "cp -pf $tmp_dir/sbin/cmon /usr/sbin/"
                 startCmon
 
                 echo "** Restore to version $OLD_CMON_VERSION completed!"
@@ -634,10 +632,7 @@ restoreCmon()
 
 backupCmon()
 {
-	
 	checkMysqlBin
-	tmp_dir=/tmp/s9s_backup
-	[ "$mode" == "agent" ] && source $repo_dir/agent.config
 
 	echo ""	
 	echo "==================================="
@@ -670,13 +665,12 @@ backupCmon()
 
 	[ "$os" == "debian" ] && mkdir -p $tmp_dir/local &&  commandStatus 'Backup CMON install directory' "cp -pfR $install_dir_cmon/cmon* $tmp_dir/local/"
 	mkdir -p $tmp_dir/bin
-	mkdir -p $tmp_dir/sbin
 	if [ "$mode" == "controller" ]; then
 		commandStatus 'Backup CMON binary' "cp -pf /usr/bin/cmon* /usr/bin/s9s_* $tmp_dir/bin/"
 	else
 		commandStatus 'Backup CMON binary' "cp -pf /usr/bin/s9s_* $tmp_dir/bin/"
 	fi
-	commandStatus 'Backup CMON sbin binary' "cp -pf /usr/sbin/cmon $tmp_dir/sbin/"
+	[ "$os" == "redhat" ] && mkdir -p $tmp_dir/sbin && commandStatus 'Backup CMON sbin binary' "cp -pf /usr/sbin/cmon $tmp_dir/sbin/"
 
 	echo "BACKUP_STATUS=COMPLETED" >> $upgrade_details
 	echo "** Backup completed!"
@@ -713,7 +707,7 @@ restoreAgent()
 
 upgradeAgent()
 {
-	options='--latest'
+	options="--latest"
 	[ ! -z $1 ] && options="$1"
 
 	all_agent_hosts=`echo $mysql_server_addresses | tr ',' ' '`
@@ -769,8 +763,13 @@ backupAgent()
 
 checkSudo ()
 {
+	checkMysqlBin
+	query_ssh_identity="SELECT value FROM cmon.cmon_configuration WHERE param='SSH_IDENTITY' AND cid=$cluster_id"
+	SSH_IDENTITY=`$MYSQL_BIN -ucmon -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT -A -Bse "$query_ssh_identity"`
+
         ssh_key="/home/$os_user/.ssh/id_rsa"
         [ "$os_user" == "root" ] && ssh_key="/root/.ssh/id_rsa"
+	[ ! -z "$SSH_IDENTITY" ] && ssh_key=$SSH_IDENTITY
 
         if [ "$mode" == "controller" ]; then
                 sudo=sudo
@@ -791,11 +790,20 @@ performUpgrade()
 		[ "$mode" == "controller" ] && downloadLatest
 		upgradeCmon
 		[ "$mode" == "controller" ] && upgradeAgent
-		[ "$install_cc_ui" == 1 ] && echo -e "\nNew ClusterControl installed!!\nKindly go to http://${CMON_DB_HOST}/install to finalize the installation"
+		[ "$install_cc_ui" == 1 ] && echo -e "\nNew ClusterControl web app installed!!\nKindly go to http://${CMON_DB_HOST}/install to finalize the installation"
 	fi
 }
 
 ## Runtime
+
+if [ "$mode" == "controller" ]; then
+	tmp_dir=/tmp/s9s_backup
+	[ ! -z "$backup_dir" ] && tmp_dir=$backup_dir
+	install_dir_cmon=/usr/local
+	[ ! -z "$top_dir" ] && install_dir_cmon=$top_dir
+fi
+
+[ ! -f $install_dir_cmon/cmon/sbin/cmon ] && echo "Cannot find CMON binary at $install_dir_cmon/cmon/sbin/cmon" && exit 1
 
 if [ "$latest" == 1 ]; then
 	if [ "$mode" == "controller" ]; then
@@ -810,35 +818,38 @@ if [ "$latest" == 1 ]; then
 		backupCmon
 		upgradeCmon
 	fi
-	
-elif [ "$backup" == "controller" ]; then
-	backupCmon
-elif [ "$backup" == "agent" ]; then
-	checkSudo
-	backupAgent
-elif [ "$backup" == "all" ]; then
-	checkSudo
-	backupCmon
-        backupAgent
-elif [ "$restore" == "controller" ]; then
-	restoreCmon
-elif [ "$restore" == "agent" ]; then
-	checkSudo
-	restoreAgent
-elif [ "$restore" == "all" ]; then
-	checkSudo
-	restoreCmon
-        restoreAgent
-else
-	echo ""
-        echo "ClusterControl Auto Updater"
-        echo "Usage: `basename $0` [options]"
-        echo ""
-        echo "Options:"
-        echo "-l, --latest              : Upgrade ClusterControl to latest version (recommended)"
-        echo "-b, --backup              : Perform ClusterControl backup (all|controller|agent)"
-        echo "-r, --restore             : Restore from ClusterControl backup (all|controller|agent)"
-        echo "-h, --help                : Print help"
-        exit 1
 
+elif [ "$latest" != 1 ] && [ ! -z "$backup" ]; then
+	if [ "$backup" == "controller" ]; then
+		backupCmon
+	elif [ "$backup" == "agent" ]; then
+		checkSudo
+		backupAgent
+	elif [ "$backup" == "all" ]; then
+		checkSudo
+		backupCmon
+	        backupAgent
+	else
+		echo "Unknown backup option. Please specify either controller, agent or all."
+		exit 1
+	fi
+
+elif [ "$latest" != 1 ] && [ ! -z "$restore" ]; then
+	if [ "$restore" == "controller" ]; then
+		restoreCmon
+	elif [ "$restore" == "agent" ]; then
+		checkSudo
+		restoreAgent
+	elif [ "$restore" == "all" ]; then
+		checkSudo
+		restoreCmon
+	        restoreAgent
+	else
+		echo "Unknown restore option. Please specify either controller, agent or all."
+	        exit 1
+	fi
+else
+	helpMenu
+	exit 1
 fi
+
