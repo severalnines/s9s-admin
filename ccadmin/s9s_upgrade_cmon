@@ -498,6 +498,7 @@ upgradeCmon()
                 commandStatus "Upgrading CMON binary" "cp -rf $install_dir_cmon/cmon/bin/* /usr/bin/"
 		commandStatus "Upgrading CMON sbin binary" "cp -rf $install_dir_cmon/cmon/sbin/* /usr/sbin/"
                 commandStatus "Upgrading CMON init.d script" "cp $install_dir_cmon/cmon/etc/init.d/cmon /etc/init.d/"
+		[ "$install_dir_cmon" != "/usr/local" ] && sed -i "s|^SBINDIR=.*|SBINDIR=$install_dir_cmon/cmon/sbin|g" /etc/init.d/cmon
                 commandStatus "Applying user permission (init.d)" "chmod u+x /etc/init.d/cmon"
                 if [ "$mode" == "controller" ]; then
                         commandStatus "Upgrading CMON cron file" "cp $install_dir_cmon/cmon/etc/cron.d/cmon /etc/cron.d/cmon"
