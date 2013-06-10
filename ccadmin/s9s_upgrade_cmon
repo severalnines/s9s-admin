@@ -1,0 +1,875 @@
+#!/usr/bin/env bash
+# All files in this package is subject to the GPL v2 license
+# More information is in the COPYING file in the top directory of this package.
+# Copyright (C) 2012 Severalnines AB
+
+
+DEBUG=1
+TEMP=`getopt -o h,l,t:,b:,d:,r: --long help,latest,topdir:,backup:,backupdir:,restore: -n 's9s_upgrade_cmon' -- "$@"`
+eval set -- "$TEMP"
+
+while true ; do
+	case "$1" in
+		-h|--help) help="1" ; shift ;;
+		-l|--latest) latest="1" ; shift ;;
+		-t|--topdir) top_dir="$2" ; shift 2 ;;
+		-b|--backup) backup="$2" ; shift 2 ;;
+		-d|--backupdir) backup_dir="$2" ; shift 2 ;;
+		-r|--restore) restore="$2" ; shift 2 ;;
+		--) shift ; break ;;
+		*) echo "$0: error - unrecognized option -$OPTARG" 1>&2; exit 1;;
+	esac
+done
+
+helpMenu()
+{
+        echo "ClusterControl Auto Updater"
+        echo "Usage: `basename $0` [options]"
+        echo ""
+        echo "Options:"
+        echo "-l, --latest              : Upgrade ClusterControl to latest version (recommended)"
+        echo "-t, --topdir              : Custom path for CMON installation (default: /usr/local)"
+        echo "-b, --backup              : Perform ClusterControl backup (all|controller|agent)"
+        echo "-d, --backupdir           : Custom path for ClusterControl  backup directory (default: /tmp/s9s_backup)"
+        echo "-r, --restore             : Restore from ClusterControl backup (all|controller|agent)"
+        echo "-h, --help                : Print help"
+        echo ""
+
+}
+[ ! -z "$help" ] && helpMenu && exit 1
+[ `whoami` != "root" ] && echo "Please run this script as root or using sudo" && exit 1
+
+if [ ! -z "$backup" ] && [ "$backup" != "all" ] && [ "$backup" != "controller" ] && [ "$backup" != "agent" ]; then
+	echo "Unknown argument. Kindly specify supported argument for -b,--backup: (all|controller|agent)"
+	exit 1
+fi
+
+if [ ! -z "$restore" ] && [ "$restore" != "all" ] && [ "$restore" != "controller" ] && [ "$restore" != "agent" ]; then
+	echo "Unknown argument. Kindly specify supported argument for -r,--restore: (all|controller|agent)"
+	exit 1
+fi
+
+if [ ! -z "$backup" ] && [ ! -z "$restore" ]; then
+	echo "Option backup and restore cannot be used simultaneously."
+	exit 1
+elif [ ! -z "$backup_dir" ] && [ -z "$backup" ] && [ -z "$restore" ] && [ -z "$latest" ]; then
+	echo "Option backupdir need to be used with option latest/backup/restore."
+        exit 1
+elif [ ! -z "$top_dir" ] && [ -z "$backup" ] && [ -z "$restore" ] && [ -z "$latest" ]; then
+	echo "Option topdir need to be used with option latest/backup/restore."
+        exit 1
+elif [ ! -z "$restore" ] && [ ! -z "$latest" ]; then
+	echo "Option restore cannot be used with option latest."
+        exit 1
+fi
+
+arch=`uname -m`
+[ "$arch" == "i686" ] && echo "Architecture not supported. Kindly use OS with x86_64 architecture." && exit 1
+
+tmp_dir=/tmp/s9s_backup
+[ ! -z "$backup_dir" ] && tmp_dir=$backup_dir
+
+CMON_CONFIG=/etc/cmon.cnf
+if [ ! -e $CMON_CONFIG ] ; then
+	echo "Could not find $CMON_CONFIG"
+	exit 1
+else
+	source $CMON_CONFIG
+fi
+
+CMON_DB_HOST=$mysql_hostname
+CMON_DB_PORT=$mysql_port
+CMON_USER=cmon
+CMON_DB_DB=cmon
+CMON_PASSWORD=$mysql_password
+[ ! -z `which mysql` ] && MYSQL_BIN=`which mysql` || MYSQL_BIN=$mysql_basedir/bin/mysql
+[ ! -z `which mysqldump` ] && MYSQLDUMP_BIN=`which mysqldump` || MYSQLDUMP_BIN=$mysql_basedir/bin/mysqldump
+CONNECT_TIMEOUT=10
+CLUSTER_TYPE=$type
+MYSQL_OPTS="--connect-timeout=$CONNECT_TIMEOUT"
+LOCKFILE="/tmp/s9s_haproxy.lock"
+OSUSER=$os_user
+MYSQL_ETC=/etc
+DOWNLOAD_URL='http://www.severalnines.com/downloads/cmon'
+
+rel_dir=`dirname "$0"`
+root_dir=`cd $rel_dir;pwd`
+repo_dir_name=s9s_repo
+repo_dir=$root_dir/$repo_dir_name
+install_config_path=/etc
+
+[ ! -d $repo_dir ] && mkdir $repo_dir
+[ ! -z "$osuser" ] && os_user=$osuser
+if [ -z "$wwwroot" ]; then
+	[ "$os" == "debian" ] && wwwroot=/var/www
+	[ "$os" == "redhat" ] && wwwroot=/var/www/html
+fi
+
+[ "$mode" == "agent" ] && source $repo_dir/agent.config
+
+## Function 
+
+commandStatus()
+{
+	com=$2
+	label=$1
+	printf "%-70s" "$label"
+	$com
+	[ $? -ne 0 ] && printf "[\e[00;31m %s\e[00m ]\n" "$label" ERROR && exit 1
+	printf "[\e[00;32m %s\e[00m ]\n" OK
+}
+
+spinner()
+{
+    local pid=$1
+    local delay=0.5
+    local spinstr='|/-\\'
+    while [ "$(ps a | awk '{print $1}' | grep $pid)" ]; do
+	local temp=${spinstr#?}
+        printf " [%c]  " "$spinstr"
+        local spinstr=$temp${spinstr%"$temp"}
+        sleep $delay
+        printf "\b\b\b\b\b\b"
+    done
+    printf "    \b\b\b\b"
+}
+
+setupSudo()
+{
+	echo "====================================================================="
+	echo "Sudoers detected! We need the sudo password in order to automate this"
+	echo "process. The password will be cleared once the process is completed."
+	echo "Note: Just press enter if you are using sudo without password."
+	echo "====================================================================="
+	echo ""
+	echo "Enter your sudo password: "
+	read -s pswd
+	if [ -z "$pswd" ]; then
+		sudo=sudo
+	else
+		sudo="echo $pswd | sudo -S "
+	fi
+}
+
+checkMysqlBin()
+{
+	if [ -z "$MYSQL_BIN" ] || [ -z "$MYSQLDUMP_BIN" ] ; then
+		echo "MySQL client not found. Kindly add the MySQL client into PATH or install MySQL client package"
+		echo "or change and specify the full path to the mysql client (in the beginning of this file): "
+		echo "mysqlbin=\`which mysql\`"
+		echo "to:"
+		echo "mysqlbin=/path/to/mysql"
+	        exit 1
+	fi
+	return 0
+}
+
+checkRequirement(){
+	check_option=$1
+
+	if [ "$check_option" == "curl" ]; then
+		CURL_BIN=`which curl`
+		if [ -z "$CURL_BIN" ]; then
+			echo "** Installing required packages .."
+			[ "$os" == "debian" ] && apt-get update -qq && apt-get install -y -qq curl
+			[ "$os" == "redhat" ] && yum install -y --quiet curl
+		fi
+	elif [ "$check_option" == "bc" ]; then
+		BC_BIN=`which bc`
+		if [ -z "$BC_BIN" ]; then
+                	echo "** Installing required packages .."
+	                [ "$os" == "debian" ] && apt-get update -qq && apt-get install -y --quiet bc
+        	        [ "$os" == "redhat" ] && yum install -y --quiet bc
+	        fi
+	fi
+}
+
+collectInfo()
+{
+        cluster_type=$type
+	checkMysqlBin
+	checkRequirement curl
+	checkRequirement bc
+
+	echo ""	
+	echo "==================================="
+	echo "      Collecting Information"
+	echo "==================================="
+	
+	query_cmon_version="SELECT DISTINCT cmon_version FROM cmon.hosts WHERE cid=$cluster_id"
+	query_cmon_install_method="SELECT value FROM cmon.cmon_configuration WHERE param='INSTALL_METHOD' AND cid=$cluster_id"
+	version_url="$DOWNLOAD_URL/version.txt"
+	CMON_VERSION=`$MYSQL_BIN -ucmon -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT -A -Bse "$query_cmon_version"`
+	INSTALL_METHOD=`$MYSQL_BIN -ucmon -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT -A -Bse "$query_cmon_install_method"`
+	if [ "$cluster_type" == "mongodb" ]; then
+		LATEST_CMON_VERSION=`$CURL_BIN -s $version_url | grep CMON_MONGODB_LATEST_VERSION | sed "s/^CMON_MONGODB_LATEST_VERSION=//g"`
+	else
+		LATEST_CMON_VERSION=`$CURL_BIN -s $version_url | grep CMON_LATEST_VERSION | sed "s/^CMON_LATEST_VERSION=//g"`
+	fi
+	
+	[ -z $LATEST_CMON_VERSION ] && echo "** Unable to retrieve latest version. Please check your internet connection." && exit 1
+	echo "** Current CMON version: $CMON_VERSION"
+	trim_cmon_version=`echo $CMON_VERSION | sed "s/\.//g"`
+	echo "** Latest CMON version: $LATEST_CMON_VERSION"
+	trim_latest_cmon_version=`echo $LATEST_CMON_VERSION | sed "s/\.//g"`
+
+        CMON_VERSION=${CMON_VERSION//[a-z]/}
+        LATEST_CMON_VERSION=${LATEST_CMON_VERSION//[a-z]/}
+
+	vers=$CMON_VERSION
+	latest_vers=$LATEST_CMON_VERSION
+
+        #sum up: 1.1.24 = 1000+100+24 if 1.2.2 = 1000+200+2
+        a1=`echo $vers | awk -F. -v OFS=. '{print $1}'`
+        b1=`echo $vers | awk -F. -v OFS=. '{print $2}'`
+        c1=`echo $vers | awk -F. -v OFS=. '{print $3}'`
+        v1=`echo $[a1*1000+b1*100+c1]`
+
+        la1=`echo $latest_vers | awk -F. -v OFS=. '{print $1}'`
+        lb1=`echo $latest_vers | awk -F. -v OFS=. '{print $2}'`
+        lc1=`echo $latest_vers | awk -F. -v OFS=. '{print $3}'`
+        lv1=`echo $[la1*1000+lb1*100+lc1]`
+
+        if [ "$cluster_type" == "mongodb" ]; then
+                cmon_package="cmon-$LATEST_CMON_VERSION-64bit-glibc23-mongodb.tar.gz"
+                rpm_controller="cmon-mongodb-controller-$LATEST_CMON_VERSION-1.x86_64.rpm"
+                rpm_www="cmon-mongodb-www-$LATEST_CMON_VERSION-1.noarch.rpm"
+                rpm_agent="cmon-mongodb-agent-$LATEST_CMON_VERSION-1.x86_64.rpm"
+        else
+                cmon_package="cmon-$LATEST_CMON_VERSION-64bit-glibc23-mc70.tar.gz"
+                rpm_controller="cmon-controller-$LATEST_CMON_VERSION-1.x86_64.rpm"
+                rpm_www="cmon-www-$LATEST_CMON_VERSION-1.noarch.rpm"
+                rpm_agent="cmon-agent-$LATEST_CMON_VERSION-1.x86_64.rpm"
+        fi
+        cc_package="s9s-clustercontrol-$LATEST_CMON_VERSION.tar.gz"
+
+	AGENT_CONFIG=$repo_dir/../agent.config
+
+	rm -f $AGENT_CONFIG
+        echo "CMON_VERSION=$CMON_VERSION" >> $AGENT_CONFIG
+        echo "LATEST_CMON_VERSION=$LATEST_CMON_VERSION" >> $AGENT_CONFIG
+	echo "os=$os" >> $AGENT_CONFIG
+	echo "type=$type" >> $AGENT_CONFIG
+	[ "$os" == "debian" ] && echo "cmon_package=$cmon_package" >> $AGENT_CONFIG
+	[ "$os" == "redhat" ] && echo "rpm_agent=$rpm_agent" >> $AGENT_CONFIG
+	echo "install_dir_cmon=$install_dir_cmon" >> $AGENT_CONFIG
+	echo "tmp_dir=$tmp_dir" >> $AGENT_CONFIG
+	echo "INSTALL_METHOD=$INSTALL_METHOD" >> $AGENT_CONFIG	
+
+	if [ $lv1 -gt $v1 ]; then
+		return 0
+	else
+		return 1
+	fi
+}
+
+stopCmon()
+{
+	cmon_pid=`pgrep cmon`
+	if [ ! -z "$cmon_pid" ]; then
+		commandStatus 'Stopping CMON service: ' "/etc/init.d/cmon stop"
+	else
+		echo "** CMON service is not running"
+	fi
+}
+
+startCmon()
+{
+
+	if [ "$mode" == "controller" ]; then		
+		apache_svc=apache2
+		cron_svc=cron
+		[ "$os" == "redhat" ] && apache_svc=httpd && cron_svc=crond	
+		commandStatus 'Stopping Apache web server: ' "service $apache_svc stop"
+		sleep 1
+		commandStatus 'Stopping Apache web server: ' "service $apache_svc start"
+		commandStatus 'Reloading cron service: ' "service $cron_svc reload"
+	fi
+	commandStatus 'Starting CMON service: ' "/etc/init.d/cmon start"
+}
+
+getModDatabase()
+{
+	vers=$CMON_VERSION
+	[ ! -z $1 ] && vers=$1
+	latest_vers=$LATEST_CMON_VERSION
+	[ ! -z $2 ] && latest_vers=$2
+	cmon_sql_path=/usr/local/cmon/sql
+	[ "$os" == "redhat" ] && cmon_sql_path=/usr/share/cmon
+
+	#sum up: 1.1.24 = 1000+100+24 if 1.2.2 = 1000+200+2
+	#echo "$version - $latest_version"
+	a1=`echo $vers | awk -F. -v OFS=. '{print $1}'`
+	b1=`echo $vers | awk -F. -v OFS=. '{print $2}'`
+	c1=`echo $vers | awk -F. -v OFS=. '{print $3}'`
+	v1=`echo $[a1*1000+b1*100+c1]`
+
+	la1=`echo $latest_vers | awk -F. -v OFS=. '{print $1}'`
+	lb1=`echo $latest_vers | awk -F. -v OFS=. '{print $2}'`
+	lc1=`echo $latest_vers | awk -F. -v OFS=. '{print $3}'`
+	lv1=`echo $[la1*1000+lb1*100+lc1]`
+
+	# compare version
+	i=1;j=1
+	for file in `ls -1 $cmon_sql_path | grep cmon_db_mods | sed "s|cmon_db_mods-||g;s|.sql$||g;s|-.*||g"`
+	do
+        	for h in $file
+        	do
+                	a=`echo $h | awk -F. -v OFS=. '{print $1}'`
+	                b=`echo $h | awk -F. -v OFS=. '{print $2}'`
+        	        c=`echo $h | awk -F. -v OFS=. '{print $3}'`
+	                v=`echo $[a*1000+b*100+c]`
+
+        	        array[$i]=$v
+                	(( i++ ))
+        	done
+	done
+
+	        f2=`echo "scale=0;($val-1000)/100" | bc`
+	# sort and get the filename
+	for val in `printf '%s\0' "${array[@]}" | sort -z | xargs -0n1`
+	do
+        	f1=`echo "scale=0;$val/1000" | bc`
+        	f3=`echo "scale=1;(($val-1000)-100)" | bc`
+	        [ $f3 -ge 100 ] && f3=0
+        	mod_ver="$f1.$f2.$f3"
+	        if [ $v1 -le $val ] && [ $lv1 -gt $val ]; then
+			file_array[$j]=`ls -1 $cmon_sql_path | grep $mod_ver-`
+	                (( j++ ))
+        	fi
+	done
+	#echo ${file_array[@]}
+
+}
+
+upgradeCmonDatabase()
+{
+	echo ""
+        echo "==================================="
+        echo "        Upgrade CMON Schema"
+        echo "==================================="
+
+	checkMysqlBin
+	getModDatabase
+	cmon_sql_path=/usr/local/cmon/sql
+	[ "$os" == "redhat" ] && cmon_sql_path=/usr/share/cmon
+
+
+	if [[ ! -z "${file_array[@]}" ]]; then
+		for mod_file in "${file_array[@]}"
+		do
+			($MYSQL_BIN -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT $CMON_DB_DB < $cmon_sql_path/$mod_file) &
+			printf "%-70s" "Applying CMON mod database $mod_file" && spinner $! && printf "[\e[00;32m %s\e[00m ]\n" OK
+		done
+	else
+		echo "** No need to apply cmon_db_mods"
+	fi
+
+	($MYSQL_BIN -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT $CMON_DB_DB < $cmon_sql_path/cmon_db.sql) &
+	printf "%-70s" "Upgrading CMON schema structure" && spinner $! && printf "[\e[00;32m %s\e[00m ]\n" OK
+	($MYSQL_BIN -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT $CMON_DB_DB < $cmon_sql_path/cmon_data.sql) &
+	printf "%-70s" "Upgrading CMON schema data" && spinner $! && printf "[\e[00;32m %s\e[00m ]\n" OK
+
+}
+
+installCcUi()
+{
+        version=$LATEST_CMON_VERSION
+        [ ! -z $1 ] && version="$1"
+
+	echo ""
+        echo "==================================="
+        echo "     Install ClusterControl UI"
+        echo "==================================="
+
+	rm -f $wwwroot/cmonapi
+	rm -f $wwwroot/clustercontrol
+	rm -Rf $wwwroot/install
+	commandStatus "Clearing up $wwwroot" "rm -Rf $wwwroot/cc-*"
+	commandStatus 'Extracting ClusterControl UI' "tar zxf $repo_dir/$cc_package -C $wwwroot"
+        commandStatus 'Installing CMONAPI' "ln -sf $wwwroot/cc-cmonapi-${version} $wwwroot/cmonapi"
+        commandStatus 'Installing ClusterControl UI' "ln -sf $wwwroot/cc-ui-${version} $wwwroot/clustercontrol"
+	
+	apache_conf=/etc/apache2/sites-available/default
+	apache_conf_ssl=/etc/apache2/sites-available/default-ssl
+	www_user=www-data
+	install_packages="apt-get install -y --quiet php5-curl"
+	enable_mods="ssl rewrite"
+	cert_file="/etc/ssl/certs/s9server.crt"
+	key_file="/etc/ssl/private/s9server.key"
+	stop_apache="service apache2 stop"
+	start_apache="service apache2 start"
+
+	if [ "$os" == "redhat" ]; then
+		apache_conf=/etc/httpd/conf/httpd.conf
+		apache_conf_ssl=/etc/httpd/conf.d/ssl.conf
+		www_user=apache
+		install_packages="yum install -y --quiet mod_ssl php-curl"
+		enable_mods=""
+		cert_file="/etc/pki/tls/certs/s9server.crt"
+		key_file="/etc/pki/tls/private/s9server.key"
+		stop_apache="service httpd stop"
+		start_apache="service httpd start"
+	fi
+
+	commandStatus 'Applying permission' "chmod -R 777 $wwwroot/clustercontrol/app/tmp $wwwroot/clustercontrol/app/upload"
+	commandStatus 'Applying ownership' "chown -R $www_user.$www_user $wwwroot/cmonapi $wwwroot/clustercontrol $wwwroot/install"
+
+	sed -ibak "s|AllowOverride None|AllowOverride All|g" $apache_conf
+	commandStatus 'Installing required packages' "$install_packages"
+
+	commandStatus 'Copying SSL cert file' "cp -f $wwwroot/cmonapi/ssl/server.crt ${cert_file}"
+	commandStatus 'Copying SSL key file' "cp -f $wwwroot/cmonapi/ssl/server.key ${key_file}"
+	rm -rf $wwwroot/cmonapi/ssl
+
+	sed -ibak "s|AllowOverride None|AllowOverride All|g" $apache_conf_ssl
+
+	if [ "$os" == "redhat" ]; then
+		sed -ibak "s|^SSLCertificateFile.*|SSLCertificateFile ${cert_file}|g" $apache_conf_ssl
+		sed -ibak "s|^SSLCertificateKeyFile.*|SSLCertificateKeyFile ${key_file}|g" $apache_conf_ssl
+	else
+		sed -ibak "s|^[ \t]SSLCertificateFile.*|SSLCertificateFile ${cert_file}|g" $apache_conf_ssl
+		sed -ibak "s|^[ \t]SSLCertificateKeyFile.*|SSLCertificateKeyFile ${key_file}|g" $apache_conf_ssl
+	fi
+
+	for m in $enable_mods
+	do
+		a2enmod $m
+	done
+
+	if [ "$os" != "redhat" ]; then
+		ln -sf $apache_conf_ssl /etc/apache2/sites-enabled/001-${apache_conf_ssl##*/}
+	fi
+
+	install_index=$wwwroot/install/index.php
+	# detect line n do some replacement
+	line_number2=`cat -n $install_index | grep cc_db_pass | awk {'print $1'}`
+	sed -i "${line_number2}s/value=\"cmon\"/value=\"$CMON_PASSWORD\"/g" $install_index
+
+	commandStatus 'Stopping Apache' "$stop_apache"
+	sleep 1
+	commandStatus 'Starting Apache' "$start_apache"
+	install_cc_ui=1
+	echo "** ClusterControl UI installed!"
+
+	[[ ${#ip[@]} > 1 ]] && echo "NOTE: Detected more than one IP: ${ip[@]}"
+}
+
+upgradeCcUi()
+{
+	version=$LATEST_CMON_VERSION
+	[ ! -z $1 ] && version="$1"
+
+	echo ""
+        echo "==================================="
+        echo "     Upgrade ClusterControl UI"
+        echo "==================================="
+
+	commandStatus 'Extracting ClusterControl UI' "tar zxf $repo_dir/$cc_package -C $repo_dir"
+	commandStatus 'Backing up ClusterControl bootstrap.php' "cp -rf $wwwroot/clustercontrol/bootstrap.php $repo_dir/cc-ui-${version}/"
+	commandStatus 'Backing up CMONAPI bootstrap.php' "cp -rf $wwwroot/cmonapi/config/bootstrap.php $repo_dir/cc-cmonapi-${version}/config/"
+	commandStatus 'Backing up CMONAPI database.php' "cp -rf $wwwroot/cmonapi/config/database.php $repo_dir/cc-cmonapi-${version}/config/"
+	sed -i "s|^define('CC_API_VERSION'.*|define('CC_API_VERSION', '${version}');|g" $repo_dir/cc-cmonapi-${version}/config/bootstrap.php
+	sed -i "s|^define('CC_API_VERSION'.*|define('CC_API_VERSION', '${version}');|g" $repo_dir/cc-ui-${version}/bootstrap.php
+	commandStatus "Copying CMONAPI to $wwwroot" "cp -rf $repo_dir/cc-cmonapi-${version} $wwwroot/"
+	commandStatus "Copying ClusterControl UI to $wwwroot" "cp -rf $repo_dir/cc-ui-${version} $wwwroot/"
+	rm -f $wwwroot/clustercontrol
+	rm -f $wwwroot/cmonapi
+	commandStatus 'Upgrading CMONAPI' "ln -sf $wwwroot/cc-cmonapi-${version} $wwwroot/cmonapi"
+	commandStatus 'Upgrading ClusterControl UI' "ln -sf $wwwroot/cc-ui-${version} $wwwroot/clustercontrol"
+	($MYSQL_BIN -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT $CMON_DB_DB < $repo_dir/cc-ui-${version}/sql/dc-schema.sql) &
+	printf "%-70s" "Upgrading ClusterControl schema" && spinner $! && printf "[\e[00;32m %s\e[00m ]\n" OK
+	
+	apache_user=www-data
+	[ "$os" == "redhat" ] && apache_user=apache
+	commandStatus 'Applying permission' "chown -R $apache_user:$apache_user $wwwroot"
+	rm -f $repo_dir/clustercontrol
+	rm -f $repo_dir/cmonapi
+	commandStatus 'Cleaning up ClusterControl packages' "rm -rf $repo_dir/cc-*"
+	commandStatus 'Cleaning up ClusterControl install package' "rm -rf $repo_dir/install"
+
+	echo "** Upgrade ClusterControl UI completed!"
+}
+
+upgradeCmon()
+{
+	echo ""
+        echo "==================================="
+        echo "          Upgrade CMON"
+        echo "==================================="
+	
+	stopCmon
+
+	rm -Rf /usr/sbin/cmon
+        rm -Rf /usr/bin/cmon*
+        rm -Rf /usr/bin/s9s*
+        rm -Rf /usr/local/cmon*
+        rm -Rf /etc/init.d/cmon
+        rm -Rf /etc/cron.d/cmon
+        rm -Rf $wwwroot/cmon
+
+        if [ "$os" == "debian" ]; then
+                [ ! -d $install_dir_cmon ] && commandStatus 'Creating CMON installation directory' "mkdir -p $install_dir_cmon"
+		(zcat $repo_dir/$cmon_package | tar xf - -C $install_dir_cmon) &
+		printf "%-70s" "Extracting $cmon_package" && spinner $! && printf "[\e[00;32m %s\e[00m ]\n" OK
+		cmon_name=`ls -1 $install_dir_cmon | grep cmon- | tail -1`
+                ln -s $install_dir_cmon/$cmon_name $install_dir_cmon/cmon
+                commandStatus "Upgrading CMON binary" "cp -rf $install_dir_cmon/cmon/bin/* /usr/bin/"
+		commandStatus "Upgrading CMON sbin binary" "cp -rf $install_dir_cmon/cmon/sbin/* /usr/sbin/"
+                commandStatus "Upgrading CMON init.d script" "cp $install_dir_cmon/cmon/etc/init.d/cmon /etc/init.d/"
+		[ "$install_dir_cmon" != "/usr/local" ] && sed -i "s|^SBINDIR=.*|SBINDIR=$install_dir_cmon/cmon/sbin|g" /etc/init.d/cmon
+                commandStatus "Applying user permission (init.d)" "chmod u+x /etc/init.d/cmon"
+                if [ "$mode" == "controller" ]; then
+                        commandStatus "Upgrading CMON cron file" "cp $install_dir_cmon/cmon/etc/cron.d/cmon /etc/cron.d/cmon"
+                        commandStatus 'Upgrading CMON web app' "cp -rf $install_dir_cmon/cmon/www/*  $wwwroot/"
+                        commandStatus "Applying user permission (web)" "chown -R www-data:www-data $wwwroot/cmon"
+                fi
+        else
+		check_installed=`rpm -qa | grep -e cmon-$mode`
+		[ $check_installed ] && rpm -e cmon-$mode
+                if [ "$mode" == "controller" ]; then
+			check_installed_www=`rpm -qa | grep -e cmon-www`
+	                [ $check_installed_www ] && rpm -e cmon-www
+                        commandStatus 'Upgrading CMON controller' "rpm -Uh $repo_dir/$rpm_controller"
+                        commandStatus 'Upgrading CMON web app' "rpm -Uh $repo_dir/$rpm_www"
+                        commandStatus "Applying user permission (web)" "chown -R apache:apache $wwwroot/cmon"
+                else
+                        commandStatus 'Upgrading CMON agent' "rpm -Uh $repo_dir/$rpm_agent"
+                fi
+
+        fi
+
+        if [ "$mode" == "controller" ]; then
+                mkdir -p $wwwroot/cmon/graphs
+                commandStatus "Creating CMON upload directory" "mkdir -p $wwwroot/cmon/upload"
+                mkdir -p $wwwroot/cmon/upload/schema
+                commandStatus "Copying package(s) to upload directory" "cp $repo_dir/* $wwwroot/cmon/upload/"
+                commandStatus 'Restoring CMON RRD config file' "cp -f $tmp_dir/cmon_rrd.cnf /etc/"
+		sed -i "s|^\$DB_PASSWORD1=.*|\$DB_PASSWORD1=\"$CMON_PASSWORD\"\;|g" $wwwroot/cmon/config/config_db1.php
+		commandStatus 'Restoring CMON MySQL password' ""
+		sed -i "s|^\$DB_PORT1=.*|\$DB_PORT1=\"$CMON_DB_PORT\"\;|g" $wwwroot/cmon/config/config_db1.php
+                commandStatus 'Restoring CMON MySQL port' ""
+
+                upgradeCmonDatabase
+                if [[ $v1 -lt 1200 ]]; then
+			installCcUi $LATEST_CMON_VERSION
+		else
+			upgradeCcUi $LATEST_CMON_VERSION
+		fi
+        fi
+	commandStatus 'Restoring CMON config file' "cp -f $tmp_dir/cmon.cnf /etc/"
+	startCmon
+	echo "** Upgrade completed!"
+}
+
+downloadLatest(){
+
+	cluster_type=$type
+        package_type=$1
+
+	echo ""
+        echo "==================================="
+        echo " Download ClusterControl Packages"
+        echo "==================================="
+	
+	wget=`which wget`
+	[ -z $wget ] && echo "** Unable to find wget!" && exit 1
+
+	[ ! -d $repo_dir ] && commandStatus 'Create the repo directory' "mkdir -p $repo_dir"
+
+	commandStatus "Clearing files in $repo_dir/" "rm -rf $repo_dir/*"
+
+	if [ "$os" == "debian" ]; then
+		($wget -q -O $repo_dir/$cmon_package $DOWNLOAD_URL/$cmon_package) &
+		printf "%-70s" "Downloading $cmon_package to $repo_dir " && spinner $! && printf "[\e[00;32m %s\e[00m ]\n" OK
+	else
+		($wget -q -O $repo_dir/$rpm_controller $DOWNLOAD_URL/$rpm_controller) &
+		printf "%-70s" "Downloading $rpm_controller to $repo_dir " && spinner $! && printf "[\e[00;32m %s\e[00m ]\n" OK
+		($wget -q -O $repo_dir/$rpm_www $DOWNLOAD_URL/$rpm_www) &
+		printf "%-70s" "Downloading $rpm_www to $repo_dir " && spinner $! && printf "[\e[00;32m %s\e[00m ]\n" OK
+		($wget -q -O $repo_dir/$rpm_agent $DOWNLOAD_URL/$rpm_agent) &
+		printf "%-70s" "Downloading $rpm_agent to $repo_dir " && spinner $! && printf "[\e[00;32m %s\e[00m ]\n" OK
+	fi
+
+	wget --spider -q $DOWNLOAD_URL/$cc_package
+	if [ $? -eq 0 ]; then
+		($wget -q -O $repo_dir/$cc_package $DOWNLOAD_URL/$cc_package) &
+		printf "%-70s" "Downloading $cc_package to $repo_dir " && spinner $! && printf "[\e[00;32m %s\e[00m ]\n" OK
+	fi
+
+	echo "** Download completed!"
+}
+
+restoreCmon()
+{
+        [ "$mode" == "controller" ] && checkMysqlBin
+
+	echo ""
+        echo "==================================="
+        echo "       Restore CMON $mode"
+        echo "==================================="
+
+        upgrade_details=$tmp_dir/upgrade_details.txt
+        [ ! -e $upgrade_details ] && echo "** Backup status not found at $upgrade_details" exit 1
+        source $upgrade_details
+
+        if [ "$BACKUP_STATUS" == "COMPLETED" ]; then
+                stopCmon
+                if [ "$mode" == "controller" ]; then
+			$MYSQL_BIN -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT -e "DROP DATABASE IF EXISTS $CMON_DB_DB"
+			$MYSQL_BIN -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT -e "CREATE DATABASE $CMON_DB_DB"
+			($MYSQL_BIN -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT $CMON_DB_DB < $tmp_dir/cmon_dump.sql) &
+			printf "%-70s" "Restoring CMON schema" && spinner $! && printf "[\e[00;32m %s\e[00m ]\n" OK
+                        commandStatus 'Restoring CMON cron' "cp -pfR $tmp_dir/cmon_crond /etc/cron.d/cmon"
+			rm -Rf $wwwroot/install
+			rm -Rf $wwwroot/cc-*
+			rm -Rf $wwwroot/cmonapi
+			rm -Rf $wwwroot/clustercontrol
+			rm -Rf $wwwroot/cmon
+                        commandStatus 'Restoring CMON web app' "cp -pfR $tmp_dir/wwwroot/* $wwwroot/"
+			commandStatus 'Restoring CMON configuration files' "cp -pfR $tmp_dir/cmon_rrd.cnf /etc"
+	                [ "$os" == "redhat" ] && install_dir_cmon=/usr/share
+	                commandStatus 'Restoring CMON install directory' "cp -pfR $tmp_dir/local/* $install_dir_cmon/"
+                fi
+
+                commandStatus 'Restoring CMON configuration files' "cp -pfR $tmp_dir/cmon.cnf /etc"
+                commandStatus 'Restoring CMON log file' "cp -pfR $tmp_dir/cmon.log $logfile"
+                commandStatus 'Restoring CMON init.d' "cp -pfR $tmp_dir/cmon_init /etc/init.d/cmon"
+
+                [ "$os" == "debian" ] && MYSQL_ETC=/etc/mysql
+                [ -f $tmp_dir/my.cnf ] && commandStatus 'Restoring my.cnf'  "cp -pfR $tmp_dir/my.cnf $MYSQL_ETC/my.cnf"
+
+                commandStatus 'Restoring CMON binary' "cp -pfR $tmp_dir/bin/* /usr/bin/"
+		[ "$os" == "redhat" ] && commandStatus 'Restoring CMON sbin binary' "cp -pf $tmp_dir/sbin/cmon /usr/sbin/"
+                startCmon
+
+                echo "** Restore to version $OLD_CMON_VERSION completed!"
+        else
+                echo "** ClusterControl backup is incomplete or not exists."
+                exit 1
+        fi
+}
+
+backupCmon()
+{
+	checkMysqlBin
+
+	echo ""	
+	echo "==================================="
+	echo "        Backup CMON $mode"
+	echo "==================================="
+	
+	rm -rf $tmp_dir
+	commandStatus 'Creating backup directory' "mkdir -p $tmp_dir"
+	upgrade_details=$tmp_dir/upgrade_details.txt
+	echo "OLD_CMON_VERSION=$CMON_VERSION" >> $upgrade_details
+	echo "LATEST_CMON_VERSION=$LATEST_CMON_VERSION" >> $upgrade_details
+
+	if [ "$mode" == "controller" ]; then
+		commandStatus 'Backup CMON schema' "$MYSQLDUMP_BIN -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT $CMON_DB_DB -r $tmp_dir/cmon_dump.sql"
+	        commandStatus 'Backup CMON cron' "cp -pfR /etc/cron.d/cmon $tmp_dir/cmon_crond"
+		mkdir -p $tmp_dir/wwwroot
+	        commandStatus 'Backup CMON web app' "cp -pfR $wwwroot/cmon $tmp_dir/wwwroot"
+		[[ $v1 -ge 1200 ]] && commandStatus 'Backup ClusterControl web app' "cp -pfR $wwwroot/cc-* $wwwroot/cmona* $wwwroot/clustercontrol $tmp_dir/wwwroot" && echo "NEW_UI=YES" >> $upgrade_details
+		mkdir -p $tmp_dir/local
+	        [ "$os" == "redhat" ] && install_dir_cmon=/usr/share
+        	commandStatus 'Backup CMON install directory' "cp -pfR $install_dir_cmon/cmon* $tmp_dir/local/"
+	fi
+
+	commandStatus 'Backup CMON configuration files' "cp -pfR /etc/cmon* $tmp_dir/"
+	commandStatus 'Backup CMON log file' "cp -pfR $logfile $tmp_dir/"
+	commandStatus 'Backup CMON init.d' "cp -pfR /etc/init.d/cmon $tmp_dir/cmon_init"
+
+	[ "$os" == "debian" ] && MYSQL_ETC=/etc/mysql
+	[ -f $MYSQL_ETC/my.cnf ] && commandStatus 'Backup my.cnf'  "cp -pfR $MYSQL_ETC/my.cnf $tmp_dir/"
+
+	[ "$os" == "debian" ] && mkdir -p $tmp_dir/local &&  commandStatus 'Backup CMON install directory' "cp -pfR $install_dir_cmon/cmon* $tmp_dir/local/"
+	mkdir -p $tmp_dir/bin
+	if [ "$mode" == "controller" ]; then
+		commandStatus 'Backup CMON binary' "cp -pf /usr/bin/cmon* /usr/bin/s9s_* $tmp_dir/bin/"
+	else
+		commandStatus 'Backup CMON binary' "cp -pf /usr/bin/s9s_* $tmp_dir/bin/"
+	fi
+	[ "$os" == "redhat" ] && mkdir -p $tmp_dir/sbin && commandStatus 'Backup CMON sbin binary' "cp -pf /usr/sbin/cmon $tmp_dir/sbin/"
+
+	echo "BACKUP_STATUS=COMPLETED" >> $upgrade_details
+	echo "** Backup completed!"
+}
+
+restoreAgent()
+{
+	collectInfo	
+	options='--restore=controller'
+
+	all_agent_hosts=`echo $mysql_server_addresses | tr ',' ' '`
+
+        if [ "$type" == "mysqlcluster" ]; then
+                all_agents="$mysql_server_addresses $mgmnode_addresses $datanode_addresses"
+                all_agent_hosts=$(echo "${all_agents[@]}" | tr ',' ' ' | tr ' ' '\n' | sort -u | tr '\n' ' ')
+        fi
+
+        mv $AGENT_CONFIG $repo_dir/
+
+        for h in $all_agent_hosts
+        do
+                ssh -t -q -i $ssh_key $os_user@$h "mkdir -p ~/cc/"
+                ssh -t -q -i $ssh_key $os_user@$h "mkdir -p ~/cc/$repo_dir_name"
+                scp -r -q -i $ssh_key $repo_dir/agent.config $os_user@$h:~/cc/$repo_dir_name/
+                scp -q -i $ssh_key `basename $0` $os_user@$h:~/cc/
+		echo ""
+		echo "Hostname/IP: $h"
+                ssh -t -q -i $ssh_key $os_user@$h "$sudo cc/`basename $0` $options"
+                ssh -t -q -i $ssh_key $os_user@$h "rm -rf ~/cc"
+        done
+
+}
+
+
+upgradeAgent()
+{
+	options="--latest"
+	[ ! -z $1 ] && options="$1"
+
+	all_agent_hosts=`echo $mysql_server_addresses | tr ',' ' '`
+
+	if [ "$type" == "mysqlcluster" ]; then
+		all_agents="$mysql_server_addresses $mgmnode_addresses $datanode_addresses"
+		all_agent_hosts=$(echo "${all_agents[@]}" | tr ',' ' ' | tr ' ' '\n' | sort -u | tr '\n' ' ')
+	fi
+
+	mv $AGENT_CONFIG $repo_dir/
+
+	for h in $all_agent_hosts
+	do
+		ssh -t -q -i $ssh_key $os_user@$h "mkdir -p ~/cc/"
+		ssh -t -q -i $ssh_key $os_user@$h "mkdir -p ~/cc/$repo_dir_name"
+		scp -r -q -i $ssh_key $repo_dir/* $os_user@$h:~/cc/$repo_dir_name/
+		scp -q -i $ssh_key `basename $0` $os_user@$h:~/cc/
+		echo ""
+		echo "Hostname/IP: $h"
+		ssh -t -q -i $ssh_key $os_user@$h "$sudo cc/`basename $0` $options"
+		ssh -t -q -i $ssh_key $os_user@$h "rm -rf ~/cc"
+	done
+
+}
+
+backupAgent()
+{
+	collectInfo
+	options='--backup=controller'
+
+	all_agent_hosts=`echo $mysql_server_addresses | tr ',' ' '`
+
+        if [ "$type" == "mysqlcluster" ]; then
+                all_agents="$mysql_server_addresses $mgmnode_addresses $datanode_addresses"
+                all_agent_hosts=$(echo "${all_agents[@]}" | tr ',' ' ' | tr ' ' '\n' | sort -u | tr '\n' ' ')
+        fi
+
+	mv $AGENT_CONFIG $repo_dir/
+
+        for h in $all_agent_hosts
+        do
+                ssh -t -q -i $ssh_key $os_user@$h "mkdir -p ~/cc/"
+                ssh -t -q -i $ssh_key $os_user@$h "mkdir -p ~/cc/$repo_dir_name"
+                scp -r -q -i $ssh_key $repo_dir/agent.config $os_user@$h:~/cc/$repo_dir_name/
+                scp -q -i $ssh_key `basename $0` $os_user@$h:~/cc/
+		echo ""
+		echo "Hostname/IP: $h"
+                ssh -t -q -i $ssh_key $os_user@$h "$sudo cc/`basename $0` $options"
+                ssh -t -q -i $ssh_key $os_user@$h "rm -rf ~/cc"
+        done
+
+}
+
+checkSudo ()
+{
+	checkMysqlBin
+	query_ssh_identity="SELECT value FROM cmon.cmon_configuration WHERE param='SSH_IDENTITY' AND cid=$cluster_id"
+	SSH_IDENTITY=`$MYSQL_BIN -ucmon -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT -A -Bse "$query_ssh_identity"`
+
+        ssh_key="/home/$os_user/.ssh/id_rsa"
+        [ "$os_user" == "root" ] && ssh_key="/root/.ssh/id_rsa"
+	[ ! -z "$SSH_IDENTITY" ] && ssh_key=$SSH_IDENTITY
+
+        if [ "$mode" == "controller" ]; then
+                sudo=sudo
+                [ "$os_user" == "root" ] && sudo="" || setupSudo
+        fi
+
+}
+
+performUpgrade()
+{
+	read -p "** New version found. Proceed with upgrading? (Y/n): " answer
+	if [ "$answer" == "N" ] || [ "$answer" == "n" ]; then
+		echo "Upgrade cancelled."
+		exit 1
+	else
+		checkSudo
+		backupCmon
+		[ "$mode" == "controller" ] && downloadLatest
+		upgradeCmon
+		[ "$mode" == "controller" ] && upgradeAgent
+		[ "$install_cc_ui" == 1 ] && echo -e "\nNew ClusterControl web app installed!!\nKindly go to http://${CMON_DB_HOST}/install to finalize the installation"
+	fi
+}
+
+## Runtime
+
+if [ "$mode" == "controller" ]; then
+	tmp_dir=/tmp/s9s_backup
+	[ ! -z "$backup_dir" ] && tmp_dir=$backup_dir
+	install_dir_cmon=/usr/local
+	[ ! -z "$top_dir" ] && install_dir_cmon=$top_dir
+fi
+
+[ ! -f $install_dir_cmon/cmon/sbin/cmon ] && echo "Cannot find CMON binary at $install_dir_cmon/cmon/sbin/cmon. Make sure you specify correct CMON path." && exit 1
+
+if [ "$latest" == 1 ]; then
+	if [ "$mode" == "controller" ]; then
+		collectInfo
+	        if [ $? -eq 0 ]; then
+			performUpgrade
+		else
+			echo "ClusterControl is already up-to-date"
+			exit 1
+		fi
+	else
+		backupCmon
+		upgradeCmon
+	fi
+
+elif [ "$latest" != 1 ] && [ ! -z "$backup" ]; then
+	if [ "$backup" == "controller" ]; then
+		backupCmon
+	elif [ "$backup" == "agent" ]; then
+		checkSudo
+		backupAgent
+	elif [ "$backup" == "all" ]; then
+		checkSudo
+		backupCmon
+	        backupAgent
+	else
+		echo "Unknown backup option. Please specify either controller, agent or all."
+		exit 1
+	fi
+
+elif [ "$latest" != 1 ] && [ ! -z "$restore" ]; then
+	if [ "$restore" == "controller" ]; then
+		restoreCmon
+	elif [ "$restore" == "agent" ]; then
+		checkSudo
+		restoreAgent
+	elif [ "$restore" == "all" ]; then
+		checkSudo
+		restoreCmon
+	        restoreAgent
+	else
+		echo "Unknown restore option. Please specify either controller, agent or all."
+	        exit 1
+	fi
+else
+	helpMenu
+	exit 1
+fi
+

@@ -1527,6 +1527,7 @@ if [ ! -e $LOCKFILE ]; then
     trap "rm -f $LOCKFILE; exit" INT TERM EXIT
     touch $LOCKFILE
     ARG=$1
+    shift
     check_mysql_client		 
     
     case $ARG in
