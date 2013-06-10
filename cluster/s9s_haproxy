@@ -1030,8 +1030,8 @@ function install_keepalived
 
     log_job 'RUNNING' 'Job is running' 1
     load_opts $CLUSTER_ID
-    prepare_keepalived $LB_HOSTNAME1 $VIRTUAL_IP 100
-    prepare_keepalived $LB_HOSTNAME2 $VIRTUAL_IP 101
+    prepare_keepalived $LB_HOSTNAME1 $VIRTUAL_IP 101
+    prepare_keepalived $LB_HOSTNAME2 $VIRTUAL_IP 100
     case $OS in
         rhel|redhat)
             PKG_MGR="yum -y install "
