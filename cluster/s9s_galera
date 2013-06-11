@@ -83,13 +83,13 @@ function remote_copy()
    desthost=$2
    destfile=$3
    printf "%-4s: Copying '%s' " "$desthost" "$srcfile"
-   scp $SSH_OPTS2 $srcfile $os_user@$desthost:$destfile >> $HOME/s9s_deploy.log  2>/dev/null
+   scp $SSH_OPTS2 $srcfile $SSH_USER@$desthost:$destfile >> $HOME/s9s_deploy.log  2>/dev/null
    if [ $? -eq 0 ]; then
       printf "\033[32m[ok]\033[0m\n"
       return 0
    else
       log_job_message "copying file $srcfile --> $desthost:$destfile" 1
-      log_job_message "Failed: scp $SSH_OPTS2 $srcfile $os_user@$desthost:$destfile " 1
+      log_job_message "Failed: scp $SSH_OPTS2 $srcfile $SSH_USER@$desthost:$destfile " 1
       log_job 'FAILED' 'backup failed' 1
       printf "\033[31m[failed]\033[0m\n"
       exit 1
