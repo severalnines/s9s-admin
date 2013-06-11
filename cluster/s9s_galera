@@ -458,7 +458,7 @@ function install_notifycc
     esac
     load_opts $CLUSTER_ID 
     
-    QUERY="select group_concat(concat(hostname, ',', nodeid) SEPARATOR ' ') from ${CMON_DB_DB}.mysql_server where cid=${CLUSTER_ID}"
+    QUERY="select group_concat(hostname SEPARATOR ' ') from ${CMON_DB_DB}.mysql_server where cid=${CLUSTER_ID}"
     SERVER_LIST=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$CMON_DB_PORT --auto-vertical-output -Bse "$QUERY"  2>/dev/null`
     if [ -z "$OS" ]; then
 	if [ `hash /usr/sbin/update-rc.d 2>/dev/null`  ]; then
@@ -568,14 +568,13 @@ EOF
     if [ "$SERVER_LIST" != "NULL" ]; then
 	for S in $SERVER_LIST
 	do
-	    HNAME=`echo $S | awk -F ',' '{print $1};'`
-            NODEID=`echo $S | awk -F ',' '{print $2};'`
-	    remote_cmd_nofail $HANME "mkdir -p S9S_TMPDIR"
+	    HNAME=$S
+	    remote_cmd_nofail $HNAME "mkdir -p $S9S_TMPDIR"
 	    remote_copy $S9S_TMPDIR/wsrep_notify_cc ${HNAME} ${S9S_TMPDIR}/wsrep_notify_cc
-	    remote_cmd $HANME "mv -f ${S9S_TMPDIR}/wsrep_notify_cc /usr/bin"
-	    remote_cmd $HANME "chown mysql:mysql /usr/bin//wsrep_notify_cc"
-	    remote_cmd $HANME "chmod u+x /usr/bin/wsrep_notify_cc"
-	    remote_cmd $HANME "sed -i.bak 's/#wsrep_notify_cmd=.*/wsrep_notify_cmd=/usr/bin/wsrep_notify_cc/g' $CONFIGDIR/my.cnf"
+	    remote_cmd $HNAME "mv -f ${S9S_TMPDIR}/wsrep_notify_cc /usr/bin"
+	    remote_cmd $HNAME "chown mysql:mysql /usr/bin//wsrep_notify_cc"
+	    remote_cmd $HNAME "chmod u+x /usr/bin/wsrep_notify_cc"
+	    remote_cmd $HNAME "sed -i.bak 's/#wsrep_notify_cmd=.*/wsrep_notify_cmd=/usr/bin/wsrep_notify_cc/g' $CONFIGDIR/my.cnf"
 	done
     fi
 
