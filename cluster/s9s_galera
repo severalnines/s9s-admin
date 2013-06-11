@@ -1726,7 +1726,7 @@ if [ ! -e $LOCKFILE ]; then
 	    install_garbd $*
 	    ;;
 	--install-notifycc)
-	    instal_notifycc $*
+	    install_notifycc $*
 	    ;;
 	--remove-garbd)
 	    remove_garbd $*
@@ -1736,7 +1736,7 @@ if [ ! -e $LOCKFILE ]; then
 	    ;;
 	*)
 	    echo "Usage: "
-	    echo "s9s_galera --[start-cluster|stop-cluster|reinit-cluster|make-primary|start-node|stop-node|status|install-garbd|remove-garbd] <options follows>"
+	    echo "s9s_galera --[start-cluster|stop-cluster|reinit-cluster|make-primary|start-node|stop-node|status|install-garbd|remove-garbd|install-notifycc] <options follows>"
 	    exit 1
 	    ;;
     esac
