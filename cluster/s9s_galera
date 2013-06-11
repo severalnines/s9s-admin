@@ -576,7 +576,7 @@ EOF
 	    remote_cmd $HNAME "mv -f ${S9S_TMPDIR}/wsrep_notify_cc /usr/bin"
 	    remote_cmd $HNAME "chown mysql:mysql /usr/bin//wsrep_notify_cc"
 	    remote_cmd $HNAME "chmod u+x /usr/bin/wsrep_notify_cc"
-	    remote_cmd $HNAME "sed -i.bak 's#wsrep_notify_cmd=.*#wsrep_notify_cmd=/usr/bin/wsrep_notify_cc#g' $CONFIGDIR/my.cnf"
+	    remote_cmd $HNAME "sed -i.bak 's#.*wsrep_notify_cmd=.*#wsrep_notify_cmd=/usr/bin/wsrep_notify_cc#g' $CONFIGDIR/my.cnf"
 	done
     fi
 
