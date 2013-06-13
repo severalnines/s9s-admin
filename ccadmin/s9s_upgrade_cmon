@@ -507,21 +507,23 @@ upgradeCmon()
         rm -Rf /etc/init.d/cmon
         rm -Rf /etc/cron.d/cmon
         rm -Rf $wwwroot/cmon
+	rm -Rf $install_dir_cmon
 
         if [ "$os" == "debian" ]; then
-                [ ! -d $install_dir_cmon ] && commandStatus 'Creating CMON installation directory' "mkdir -p $install_dir_cmon"
-		(zcat $repo_dir/$cmon_package | tar xf - -C $install_dir_cmon) &
+		install_dir=`echo $install_dir_cmon | sed "s|cmon||g"`
+                [ ! -d $install_dir ] && commandStatus 'Creating CMON installation directory' "mkdir -p $install_dir"
+		(zcat $repo_dir/$cmon_package | tar xf - -C $install_dir) &
 		printf "%-70s" "Extracting $cmon_package" && spinner $! && printf "[\e[00;32m %s\e[00m ]\n" OK
-		cmon_name=`ls -1 $install_dir_cmon | grep cmon- | tail -1`
-                ln -s $install_dir_cmon/$cmon_name $install_dir_cmon/cmon
-                commandStatus "Upgrading CMON binary" "cp -rf $install_dir_cmon/cmon/bin/* /usr/bin/"
-		commandStatus "Upgrading CMON sbin binary" "cp -rf $install_dir_cmon/cmon/sbin/* /usr/sbin/"
-                commandStatus "Upgrading CMON init.d script" "cp $install_dir_cmon/cmon/etc/init.d/cmon /etc/init.d/"
-		[ "$install_dir_cmon" != "/usr/local" ] && sed -i "s|^SBINDIR=.*|SBINDIR=$install_dir_cmon/cmon/sbin|g" /etc/init.d/cmon
+		cmon_name=`ls -1 $install_dir | grep cmon- | tail -1`
+                ln -s $install_dir/$cmon_name $install_dir_cmon
+                commandStatus "Upgrading CMON binary" "cp -rf $install_dir_cmon/bin/* /usr/bin/"
+		commandStatus "Upgrading CMON sbin binary" "cp -rf $install_dir_cmon/sbin/* /usr/sbin/"
+                commandStatus "Upgrading CMON init.d script" "cp $install_dir_cmon/etc/init.d/cmon /etc/init.d/"
+		[ "$install_dir_cmon" != "/usr/local/cmon" ] && sed -i "s|^SBINDIR=.*|SBINDIR=$install_dir_cmon/sbin|g" /etc/init.d/cmon
                 commandStatus "Applying user permission (init.d)" "chmod u+x /etc/init.d/cmon"
                 if [ "$mode" == "controller" ]; then
-                        commandStatus "Upgrading CMON cron file" "cp $install_dir_cmon/cmon/etc/cron.d/cmon /etc/cron.d/cmon"
-                        commandStatus 'Upgrading CMON web app' "cp -rf $install_dir_cmon/cmon/www/*  $wwwroot/"
+                        commandStatus "Upgrading CMON cron file" "cp $install_dir_cmon/etc/cron.d/cmon /etc/cron.d/cmon"
+                        commandStatus 'Upgrading CMON web app' "cp -rf $install_dir_cmon/www/*  $wwwroot/"
                         commandStatus "Applying user permission (web)" "chown -R www-data:www-data $wwwroot/cmon"
                 fi
         else
@@ -536,7 +538,6 @@ upgradeCmon()
                 else
                         commandStatus 'Upgrading CMON agent' "rpm -Uh $repo_dir/$rpm_agent"
                 fi
-
         fi
 
         if [ "$mode" == "controller" ]; then
@@ -628,10 +629,18 @@ restoreCmon()
 			rm -Rf $wwwroot/cmon
                         commandStatus 'Restoring CMON web app' "cp -pfR $tmp_dir/wwwroot/* $wwwroot/"
 			commandStatus 'Restoring CMON configuration files' "cp -pfR $tmp_dir/cmon_rrd.cnf /etc"
-	                [ "$os" == "redhat" ] && install_dir_cmon=/usr/share
-	                commandStatus 'Restoring CMON install directory' "cp -pfR $tmp_dir/local/* $install_dir_cmon/"
+	                if [ "$os" == "redhat" ]; then
+				share_dir_cmon=/usr/share
+				rm -Rf $share_dir_cmon/cmon*
+		                commandStatus 'Restoring CMON share directory' "cp -pfR $tmp_dir/local/* $share_dir_cmon/"
+			fi
                 fi
 
+		if [ "$os" == "debian" ]; then
+			share_dir_cmon=`echo $install_dir_cmon | sed "s|cmon||g"`
+			rm -Rf $share_dir_cmon/cmon*
+			commandStatus 'Restoring CMON install directory' "cp -pfR $tmp_dir/local/* $share_dir_cmon/"
+		fi
                 commandStatus 'Restoring CMON configuration files' "cp -pfR $tmp_dir/cmon.cnf /etc"
                 commandStatus 'Restoring CMON log file' "cp -pfR $tmp_dir/cmon.log $logfile"
                 commandStatus 'Restoring CMON init.d' "cp -pfR $tmp_dir/cmon_init /etc/init.d/cmon"
@@ -639,8 +648,8 @@ restoreCmon()
                 [ "$os" == "debian" ] && MYSQL_ETC=/etc/mysql
                 [ -f $tmp_dir/my.cnf ] && commandStatus 'Restoring my.cnf'  "cp -pfR $tmp_dir/my.cnf $MYSQL_ETC/my.cnf"
 
-                commandStatus 'Restoring CMON binary' "cp -pfR $tmp_dir/bin/* /usr/bin/"
-		[ "$os" == "redhat" ] && commandStatus 'Restoring CMON sbin binary' "cp -pf $tmp_dir/sbin/cmon /usr/sbin/"
+                commandStatus 'Restoring CMON and S9S binary' "cp -pfR $tmp_dir/bin/* /usr/bin/"
+		[ -f $tmp_dir/sbin/cmon ] && commandStatus 'Restoring CMON sbin binary' "cp -pf $tmp_dir/sbin/cmon /usr/sbin/"
                 startCmon
 
                 echo "** Restore to version $OLD_CMON_VERSION completed!"
@@ -672,8 +681,7 @@ backupCmon()
 	        commandStatus 'Backup CMON web app' "cp -pfR $wwwroot/cmon $tmp_dir/wwwroot"
 		[[ $v1 -ge 1200 ]] && commandStatus 'Backup ClusterControl web app' "cp -pfR $wwwroot/cc-* $wwwroot/cmona* $wwwroot/clustercontrol $tmp_dir/wwwroot" && echo "NEW_UI=YES" >> $upgrade_details
 		mkdir -p $tmp_dir/local
-	        [ "$os" == "redhat" ] && install_dir_cmon=/usr/share
-        	commandStatus 'Backup CMON install directory' "cp -pfR $install_dir_cmon/cmon* $tmp_dir/local/"
+        	[ "$os" == "redhat" ] && commandStatus 'Backup CMON share directory' "cp -pfR /usr/share/cmon $tmp_dir/local/"
 	fi
 
 	commandStatus 'Backup CMON configuration files' "cp -pfR /etc/cmon* $tmp_dir/"
@@ -683,14 +691,11 @@ backupCmon()
 	[ "$os" == "debian" ] && MYSQL_ETC=/etc/mysql
 	[ -f $MYSQL_ETC/my.cnf ] && commandStatus 'Backup my.cnf'  "cp -pfR $MYSQL_ETC/my.cnf $tmp_dir/"
 
-	[ "$os" == "debian" ] && mkdir -p $tmp_dir/local &&  commandStatus 'Backup CMON install directory' "cp -pfR $install_dir_cmon/cmon* $tmp_dir/local/"
+	[ "$os" == "debian" ] && mkdir -p $tmp_dir/local &&  commandStatus 'Backup CMON install directory' "cp -pfR $install_dir_cmon* $tmp_dir/local/"
 	mkdir -p $tmp_dir/bin
-	if [ "$mode" == "controller" ]; then
-		commandStatus 'Backup CMON binary' "cp -pf /usr/bin/cmon* /usr/bin/s9s_* $tmp_dir/bin/"
-	else
-		commandStatus 'Backup CMON binary' "cp -pf /usr/bin/s9s_* $tmp_dir/bin/"
-	fi
-	[ "$os" == "redhat" ] && mkdir -p $tmp_dir/sbin && commandStatus 'Backup CMON sbin binary' "cp -pf /usr/sbin/cmon $tmp_dir/sbin/"
+	[ -f /usr/bin/s9s_backup ] && commandStatus 'Backup S9S binary' "cp -pf /usr/bin/s9s_* $tmp_dir/bin/"
+	[ -f /usr/bin/cmon_install_agent.sh ] && commandStatus 'Backup CMON binary' "cp -pf /usr/bin/cmon* $tmp_dir/bin/"
+	[ -f /usr/sbin/cmon ] && mkdir -p $tmp_dir/sbin && commandStatus 'Backup CMON sbin binary' "cp -pf /usr/sbin/cmon $tmp_dir/sbin/"
 
 	echo "BACKUP_STATUS=COMPLETED" >> $upgrade_details
 	echo "** Backup completed!"
@@ -819,11 +824,12 @@ performUpgrade()
 if [ "$mode" == "controller" ]; then
 	tmp_dir=/tmp/s9s_backup
 	[ ! -z "$backup_dir" ] && tmp_dir=$backup_dir
-	install_dir_cmon=/usr/local
+	install_dir_cmon=/usr/local/cmon
+	[ "$os" == "redhat" ] && install_dir_cmon=/usr
 	[ ! -z "$top_dir" ] && install_dir_cmon=$top_dir
 fi
 
-[ ! -f $install_dir_cmon/cmon/sbin/cmon ] && echo "Cannot find CMON binary at $install_dir_cmon/cmon/sbin/cmon. Make sure you specify correct CMON path." && exit 1
+[ ! -f $install_dir_cmon/sbin/cmon ] && echo "Cannot find CMON binary at $install_dir_cmon/sbin/cmon. Make sure you specify correct CMON path. Use -t to specify custom CMON path." && exit 1
 
 if [ "$latest" == 1 ]; then
 	if [ "$mode" == "controller" ]; then

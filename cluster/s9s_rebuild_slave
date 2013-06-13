@@ -112,8 +112,10 @@ function create_mysql_server
 
 function set_active
 {    
-    if [ $NODEID -ne 0 ]; then 
-	QUERY="UPDATE processes SET active=1 WHERE cid=$CID and nodeid=$NODEID"
+    XHNAME=$1
+    XHOSTID=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "SELECT id FROM hosts  WHERE cid=$CID AND (hostname='$XHNAME' OR ip='$XHNAME')"` 
+    if [ $XHOSTID -ne 0 ]; then 
+	QUERY="UPDATE processes SET active=1 WHERE cid=$CID and hid=$XHOSTID"
 	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
     fi
 }
@@ -121,8 +123,10 @@ function set_active
 
 function set_inactive
 {    
-    if [ $NODEID -ne 0 ]; then 
-	QUERY="UPDATE processes SET active=0 WHERE cid=$CID and nodeid=$NODEID"
+    XHNAME=$1
+    XHOSTID=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "SELECT id FROM hosts  WHERE cid=$CID AND (hostname='$XHNAME' OR ip='$XHNAME')"` 
+    if [ $XHOSTID -ne 0 ]; then 
+	QUERY="UPDATE processes SET active=0 WHERE cid=$CID and hid=$XHOSTID"
 	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
     fi
 }
@@ -452,7 +456,7 @@ if [ ! -e $LOCKFILE ]; then
 #	exit 1
 #    fi
     log_job 'RUNNING' 'The job is running' 0
-    set_inactive
+    set_inactive $SLAVE
     ssh $SSH_OPTS  $SSH_USER@$SLAVE "$SUDO killall -q -9 mysqld_safe mysqld cmon"
     ssh $SSH_OPTS  $SSH_USER@$SLAVE "$SUDO killall -q -9 mysqld_safe mysqld cmon"
 #    ssh $SSH_OPTS  $SSH_USER@$SLAVE "$SUDO mv -f ${DATADIR} ${DATADIR}_bak"
@@ -544,7 +548,7 @@ if [ ! -e $LOCKFILE ]; then
     log_job 'FINISHED' 'Command ok' 0
     update_mysql_status 0
     grant_slave
-    set_active
+    set_active $SLAVE
     change_master_real_master
     ssh $SSH_OPTS  $SSH_USER@$SLAVE "$SUDO nohup nice /etc/init.d/cmon start"
     ssh $SSH_OPTS  $SSH_USER@$SLAVE "$SUDO rm -rf /$TMPDIR/backup.tar"
