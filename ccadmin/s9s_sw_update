@@ -19,7 +19,7 @@ CMON_DB_DB=cmon
 MYSQL_BIN=$mysql_bindir/mysql
 BACKUP_LOGFILE=/tmp/s9s_backup.log
 LOCKFILE="/tmp/s9s_backup.lock"
-
+jobid=0
 ### NO MODS BELOW UNLESS YOU KNOW WHAT YOU DO:
 
 OSUSER=$USER
@@ -44,6 +44,8 @@ function log_job_message
     QUERY="INSERT INTO cmon_job_message(cid, jobid,message,exit_code,report_ts) VALUES($CID,$jobid,'$MSG',$EXIT_CODE,now())"
     if [ $jobid -ne 0 ]; then 
 	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
+    else
+	echo "$MSG"
     fi
 }
 
@@ -55,6 +57,8 @@ function log_job
     QUERY="UPDATE cmon_job SET status='$STATUS', status_txt='$STATUS_TXT', exit_code=$EXIT_CODE, report_ts=NOW()  WHERE cid=$CID AND jobid=$jobid"
     if [ $jobid -ne 0 ]; then 
 	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
+    else
+	echo "$MSG"
     fi
 }
 
