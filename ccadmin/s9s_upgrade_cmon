@@ -507,10 +507,10 @@ upgradeCmon()
         rm -Rf /etc/init.d/cmon
         rm -Rf /etc/cron.d/cmon
         rm -Rf $wwwroot/cmon
-	rm -Rf $install_dir_cmon
 
         if [ "$os" == "debian" ]; then
 		install_dir=`echo $install_dir_cmon | sed "s|cmon||g"`
+		rm -Rf $install_dir_cmon
                 [ ! -d $install_dir ] && commandStatus 'Creating CMON installation directory' "mkdir -p $install_dir"
 		(zcat $repo_dir/$cmon_package | tar xf - -C $install_dir) &
 		printf "%-70s" "Extracting $cmon_package" && spinner $! && printf "[\e[00;32m %s\e[00m ]\n" OK
