@@ -494,7 +494,7 @@ function load_opts
     SSH_IDENTITY=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_IDENTITY' AND cid=$CLUSTER_ID" 2>/dev/null`
     SSH_USER=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_USER' AND cid=$CLUSTER_ID" 2>/dev/null`
     SUDO=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SUDO' AND cid=$CLUSTER_ID" 2>/dev/null`
-    
+
     OS_USER_HOME=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='OS_USER_HOME' AND cid=$CLUSTER_ID" 2>/dev/null`
     DATADIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon.cluster_config where variable='datadir' and cid=1 order by id asc limit 1" 2>/dev/null`
 
@@ -505,13 +505,27 @@ function load_opts
     else
 	SSH_IDENTITY="-oIdentityFile=$SSH_IDENTITY"
     fi
+
     SSH_OPTS="-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY"
+    SSH_OPTS2="-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY"
     if [ "$SSH_USER" != "root" ]; then
-	SSH_OPTS="-t -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY"
+	#SSH_OPTS_EXTRA="-ft"
+	SSH_OPTS=" -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY"
 	if [ "$SUDO" = "" ] || [ "$SUDO" = "NULL" ];  then
-           SUDO=sudo
+           SUDO="sudo"
         fi
     fi
+    if [ "$SSH_PORT" = "" ] || [ "$SSH_PORT" = "NULL" ];  then
+        SSH_PORT="22"
+    fi
+
+    if [ "$S9S_TMPDIR" = "" ] || [ "$TMPDIR" = "NULL" ];  then
+	S9S_TMPDIR="/tmp/"
+	TMPDIR="/tmp/"
+    fi
+    SSH_OPTS="$SSH_OPTSX -p$SSH_PORT $SSH_OPTS"    
+    SSH_OPTS2="-P$SSH_PORT $SSH_OPTS2"    
+
 }
 
 case $1 in
