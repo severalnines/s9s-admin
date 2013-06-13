@@ -394,6 +394,8 @@ function install_mysql_pkg
 	    exit 1	    
 	fi
 
+	remote_cmd $XHOSTNAME "mkdir -p $STAGING_DIR"
+	
 	for f in $FILELIST 
 	do
 	    path=`echo $f | awk -F, '{print $1;}'`
