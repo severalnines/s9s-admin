@@ -876,7 +876,7 @@ function move_node
 	QUERY="SET WSREP_ON=0;SET GLOBAL wsrep_cluster_address='gcomm://'"	    
 	`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=$SOURCE_HOSTNAME --port=$PORT --auto-vertical-output -Bse "$QUERY"`	    
 	if [ $? -ne 0 ]; then
-	    log_job_message "Failed to create cluster on $TARGET_CLUSTER_ID" 1
+	    log_job_message "Failed to create galera cluster on $TARGET_CLUSTER_ID" 1
 	    log_job 'FAILED' 's9s_clone --move-node failed' 1
 	    exit 1
 	fi
@@ -900,7 +900,9 @@ function move_node
 	sed -i.bak "s#mysql_server_addresses=.*#mysql_server_addresses=${SERVERS}#g" /etc/cmon_${TARGET_CLUSTER_ID}.cnf
     fi
 
+    remote_cmd_nofail $SOURCE_HOSTNAME "rm -rf ${DATADIR}/grastate.dat"
 
+    
     log_job_message "Node moved - follow recovery progress in GUI" 0
     log_job 'FINISHED' 's9s_clone --move-node finished successfully' 0
 }
