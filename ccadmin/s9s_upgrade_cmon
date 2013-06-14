@@ -34,7 +34,8 @@ helpMenu()
         echo "-r, --restore             : Restore from ClusterControl backup (all|controller|agent)"
         echo "-h, --help                : Print help"
         echo ""
-
+	echo "For more information, kindly go to http://support.severalnines.com/entries/24053181-Upgrade-ClusterControl-to-Latest-Version"
+	echo ""
 }
 [ ! -z "$help" ] && helpMenu && exit 1
 [ `whoami` != "root" ] && echo "Please run this script as root or using sudo" && exit 1
@@ -161,6 +162,15 @@ checkMysqlBin()
 		echo "mysqlbin=/path/to/mysql"
 	        exit 1
 	fi
+
+	[ -z "$CMON_CONFIG" ] && echo "CMON_CONFIG was not set - aborting" && exit 1
+	[ -z "$CMON_DB_HOST" ] && echo "CMON_DB_HOST was not set - aborting" && exit 1
+	[ -z "$CMON_DB_PORT" ] && echo "CMON_DB_PORT was not set - aborting" && exit 1
+	[ -z "$CMON_USER" ] && echo "CMON_USER was not set - aborting" && exit 1
+	[ -z "$CMON_DB_DB" ] && echo "CMON_DB_DB was not set - aborting" && exit 1
+	[ -z "$CMON_PASSWORD" ] && echo "CMON_PASSWORD was not set - aborting" && exit 1
+	[ -z "$CMON_PASSWORD" ] && echo "CMON_PASSWORD was not set - aborting" && exit 1
+
 	return 0
 }
 
@@ -282,8 +292,10 @@ startCmon()
 		[ "$os" == "redhat" ] && apache_svc=httpd && cron_svc=crond	
 		commandStatus 'Stopping Apache web server: ' "service $apache_svc stop"
 		sleep 1
-		commandStatus 'Stopping Apache web server: ' "service $apache_svc start"
-		commandStatus 'Reloading cron service: ' "service $cron_svc reload"
+		commandStatus 'Starting Apache web server: ' "service $apache_svc start"
+		commandStatus 'Stopping cron service: ' "service $cron_svc stop"
+		sleep 1
+		commandStatus 'Starting cron service: ' "service $cron_svc start"
 	fi
 	commandStatus 'Starting CMON service: ' "/etc/init.d/cmon start"
 }
@@ -507,10 +519,10 @@ upgradeCmon()
         rm -Rf /etc/init.d/cmon
         rm -Rf /etc/cron.d/cmon
         rm -Rf $wwwroot/cmon
-	rm -Rf $install_dir_cmon
 
         if [ "$os" == "debian" ]; then
 		install_dir=`echo $install_dir_cmon | sed "s|cmon||g"`
+		[ -f $install_dir_cmon/sbin/cmon ] && rm -Rf $install_dir_cmon
                 [ ! -d $install_dir ] && commandStatus 'Creating CMON installation directory' "mkdir -p $install_dir"
 		(zcat $repo_dir/$cmon_package | tar xf - -C $install_dir) &
 		printf "%-70s" "Extracting $cmon_package" && spinner $! && printf "[\e[00;32m %s\e[00m ]\n" OK
