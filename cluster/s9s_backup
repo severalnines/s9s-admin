@@ -20,6 +20,7 @@ MYSQL_BIN2=$mysql_bindir/mysql
 BACKUP_LOGFILE=/tmp/s9s_backup.log
 LOCKFILE="/tmp/s9s_backup.lock"
 XTRABACKUP_BIN=/usr/bin/innobackupex
+ULIMIT=8192
 ### NO MODS BELOW UNLESS YOU KNOW WHAT YOU DO:
 jobid=0
 
@@ -980,7 +981,7 @@ function check_mysql_client()
 }
 
 check_mysql_client
-
+ulimit -n $ULIMIT
 ARG=$1
 shift
 case $ARG in
