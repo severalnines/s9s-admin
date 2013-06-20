@@ -671,9 +671,9 @@ EOF
 	  break
       done
   else
-      set_backup_status 'failed' 1
-      echo "No cfg  servers"
-      exit 1
+      ##set_backup_status 'failed' 1
+      log_job_message "No cfg servers found" 0
+      #exit 1
   fi
 
   TYPE="shardsvr"
@@ -690,7 +690,7 @@ EOF
               LC_ALL=C /usr/bin/mongo $RS_HNAME:$RS_PORT /tmp/lock.js >> $BACKUP_LOGFILE  2>&1
               if [ $? -ne 0 ];  then
                   echo "Failed to lock shard server" >> $BACKUP_LOGFILE
-                  log_job_message "Failed to lock shard  $RS_HNAME:$PORT" 1
+                  log_job_message "Failed to lock shard  $RS_HNAME:$RS_PORT" 1
                   set_backup_status 'failed' 1
                   exit 1
               fi
@@ -717,10 +717,10 @@ EOF
 	  LC_ALL=C mongodump --journal --db config -h $CFG_HNAME:$CFG_PORT -o $BACKUPDIR  >> $BACKUP_LOGFILE  2>&1
 	  break
       done
-  else
-      set_backup_status 'failed' 1
-      log_job_message "No cfg server to dump from" 1
-      exit 1
+#  else
+ #     set_backup_status 'failed' 1
+  #    log_job_message "No cfg server to dump from" 1
+  #    exit 1
   fi
 
   if [ "$RS_VICTIM_LIST" != "NULL" ]; then
@@ -792,11 +792,11 @@ EOF
   wait_for_cluster_state "STARTED"
   sleep 30
   ## START BALANCER
-  echo "Starting balancer" >> $BACKUP_LOGFILE
   TYPE="mongos"
   OK=0
   MONGOS_LIST=$(get_servers $TYPE)
   if [ "$MONGOS_LIST" != "NULL" ]; then
+      echo "Starting balancer" >> $BACKUP_LOGFILE
       for r in $MONGOS_LIST
       do	  
 	  HNAME=`echo $r | awk -F ',' '{print $1};'`
@@ -835,10 +835,10 @@ EOF
 	  set_backup_status 'failed' 1
 	  exit 1
       fi
-  else
-      log_job_message "No mongos servers" 1
-      set_backup_status 'failed' 1
-      exit 1
+#  else
+#      log_job_message "No mongos servers" 1
+#      set_backup_status 'failed' 1
+#      exit 1
   fi
   if [ $FAIL -eq 0 ]; then
      set_backup_status 'completed' 0
