@@ -306,7 +306,7 @@ getModDatabase()
 	[ ! -z $1 ] && vers=$1
 	latest_vers=$LATEST_CMON_VERSION
 	[ ! -z $2 ] && latest_vers=$2
-	cmon_sql_path=/usr/local/cmon/sql
+	cmon_sql_path=$install_dir_cmon/sql
 	[ "$os" == "redhat" ] && cmon_sql_path=/usr/share/cmon
 
 	#sum up: 1.1.24 = 1000+100+24 if 1.2.2 = 1000+200+2
@@ -337,11 +337,11 @@ getModDatabase()
         	done
 	done
 
-	        f2=`echo "scale=0;($val-1000)/100" | bc`
 	# sort and get the filename
 	for val in `printf '%s\0' "${array[@]}" | sort -z | xargs -0n1`
 	do
         	f1=`echo "scale=0;$val/1000" | bc`
+		f2=`echo "scale=0;($val-1000)/100" | bc`
         	f3=`echo "scale=1;(($val-1000)-100)" | bc`
 	        [ $f3 -ge 100 ] && f3=0
         	mod_ver="$f1.$f2.$f3"
@@ -363,7 +363,7 @@ upgradeCmonDatabase()
 
 	checkMysqlBin
 	getModDatabase
-	cmon_sql_path=/usr/local/cmon/sql
+	cmon_sql_path=$install_dir_cmon/sql
 	[ "$os" == "redhat" ] && cmon_sql_path=/usr/share/cmon
 
 
