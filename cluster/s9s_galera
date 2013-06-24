@@ -828,11 +828,16 @@ function install_garbd
 		remote_cmd $XHOSTNAME "rpm -Uhv --force http://www.percona.com/downloads/percona-release/percona-release-0.0-1.x86_64.rpm"
 		remote_cmd $XHOSTNAME "yum -y install Percona-XtraDB-Cluster-galera"
 	    else
-		remote_cmd $XHOSTNAME "$UPDATE_PACKAGE_MGR"
+		remote_cmd $XHOSTNAME "apt-get update"
 		remote_cmd_nofail $XHOSTNAME "apt-get -y install  libssl0.9.8  wget rsync psmisc"
 		remote_cmd_nofail $XHOSTNAME "sed -i.bak '/repo.percona.com/d'  /etc/apt/sources.list"
-		wget --no-check-certificate --tries=5  -O ${S9S_TMPDIR}/RPM-GPG-KEY-percona http://www.percona.com/redir/downloads/RPM-GPG-KEY-perconaa
-		remote_copy $S9S_TMPDIR/RPM-GPG-KEY-percona ${host} ${S9S_TMPDIR}/RPM-GPG-KEY-percona
+		wget --no-check-certificate --tries=5  -O ${S9S_TMPDIR}/RPM-GPG-KEY-percona http://www.percona.com/redir/downloads/RPM-GPG-KEY-percona
+		if [ $? -ne 0 ]; then
+		    log_job_message "Failed: wget --no-check-certificate --tries=5  -O ${S9S_TMPDIR}/RPM-GPG-KEY-percona http://www.percona.com/redir/downloads/RPM-GPG-KEY-percona" 1
+		    log_job 'FAILED' 'install garbd failed' 1
+		    exit 1
+		fi
+		remote_copy $S9S_TMPDIR/RPM-GPG-KEY-percona ${XHOSTNAME} ${S9S_TMPDIR}/RPM-GPG-KEY-percona
 		remote_cmd $XHOSTNAME "gpg --import ${S9S_TMPDIR}/RPM-GPG-KEY-percona"
 		remote_cmd $XHOSTNAME "/bin/sh -c 'gpg -a --export CD2EFD2A | apt-key add -'"
 		remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"deb http://repo.percona.com/apt `lsb_release -c -s` main\" >> /etc/apt/sources.list'"
