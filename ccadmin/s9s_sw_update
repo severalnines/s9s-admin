@@ -198,7 +198,7 @@ function update_cmon_pkg
 
     if [ -z "$CMON_FILENAME" ]; then
 	echo "cmon pkg was not specified. Usage example (for RPM, DO NOT ADD THE CONTROLLER RPM to the package):"
-	echo "s9s_update --update-cmon-pkg -f cmon-1.1.36-64bit-glibc23-mc70.tar.gz"
+	echo "s9s_sw_update --update-cmon-pkg -f cmon-1.1.36-64bit-glibc23-mc70.tar.gz"
 	echo "s9s_sw_update --update-cmon-pkg -f cmon-agent-1.1.36-1.x86_64.rpm"
 	exit 1
     fi
