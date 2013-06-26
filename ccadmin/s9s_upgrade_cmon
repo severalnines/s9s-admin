@@ -553,10 +553,31 @@ upgradeCmon()
         fi
 
         if [ "$mode" == "controller" ]; then
+	        upgrade_details=$tmp_dir/upgrade_details.txt
+	        [ ! -e $upgrade_details ] && echo "** Backup status not found at $upgrade_details" exit 1
+        	source $upgrade_details
+
                 mkdir -p $wwwroot/cmon/graphs
                 commandStatus "Creating CMON upload directory" "mkdir -p $wwwroot/cmon/upload"
                 mkdir -p $wwwroot/cmon/upload/schema
-                commandStatus "Copying package(s) to upload directory" "cp $repo_dir/* $wwwroot/cmon/upload/"
+                commandStatus "Copying package to upload directory" "cp $repo_dir/* $wwwroot/cmon/upload/"
+
+		cmon_agent_file=$repo_dir/$rpm_agent &&	fname=$rpm_agent
+		[ "$os" == "debian" ] && cmon_agent_file=$repo_dir/$cmon_package && fname=$cmon_package
+
+		sum_agent=`md5sum $cmon_agent_file | awk '{print $1;}'`
+		filesize=`stat --printf='%s' $cmon_agent_file`
+
+		CID=1
+		QUERY="BEGIN; DELETE FROM cmon_uploads WHERE cid=$CID AND packageid=(SELECT packageid FROM cmon.cmon_sw_package WHERE name='CMON_DEFAULT' AND cid=$CID);\
+                INSERT IGNORE INTO cmon.cmon_uploads (cid, packageid, filename,path,cluster_type,version_tag,md5sum,filesize,selected) VALUES (1,1,'$fname','$wwwroot/cmon/upload/','$type','','$sum_agent', $filesize ,1); COMMIT"
+		$MYSQL_BIN -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT $CMON_DB_DB -e "$QUERY"
+	        if [ $? -ne 0 ]; then
+			echo "FAILED: $QUERY"
+			echo "Copying package failed."
+			exit 1
+        	fi
+
                 commandStatus 'Restoring CMON RRD config file' "cp -f $tmp_dir/cmon_rrd.cnf /etc/"
 		sed -i "s|^\$DB_PASSWORD1=.*|\$DB_PASSWORD1=\"$CMON_PASSWORD\"\;|g" $wwwroot/cmon/config/config_db1.php
 		commandStatus 'Restoring CMON MySQL password' ""
@@ -564,7 +585,7 @@ upgradeCmon()
                 commandStatus 'Restoring CMON MySQL port' ""
 
                 upgradeCmonDatabase
-                if [[ $v1 -lt 1200 ]]; then
+                if [ "$NEW_UI" == "NO" ]; then
 			installCcUi $LATEST_CMON_VERSION
 		else
 			upgradeCcUi $LATEST_CMON_VERSION
@@ -691,7 +712,12 @@ backupCmon()
 	        commandStatus 'Backup CMON cron' "cp -pfR /etc/cron.d/cmon $tmp_dir/cmon_crond"
 		mkdir -p $tmp_dir/wwwroot
 	        commandStatus 'Backup CMON web app' "cp -pfR $wwwroot/cmon $tmp_dir/wwwroot"
-		[[ $v1 -ge 1200 ]] && commandStatus 'Backup ClusterControl web app' "cp -pfR $wwwroot/cc-* $wwwroot/cmona* $wwwroot/clustercontrol $tmp_dir/wwwroot" && echo "NEW_UI=YES" >> $upgrade_details
+		if [ -e $wwwroot/clustercontrol ]; then
+			commandStatus 'Backup ClusterControl web app' "cp -pfR $wwwroot/cc-* $wwwroot/cmona* $wwwroot/clustercontrol $tmp_dir/wwwroot"
+			echo "NEW_UI=YES" >> $upgrade_details
+		else
+			echo "NEW_UI=NO" >> $upgrade_details
+		fi
 		mkdir -p $tmp_dir/local
         	[ "$os" == "redhat" ] && commandStatus 'Backup CMON share directory' "cp -pfR /usr/share/cmon $tmp_dir/local/"
 	fi
