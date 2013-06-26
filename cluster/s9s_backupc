@@ -21,7 +21,7 @@ BACKUP_LOGFILE=/tmp/s9s_backup.log
 LOCKFILE="/tmp/s9s_backup.lock"
 XTRABACKUP_BIN=/usr/bin/innobackupex
 NETCAT_PORT=59999
-ULIMIT=8192
+ULIMIT=32768
 ### NO MODS BELOW UNLESS YOU KNOW WHAT YOU DO:
 jobid=0
 

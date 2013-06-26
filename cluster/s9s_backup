@@ -20,7 +20,7 @@ MYSQL_BIN2=$mysql_bindir/mysql
 BACKUP_LOGFILE=/tmp/s9s_backup.log
 LOCKFILE="/tmp/s9s_backup.lock"
 XTRABACKUP_BIN=/usr/bin/innobackupex
-ULIMIT=8192
+ULIMIT=32768
 ### NO MODS BELOW UNLESS YOU KNOW WHAT YOU DO:
 jobid=0
 
