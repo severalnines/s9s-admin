@@ -28,6 +28,9 @@ helpMenu()
         echo " -t, --item           : Resource item (default is nofile)"
         echo " -n, --value          : Value (default is 16384)"
         echo " -h, --help           : Print this help"
+	echo ""
+	echo "For detailed explanation, kindly go to:"
+	echo "http://support.severalnines.com/entries/24464231-Adjust-Open-Files-Limit"
         exit 0
 
 }
