@@ -203,22 +203,22 @@ function install_agent
     done    
 
     if [ -z "$CMON_PASSWORD" ]; then
-	echo "s9s_clone "
+	echo "s9s_galera "
 	exit 1
     fi
     
     if [ -z "$CLUSTER_ID" ]; then
-	echo "s9s_clone "
+	echo "s9s_galera "
 	exit 1
     fi
     
     if [ ! -f $AGENT_BINARY ]; then
-	echo "s9s_clone "
+	echo "s9s_galera "
 	exit 1
     fi
 
     if [ -z "$HOSTNAME" ]; then
-	echo "s9s_clone "
+	echo "s9s_galera "
 	exit 1
     fi
     echo "Not implemented"
@@ -312,7 +312,7 @@ function install_mysql
 	esac
     done    
     if [ -z "$CMON_PASSWORD" ]; then
-	echo "s9s_clone "
+	echo "s9s_galera "
 	exit 1
     fi
 
@@ -322,7 +322,7 @@ function install_mysql
     fi
     
     if [ -z "$CLUSTER_ID" ]; then
-	echo "s9s_clone "
+	echo "s9s_galera "
 	exit 1
     fi
     
@@ -337,7 +337,7 @@ function install_mysql
     fi
 
     if [ -z "$HOSTNAME" ]; then
-	echo "s9s_clone "
+	echo "s9s_galera "
 	exit 1
     fi
     
@@ -570,7 +570,7 @@ if [ -n "$MYSQL_HOSTNAME" ]; then
        QUERY="$QUERY; UPDATE galera_status SET value=$CLU_SZ, value_txt='$CLU_SZ', report_ts=NOW()  WHERE cid=$CLUSTER_ID AND hostid=$HID AND var='WSREP_CLUSTER_SIZE'"
     fi
        QUERY="$QUERY; UPDATE galera_status SET value=0, value_txt='$STATUS', report_ts=NOW()  WHERE cid=$CLUSTER_ID AND hostid=$HID AND var='WSREP_LOCAL_STATE_COMMENT';COMMIT"
-    $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
+    $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/dev/null
 fi
 EOF
 
@@ -583,6 +583,7 @@ EOF
 	    remote_cmd $HNAME "mv -f ${S9S_TMPDIR}/wsrep_notify_cc /usr/bin"
 	    remote_cmd $HNAME "chown mysql:mysql /usr/bin//wsrep_notify_cc"
 	    remote_cmd $HNAME "chmod u+x /usr/bin/wsrep_notify_cc"
+	    remote_cmd $HNAME "chmod 755 /usr/bin/wsrep_notify_cc"
 	    remote_cmd $HNAME "sed -i.bak 's#.*wsrep_notify_cmd=.*#wsrep_notify_cmd=/usr/bin/wsrep_notify_cc#g' $CONFIGDIR/my.cnf"
 	done
     fi
@@ -621,7 +622,7 @@ function stop_node
    
 
     if [ -z "$CMON_PASSWORD" ]; then
-      echo "s9s_clone --create -p  missing"
+      echo "s9s_galera --create -p  missing"
       exit 1
     fi
 
@@ -777,12 +778,12 @@ function install_garbd
     fi
 
     if [ -z "$CLUSTER_ID" ]; then
-      echo "s9s_clone --install-garbd -i <cluster id> missing"
+      echo "s9s_galera --install-garbd -i <cluster id> missing"
       exit 1
     fi
 
     if [ -z "$XHOSTNAME" ]; then
-      echo "s9s_clone --install-garbd -h <hostname to install garbd on is missing>"
+      echo "s9s_galera --install-garbd -h <hostname to install garbd on is missing>"
       exit 1
     fi
 
@@ -856,11 +857,11 @@ function install_garbd
 	    ;;
 	codership)	    
 	    if [ -z "$XFILENAME" ]; then
-		echo "s9s_clone --install-garbd -f <galera package missing>"
+		echo "s9s_galera --install-garbd -f <galera package missing>"
 		exit 1
 	    fi
 	    if [ ! -f "$XFILENAME" ]; then
-		echo "s9s_clone --install-garbd -f <galera package missing>"
+		echo "s9s_galera --install-garbd -f <galera package missing>"
 		exit 1
 	    fi	    
 	    remote_copy $XFILENAME $XHOSTNAME $TMPDIR	    
@@ -969,12 +970,12 @@ function remove_garbd
     fi
 
     if [ -z "$CLUSTER_ID" ]; then
-      echo "s9s_clone --remove-garbd -i <cluster id> missing"
+      echo "s9s_galera --remove-garbd -i <cluster id> missing"
       exit 1
     fi
 
     if [ -z "$XHOSTNAME" ]; then
-      echo "s9s_clone --remove-garbd -h <hostname to install garbd on is missing>"
+      echo "s9s_galera --remove-garbd -h <hostname to install garbd on is missing>"
       exit 1
     fi
 
@@ -1172,12 +1173,12 @@ function reinit_cluster
     fi
 
     if [ -z "$CLUSTER_ID" ]; then
-      echo "s9s_clone --reinit-cluster -i <cluster id> missing"
+      echo "s9s_galera --reinit-cluster -i <cluster id> missing"
       exit 1
     fi
 
     if [ -z "$DONOR_HOSTNAME" ]; then
-      echo "s9s_clone --reinit-cluster -d <donor_addres -donor node is missing, specify one server address part of the cluster> missing"
+      echo "s9s_galera --reinit-cluster -d <donor_addres -donor node is missing, specify one server address part of the cluster> missing"
       exit 1
     fi
 
@@ -1305,12 +1306,12 @@ function make_primary
     fi
 
     if [ -z "$CLUSTER_ID" ]; then
-      echo "s9s_clone --make-primary -i <cluster id> missing"
+      echo "s9s_galera --make-primary -i <cluster id> missing"
       exit 1
     fi
 
     if [ -z "$XHOSTNAME" ]; then
-      echo "s9s_clone --make-primary -h <hostname> missing"
+      echo "s9s_galera --make-primary -h <hostname> missing"
       exit 1
     fi
 
@@ -1400,12 +1401,12 @@ function start_cluster
     fi
 
     if [ -z "$CLUSTER_ID" ]; then
-      echo "s9s_clone --start-cluster -i <cluster id> missing"
+      echo "s9s_galera --start-cluster -i <cluster id> missing"
       exit 1
     fi
 
     if [ -z "$DONOR_HOSTNAME" ]; then
-      echo "s9s_clone --start-cluster -d <donor_address - donor node is missing, specify one server address part of the cluster> missing"
+      echo "s9s_galera --start-cluster -d <donor_address - donor node is missing, specify one server address part of the cluster> missing"
       exit 1
     fi
 
@@ -1500,7 +1501,7 @@ function status_cluster
     fi
 
     if [ -z "$CLUSTER_ID" ]; then
-      echo "s9s_clone --status -i <cluster id> missing"
+      echo "s9s_galera --status -i <cluster id> missing"
       exit 1
     fi
 
@@ -1595,17 +1596,17 @@ function start_node
     fi
 
     if [ -z "$CLUSTER_ID" ]; then
-      echo "s9s_clone --start-node -i <cluster id> missing"
+      echo "s9s_galera --start-node -i <cluster id> missing"
       exit 1
     fi
 
     if [ -z "$DONOR_HOSTNAME" ]; then
-      echo "s9s_clone --start-node -d <donor node is missing, specify one server address part of the cluster> missing"
+      echo "s9s_galera --start-node -d <donor node is missing, specify one server address part of the cluster> missing"
       exit 1
     fi
 
     if [ -z "$XHOSTNAME" ]; then
-      echo "s9s_clone --start-node -h <hostname to start is missing>"
+      echo "s9s_galera --start-node -h <hostname to start is missing>"
       exit 1
     fi
 
