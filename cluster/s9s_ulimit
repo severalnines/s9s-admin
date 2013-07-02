@@ -1,0 +1,339 @@
+#!/bin/bash
+# Copyright 2012 Severalnines AB
+# s9s_ulimit - ulimit Adjuster
+
+TEMP=`getopt -o h,d,t:,n: --long help,default,item:,value: -n 's9s_ulimit' -- "$@"`
+[ $? -ne 0 ] && exit 1
+
+eval set -- "$TEMP"
+
+while true ; do
+	case "$1" in
+		-h|--help) help="1" ; shift ;;
+		-d|--default) default_value="1" ; shift ;;
+		-t|--item) ulimit_type="$2" ; shift 2 ;;
+		-n|--value) ulimit_value="$2" ; shift 2 ;;
+		--) shift ; break ;;
+		?) echo "$0: error - unrecognized option" 1>&2 ; exit 1 ;;
+	esac
+done
+
+helpMenu()
+{
+	echo "Severalnines ulimit Adjuster - adjust the limit of system-wide resources"
+        echo "`basename $0` [options]"
+        echo ""
+        echo "Options:"
+	echo " -d, --default        : Set nofile limit (soft & hard) to 16384"
+        echo " -t, --item           : Resource item (default is nofile)"
+        echo " -n, --value          : Value (default is 16384)"
+        echo " -h, --help           : Print this help"
+	echo ""
+	echo "For detailed explanation, kindly go to:"
+	echo "http://support.severalnines.com/entries/24464231-Adjust-Open-Files-Limit"
+        exit 0
+
+}
+
+if [ ! -z "$help" ]; then
+	helpMenu
+fi
+
+if [ ! -z "$ulimit_type" ] && [ -z "$ulimit_value" ]; then
+	echo "Error: Item must be defined with a value."
+	exit 1
+elif [ -z "$ulimit_type" ] && [ ! -z "$ulimit_value" ]; then
+	echo "Error: Value must be defined with an item."
+	exit 1
+elif [ ! -z "$default_value" ] && [ ! -z "$ulimit_value" ] && [ ! -z "$ulimit_type" ]; then
+	echo "Error: --default must be run without other parameters."
+        exit 1
+fi
+
+CMON_CONFIG=/etc/cmon.cnf
+if [ ! -e $CMON_CONFIG ] ; then
+	echo "Could not find $CMON_CONFIG"
+	exit 1
+else
+	source $CMON_CONFIG
+fi
+
+ULIMIT_FILE=/etc/security/limits.conf
+[ ! -e $ULIMIT_FILE ] && echo "ulimit configuration file not found." && exit 1
+
+CMON_DB_HOST=127.0.0.1
+CMON_DB_PORT=$mysql_port
+CMON_USER=cmon
+CMON_DB_DB=cmon
+CMON_PASSWORD=$mysql_password
+MYSQL_BIN=$mysql_basedir/bin/mysql
+CONNECT_TIMEOUT=10
+CLUSTER_TYPE=$type
+MYSQL_OPTS="--connect-timeout=$CONNECT_TIMEOUT"
+OSUSER=`whoami`
+[ ! -z "$osuser" ] && os_user=$osuser
+
+if [ "$OSUSER" != "root" ]; then
+    echo "must be executed as 'root' or with 'sudo'"
+    exit 1
+fi
+
+[ -z "$ulimit_type" ] && ulimit_type=nofile
+[ -z "$ulimit_value" ] && ulimit_value=16384
+
+if [ "$ulimit_value" == "unlimited" ]; then
+	echo "Error: Unlimited value is not supported."
+	exit 1
+elif [ $ulimit_value -lt 0 ]; then
+	echo "Error: Value must be an integer."
+	exit 1
+fi
+
+BASHRC_FILE=~/.bashrc
+
+item_array='core data fsize memlock nofile rss stack cpu nproc as maxlogins maxsyslogins priority locks sigpending msgqueue nice rtprio chroot' 
+
+retval=0
+for item in ${item_array}
+do
+	if [ "$ulimit_type" == "$item" ]; then
+		retval=1
+		break
+	fi
+done
+
+if [ $retval -eq 0 ]; then
+	echo "Unsupported item. Please use:"
+	echo "core data fsize memlock nofile rss stack cpu nproc as maxlogins maxsyslogins priority locks sigpending msgqueue nice rtprio chroot"
+	exit 1	
+fi
+
+#####
+
+setupSudo()
+{
+	echo "====================================================================="
+	echo "Sudoers detected! We need the sudo password in order to automate this"
+	echo "process. The password will be cleared once the process is completed."
+	echo "Note: Just press enter if you are using sudo without password."
+	echo "====================================================================="
+	echo ""
+	echo "Enter your sudo password: "
+	read -s pswd
+	if [ -z "$pswd" ]; then
+		sudo=sudo
+	else
+		sudo="echo $pswd | sudo -S "
+	fi
+}
+
+checkMysqlBin()
+{
+	if [ -z "$MYSQL_BIN" ] ; then
+		echo "MySQL client not found. Kindly add the MySQL client into PATH or install MySQL client package"
+		echo "or change and specify the full path to the mysql client (in the beginning of this file): "
+		echo "mysqlbin=\`which mysql\`"
+		echo "to:"
+		echo "mysqlbin=/path/to/mysql"
+		exit 1
+	fi
+
+	[ -z "$CMON_CONFIG" ] && echo "CMON_CONFIG was not set - aborting" && exit 1
+	[ -z "$CMON_DB_HOST" ] && echo "CMON_DB_HOST was not set - aborting" && exit 1
+	[ -z "$CMON_DB_PORT" ] && echo "CMON_DB_PORT was not set - aborting" && exit 1
+	[ -z "$CMON_USER" ] && echo "CMON_USER was not set - aborting" && exit 1
+	[ -z "$CMON_DB_DB" ] && echo "CMON_DB_DB was not set - aborting" && exit 1
+	[ -z "$CMON_PASSWORD" ] && echo "CMON_PASSWORD was not set - aborting" && exit 1
+	[ -z "$CMON_PASSWORD" ] && echo "CMON_PASSWORD was not set - aborting" && exit 1
+
+	return 0
+}
+
+verify_ulimit()
+{
+	# item_type: soft or hard
+	item_type=$1
+	
+	verify_val=`cat $ULIMIT_FILE | grep -v ^# | grep $ulimit_type | grep $item_type 2> /dev/null`
+	regex_verify="\*[ \t]+$item_type[ \t]+$ulimit_type[ \t]+$ulimit_value.*$"
+
+	if [[ -z $verify_val ]]; then
+		echo "ulimit changes failed."
+		exit 1
+	elif [[ ! $verify_val =~ $regex_verify ]]; then
+		echo "ulimit changes failed."
+		exit 1
+	else
+		echo "ulimit changes succeed."
+		exit 0
+	fi	
+	
+}
+
+add_ulimit_bashrc()
+{
+	flag_val=$1
+	echo "ulimit $flag_val $ulimit_value" >> $BASHRC_FILE
+	if [ "$os_user" != "root" ]; then
+		BASHRC_ROOT_FILE=/root/.bashrc
+		echo "ulimit $flag_val $ulimit_value" >> $BASHRC_ROOT_FILE
+	fi
+}
+
+update_ulimit_bashrc()
+{
+	case $ulimit_type in
+		"nofile") flag='-n'; ;;
+		"core") flag='-c'; ;;
+		"data") flag='-d'; ;;
+		"fsize") flag='-f'; ;;
+		"memlock") flag='-l'; ;;
+		"rss") flag='-m'; ;;
+		"stack") flag='-s'; ;;
+		"cpu") flag='-t'; ;;
+		"noproc") flag='-u'; ;;
+		(*) flag=''; ;;
+	esac;
+
+	if [ "$flag" != "" ]; then
+		val_rc=`cat $BASHRC_FILE | grep -v ^# | grep "ulimit $flag" 2> /dev/null`
+
+		if [ -z "$val_rc" ]; then
+			add_ulimit_bashrc $flag
+		else
+			line_rc=`grep -nv ^# $BASHRC_FILE | grep "ulimit $flag" | awk {'print $1'} | sed "s|:.*||g"`
+			sed -i "${line_rc}s|^|#|" $BASHRC_FILE
+			add_ulimit_bashrc $flag
+		fi
+	fi
+}
+
+add_ulimit()
+{
+	echo "* $1 $2 $3" >> $ULIMIT_FILE
+}
+
+update_ulimit()
+{
+	# item_type: soft or hard
+	item_type=$1
+
+	val=`cat $ULIMIT_FILE | grep -v ^# | grep $ulimit_type | grep $item_type 2> /dev/null`
+	
+	if [ -z "$val" ]; then
+		add_ulimit "$item_type" "$ulimit_type" "$ulimit_value"
+	else
+		regex_soft="\*[ \t]+$item_type[ \t]+$ulimit_type[ \t]+$ulimit_value.*$"
+		regex_soft2="\*[ \t]+$item_type[ \t]+$ulimit_type[ \t]+.*$"
+		if [[ ! $_soft =~ $regex_soft ]]; then
+			if [[ $_soft =~ $regex_soft2 ]]; then
+				old_ulimit_value=`cat $ULIMIT_FILE | grep -v ^# | grep $ulimit_type | grep $item_type | awk {'print $4'}`
+				line_soft2=`cat -n $ULIMIT_FILE | grep -v ^# | grep $ulimit_type | grep $item_type | grep $old_ulimit_value | awk {'print $1'}`
+				sed -i "${line_soft2}s|$old_ulimit_value|$ulimit_value|g" $ULIMIT_FILE
+				echo "$ulimit_type ($item_type) has been updated to $ulimit_value"				
+			else
+				line_soft=`grep -nv ^# $ULIMIT_FILE | grep $ulimit_type | grep $item_type | awk {'print $1'} | sed "s|:.*||g"`
+				sed -i "${line_soft}s|^|#|" $ULIMIT_FILE
+				add_ulimit "$item_type" "$ulimit_type" "$ulimit_value"
+				echo "$ulimit_type ($item_type) has been updated to $ulimit_value"
+			fi
+		else
+			echo "No changes."
+		fi
+
+	fi
+	
+}
+
+execute_ulimit() {
+
+	cat $ULIMIT_FILE | grep -v ^# | grep $ulimit_type | grep soft &> /dev/null
+	if [ $? == 0 ]; then
+		update_ulimit soft
+	else
+		add_ulimit "soft" "$ulimit_type" "$ulimit_value"
+		echo "$ulimit_type (soft) has been updated to $ulimit_value"
+	fi
+
+	cat $ULIMIT_FILE | grep -v ^# | grep $ulimit_type | grep hard &> /dev/null
+	if [ $? == 0 ]; then
+		update_ulimit hard
+	else
+		add_ulimit "hard" "$ulimit_type" "$ulimit_value"
+		echo "$ulimit_type (hard) has been updated to $ulimit_value"
+	fi
+
+}
+
+checkSudo ()
+{
+	checkMysqlBin
+	query_ssh_identity="SELECT value FROM cmon.cmon_configuration WHERE param='SSH_IDENTITY' AND cid=$cluster_id"
+	SSH_IDENTITY=`$MYSQL_BIN -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT -A -Bse "$query_ssh_identity"`
+
+	ssh_key="/home/$os_user/.ssh/id_rsa"
+	[ "$os_user" == "root" ] && ssh_key="/root/.ssh/id_rsa"
+	[ ! -z "$SSH_IDENTITY" ] && ssh_key=$SSH_IDENTITY
+
+	if [ "$mode" == "controller" ]; then
+		sudo=sudo
+		[ "$os_user" == "root" ] && sudo="" || setupSudo
+	fi
+
+}
+
+execute_ulimit_agent()
+{
+	options=" -t $ulimit_type -n $ulimit_value"
+	[ ! -z $1 ] && options="$1"
+
+	all_agent_hosts=`echo $mysql_server_addresses | tr ',' ' '`
+
+	if [ "$type" == "mysqlcluster" ]; then
+		all_agents="$mysql_server_addresses $mgmnode_addresses $datanode_addresses"
+		all_agent_hosts=$(echo "${all_agents[@]}" | tr ',' ' ' | tr ' ' '\n' | sort -u | tr '\n' ' ')
+	fi
+
+
+	for h in $all_agent_hosts
+	do
+		ssh -t -q -i $ssh_key $os_user@$h "mkdir -p ~/cc/"
+		scp -q -i $ssh_key `basename $0` $os_user@$h:~/cc/
+		echo "Hostname/IP: $h"
+		ssh -t -q -i $ssh_key $os_user@$h "$sudo cc/`basename $0` $options"
+		ssh -t -q -i $ssh_key $os_user@$h "rm -rf ~/cc"
+	done
+
+}
+
+confirmation()
+{
+	echo "This will adjust $ulimit_type (hard & soft) values to $ulimit_value"
+	read -p "Proceed? [Y/n]: " answer
+	if [ "$answer" == "N" ] || [ "$answer" == "n" ]; then
+		echo "Process aborted."
+		exit 1
+	fi
+	retval2=0
+}
+
+## Runtime
+if [ "$mode" == "controller" ]; then
+	confirmation
+	if [ "$retval2" == 0 ]; then
+		checkSudo
+		echo "Hostname/IP: $mysql_hostname"
+		execute_ulimit
+		echo ""
+		update_ulimit_bashrc
+		execute_ulimit_agent
+	else
+		exit 1
+	fi
+fi
+if [ "$mode" == "agent" ]; then
+        execute_ulimit
+	echo ""
+        update_ulimit_bashrc
+fi
+
