@@ -92,7 +92,7 @@ function remote_copy()
    else
       log_job_message "Failed copying file $srcfile --> $desthost:$destfile" 1
       log_job_message "Failed: scp $SSH_OPTS2 $srcfile $SSH_USER@$desthost:$destfile " 1
-      log_job 'FAILED' 'backup failed' 1
+      log_job 'FAILED' 'job failed' 1
       printf "\033[31m[failed]\033[0m\n"
       exit 1
    fi

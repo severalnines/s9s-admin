@@ -435,6 +435,229 @@ function install_mysql_pkg
 
 
 
+
+function install_mysql
+{
+    args=`getopt p:i:P:t:d:j:h:f:V: $*`
+    set -- $args
+    for i
+    do
+	case "$i" in
+            -p)
+		CMON_PASSWORD="$2"; shift;
+		shift;;
+            -i)
+		CLUSTER_ID="$2"; shift;
+		shift;;
+            -h)
+		XHOSTNAME="$2"; shift;
+		shift;;
+            -P)
+		PKG_NAME="$2"; shift;
+		shift;;
+            -j)
+		jobid="$2"; shift;
+		shift;;
+            --)
+		shift; break;;
+	esac
+    done    
+    
+
+    if [ -z "$CMON_PASSWORD" ]; then
+      exit 1
+    fi
+
+    if [ -z "$CLUSTER_ID" ]; then
+      exit 1
+    fi
+
+    if [ -z "$XHOSTNAME" ]; then
+      exit 1
+    fi
+
+    
+    case $CLUSTER_TYPE in
+	galera)
+	    ;;
+	*)
+	    ;;
+    esac
+    load_opts $CLUSTER_ID
+    if [ -z "$VENDOR" ]; then
+	VENDOR=$XVENDOR
+    fi
+
+    if [ -z "$VENDOR" ]; then
+	VENDOR="internal_pkg"
+    fi
+
+    mkdir -p $S9S_TMPDIR
+    chown $SSH_USER:$SSH_USER $S9S_TMPDIR
+    remote_cmd_nofail $XHOSTNAME "mkdir -p $S9S_TMPDIR"
+    remote_copy $S9S_TMPDIR/my.cnf $XHOSTNAME $S9S_TMPDIR
+    remote_cmd $XHOSTNAME "mkdir -p $CONFIGDIR/"
+    remote_cmd $XHOSTNAME "mv -f $S9S_TMPDIR/my.cnf $CONFIGDIR/"
+    
+    if [ "$OS" = "redhat" ]; then
+	remote_cmd_nofail $XHOSTNAME "yum -y remove MySQL* mysql* Percona* percona* MariaDB* mariadb* MySQL-Cluster* MySQL-cluster* mysql-cluster* galera*"	
+    else
+	remote_cmd_nofail $XHOSTNAME "apt-get -y remove MySQL* mysql* Percona* percona* MariaDB* mariadb* MySQL-Cluster* MySQL-cluster* mysql-cluster* galera*"	
+    fi
+
+    QUERY="GRANT INSERT,UPDATE,DELETE, SELECT ON $CMON_DB_DB.* TO 'cmon'@'$XHOSTNAME' IDENTIFIED BY '$CMON_PASSWORD'"    
+    $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log    
+    if [ $? -ne 0 ]; then 
+	echo "FAILED: $QUERY"
+	echo ""
+	exit 1
+    fi	
+    QUERY="GRANT SUPER ON *.* TO 'cmon'@'$XHOSTNAME' IDENTIFIED BY '$CMON_PASSWORD'"    
+    $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log    
+    if [ $? -ne 0 ]; then 
+	echo "FAILED: $QUERY"
+	echo ""
+	exit 1
+    fi	
+
+    case $VENDOR in
+	percona)
+	    if [ "$OS" = "redhat" ]; then
+		remote_cmd $XHOSTNAME "rpm -Uhv --force http://www.percona.com/downloads/percona-release/percona-release-0.0-1.x86_64.rpm"
+		remote_cmd $XHOSTNAME "yum -y install Percona-XtraDB-Cluster-galera"
+	    else
+		remote_cmd $XHOSTNAME "apt-get update"
+		remote_cmd_nofail $XHOSTNAME "apt-get -y install  libssl0.9.8  wget rsync psmisc"
+		remote_cmd_nofail $XHOSTNAME "sed -i.bak '/repo.percona.com/d'  /etc/apt/sources.list"
+		wget --no-check-certificate --tries=5  -O ${S9S_TMPDIR}/RPM-GPG-KEY-percona http://www.percona.com/redir/downloads/RPM-GPG-KEY-percona
+		if [ $? -ne 0 ]; then
+		    log_job_message "Failed: wget --no-check-certificate --tries=5  -O ${S9S_TMPDIR}/RPM-GPG-KEY-percona http://www.percona.com/redir/downloads/RPM-GPG-KEY-percona" 1
+		    log_job 'FAILED' 'install garbd failed' 1
+		    exit 1
+		fi
+		remote_copy $S9S_TMPDIR/RPM-GPG-KEY-percona ${XHOSTNAME} ${S9S_TMPDIR}/RPM-GPG-KEY-percona
+		remote_cmd $XHOSTNAME "gpg --import ${S9S_TMPDIR}/RPM-GPG-KEY-percona"
+		remote_cmd $XHOSTNAME "/bin/sh -c 'gpg -a --export CD2EFD2A | apt-key add -'"
+		remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"deb http://repo.percona.com/apt `lsb_release -c -s` main\" >> /etc/apt/sources.list'"
+		remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"deb-src http://repo.percona.com/apt `lsb_release -c -s` main\" >> /etc/apt/sources.list'"
+		remote_cmd $XHOSTNAME "apt-get -q -y update"
+		remote_cmd $XHOSTNAME "LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::='--force-confnew' -y -q install  percona-xtradb-cluster-galera-2.x"
+		remote_cmd $XHOSTNAME "sync"
+	    fi
+	    ;;
+	internal_pkg)	    
+	    QUERY="SELECT packageid FROM ${CMON_DB}.cmon_sw_package WHERE name='$PKG_NAME' AND cid=$CID"
+	    PID=`$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY"`	
+	    if [ -z "$PID" ]; then
+		echo "Invalid $PKG_NAME"
+		exit 1
+	    fi
+	    QUERY="SELECT group_concat(concat(path,',', filename) SEPARATOR ' ') FROM ${CMON_DB}.cmon_uploads WHERE packageid='$PID' AND cid=$CID"
+	    FILELIST=`$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY"`
+	
+	    if [ -z "$FILELIST" ]; then
+		echo "No files in package $PKG_NAME"
+		exit 1	    
+	    fi
+	    
+	    if [ "$FILELIST" = "NULL" ]; then
+		echo "No files in package $PKG_NAME"
+		exit 1	    
+	    fi
+	    
+	    
+	    remote_cmd $XHOSTNAME "mkdir -p $STAGING_DIR"
+	    
+	    for f in $FILELIST 
+	    do
+		path=`echo $f | awk -F, '{print $1;}'`
+		filename=`echo $f | awk -F, '{print $2;}'`	    
+		remote_copy $path/$filename $XHOSTNAME $STAGING_DIR	    	    
+	    done
+	    RPMLIST=""
+	    for f in $FILELIST 
+	    do
+		filename=`echo $f | awk -F, '{print $2;}'`	    
+		ext=${filename##*.}
+		case $ext in
+		    gz)
+			MYSQL_BASEDIR2=${MYSQL_BASEDIR%/}
+			remote_cmd_nofail $XHOSTNAME "rm -f ${MYSQL_BASEDIR2}*"
+			remote_cmd $XHOSTNAME "tar xvfz ${STAGING_DIR}/$filename -C `dirname $MYSQL_BASEDIR`"
+			remote_cmd $XHOSTNAME "ln -s `dirname $MYSQL_BASEDIR`/`basename $filename .tar.gz`  $MYSQL_BASEDIR2"
+			;;
+		    rpm)
+			RPMLIST="$RPMLIST $STAGING_DIR/$filename"
+			;;
+		    deb)
+			DEBLIST="$DEBLIST $STAGING_DIR/$filename"
+			;;
+		esac	    
+	    done
+	    if [ -n "$RPMLIST" ]; then
+		remote_cmd $XHOSTNAME "rpm -Uvh $RPMLIST"
+	    fi
+	    if [ -n "$DEBLIST" ]; then
+		remote_cmd $XHOSTNAME "/usr/bin/dpkg -i $DEBLIST"
+	    fi	    
+	    ;;
+	mariadb)
+	    if [ "$OS" = "redhat" ]; then
+		cat << 'EOF' > $S9S_TMPDIR/MariaDB.centos5
+[mariadb]
+name = MariaDB
+baseurl = http://yum.mariadb.org/5.5/centos5-amd64
+gpgkey=https://yum.mariadb.org/RPM-GPG-KEY-MariaDB
+gpgcheck=1                 
+EOF
+		cat << 'EOF' > $S9S_TMPDIR/MariaDB.centos6
+[mariadb]
+name = MariaDB
+baseurl = http://yum.mariadb.org/5.5/centos6-amd64
+gpgkey=https://yum.mariadb.org/RPM-GPG-KEY-MariaDB
+gpgcheck=1                 
+EOF
+		cat << 'EOF' > $S9S_TMPDIR/MariaDB.rhel5
+[mariadb]
+name = MariaDB
+baseurl = http://yum.mariadb.org/5.5/rhel5-amd64
+gpgkey=https://yum.mariadb.org/RPM-GPG-KEY-MariaDB
+gpgcheck=1                 
+EOF
+		cat << 'EOF' > $S9S_TMPDIR/MariaDB.rhel6
+[mariadb]
+name = MariaDB
+baseurl = http://yum.mariadb.org/5.5/rhel6-amd64
+gpgkey=https://yum.mariadb.org/RPM-GPG-KEY-MariaDB
+gpgcheck=1                 
+EOF
+		RHEL=$(cat /etc/redhat-release | egrep "[0-9]" -o | head -1)
+		OS2=$(awk '{print $1}' /etc/redhat-release | tr '[:upper:]' '[:lower:]')
+		remote_copy ${S9S_TMPDIR}/MariaDB.${OS2}${RHEL} $XHOSTNAME ${S9S_TMPDIR}/MariaDB.${OS2}${RHEL}.tmp
+		remote_cmd $XHOSTNAME "mv -f ${S9S_TMPDIR}/MariaDB.${OS2}${RHEL}.tmp /etc/yum.repos.d/MariaDB.repo"
+                remote_cmd $XHOSTNAME "yum -y install galera "
+	    else
+		echo "debian/ubuntu not supported yet"
+	    fi
+	    ;;
+	*)
+	    echo "Not a supported vendor"
+	    exit 1;	           	     
+    esac
+
+
+    case $CLUSTER_TYPE in
+	galera)
+	    remote_cmd $XHOSTNAME "/usr/bin/s9s_backup --install -i $CLUSTER_ID -b /tmp/"
+	    ;;
+	*)
+	    ;;
+    esac
+    
+}
+
+
+
 function update_mysql_pkg_yum
 {   
     args=`getopt p:s:P:h:i:N:n:f: $*`
@@ -500,6 +723,9 @@ function load_opts
 
     OS_USER_HOME=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='OS_USER_HOME' AND cid=$CLUSTER_ID" 2>/dev/null`
     DATADIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon.cluster_config where variable='datadir' and cid=1 order by id asc limit 1" 2>/dev/null`
+    MYCNF=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select data  from cmon.cluster_configuration where cid=1 limit 1"`
+
+
 
     
     SSH_OPTS="-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10"
@@ -528,21 +754,24 @@ function load_opts
     fi
     SSH_OPTS="$SSH_OPTSX -p$SSH_PORT $SSH_OPTS"    
     SSH_OPTS2="-P$SSH_PORT $SSH_OPTS2"    
-
+    echo $MYCNF |  sed 's#\\n#\n\r#g' > $S9S_TMPDIR/my.cnf
 }
 
-case $1 in
+
+ARG=$1
+shift
+case $ARG in
     --update-cmon-pkg)
-	update_cmon_pkg $2 $3 $4 $5 $6 $7 $8 $9
+	update_cmon_pkg $*
     ;;
     --update-mysql-pkg)
-	update_mysql_pkg $2 $3 $4 $5 $6 $7 $8 $9
+	update_mysql_pkg $*
 	;;
     --install-mysql)
-        install_mysql_pkg $2 $3 $4 $5 $6 $7 $8 $9
+        install_mysql $*
 	;;
     --update-mysql-yum)
-        update_mysql_pkg_yum $2 $3 $4 $5 $6 $7 $8 $9
+        update_mysql_pkg_yum $*
 	;;
     --list)
 	list_pkgs
