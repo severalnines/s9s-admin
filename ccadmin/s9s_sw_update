@@ -645,7 +645,7 @@ EOF
 
     case $CLUSTER_TYPE in
 	galera)
-	    remote_cmd $XHOSTNAME "s9s_backup --install -i $CLUSTER_ID -b /tmp/"
+	    remote_cmd $XHOSTNAME "/usr/bin/s9s_backup --install -i $CLUSTER_ID -b /tmp/"
 	    ;;
 	*)
 	    ;;
