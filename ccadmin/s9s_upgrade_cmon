@@ -75,7 +75,22 @@ if [ ! -e $CMON_CONFIG ] ; then
 	echo "Could not find $CMON_CONFIG"
 	exit 1
 else
-	source $CMON_CONFIG
+	cat $CMON_CONFIG | grep -v ^# | grep -v ^$ | grep -q -E '[ \t]' 2> /dev/null
+
+	if [ $? -eq 0 ]; then
+        	i=0
+	        while read line; do
+        	if [[ $line =~ ^[^#]*= ]]; then
+                	name[i]=`echo $line | cut -d'=' -f 1`
+	                value[i]=`echo $line | cut -d'=' -f 2- | tr ' ' ','`
+        	        sed -i.bak "s|^${name[$i]}=.*|${name[$i]}=${value[$i]}|g" $CMON_CONFIG
+	                ((i++))
+        	fi
+	        done < $CMON_CONFIG
+        	source $CMON_CONFIG
+	else
+	        source $CMON_CONFIG
+	fi
 fi
 
 CMON_DB_HOST=$mysql_hostname
