@@ -495,7 +495,10 @@ function install_mysql
     mkdir -p $S9S_TMPDIR
     chown $SSH_USER:$SSH_USER $S9S_TMPDIR
     remote_cmd_nofail $XHOSTNAME "mkdir -p $S9S_TMPDIR"
-
+    remote_copy $S9S_TMPDIR/my.cnf $XHOSTNAME $S9S_TMPDIR
+    remote_cmd $XHOSTNAME "mkdir -p $CONFIGDIR/"
+    remote_cmd $XHOSTNAME "mv -f $S9S_TMPDIR/my.cnf $CONFIGDIR/"
+    
     if [ "$OS" = "redhat" ]; then
 	remote_cmd_nofail $XHOSTNAME "yum -y remove MySQL* mysql* Percona* percona* MariaDB* mariadb* MySQL-Cluster* MySQL-cluster* mysql-cluster* galera*"	
     else
@@ -720,6 +723,9 @@ function load_opts
 
     OS_USER_HOME=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='OS_USER_HOME' AND cid=$CLUSTER_ID" 2>/dev/null`
     DATADIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon.cluster_config where variable='datadir' and cid=1 order by id asc limit 1" 2>/dev/null`
+    MYCNF=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select data  from cmon.cluster_configuration where cid=1 limit 1"`
+
+
 
     
     SSH_OPTS="-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10"
@@ -748,7 +754,7 @@ function load_opts
     fi
     SSH_OPTS="$SSH_OPTSX -p$SSH_PORT $SSH_OPTS"    
     SSH_OPTS2="-P$SSH_PORT $SSH_OPTS2"    
-
+    echo $MYCNF |  sed 's#\\n#\n\r#g' > $S9S_TMPDIR/my.cnf
 }
 
 
