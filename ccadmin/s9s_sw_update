@@ -729,18 +729,21 @@ function load_opts
 
 }
 
-case $1 in
+
+ARG=$1
+shift
+case $ARG in
     --update-cmon-pkg)
-	update_cmon_pkg $2 $3 $4 $5 $6 $7 $8 $9
+	update_cmon_pkg $*
     ;;
     --update-mysql-pkg)
-	update_mysql_pkg $2 $3 $4 $5 $6 $7 $8 $9
+	update_mysql_pkg $*
 	;;
     --install-mysql)
-        install_mysql_pkg $2 $3 $4 $5 $6 $7 $8 $9
+        install_mysql $*
 	;;
     --update-mysql-yum)
-        update_mysql_pkg_yum $2 $3 $4 $5 $6 $7 $8 $9
+        update_mysql_pkg_yum $*
 	;;
     --list)
 	list_pkgs
