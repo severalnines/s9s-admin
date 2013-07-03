@@ -497,9 +497,9 @@ function install_mysql
     remote_cmd_nofail $XHOSTNAME "mkdir -p $S9S_TMPDIR"
 
     if [ "$OS" = "redhat" ]; then
-	remote_cmd_nofail "yum -y remove MySQL* mysql* Percona* percona* MariaDB* mariadb* MySQL-Cluster* MySQL-cluster* mysql-cluster* galera*"	
+	remote_cmd_nofail $XHOSTNAME "yum -y remove MySQL* mysql* Percona* percona* MariaDB* mariadb* MySQL-Cluster* MySQL-cluster* mysql-cluster* galera*"	
     else
-	remote_cmd_nofail "apt-get -y remove MySQL* mysql* Percona* percona* MariaDB* mariadb* MySQL-Cluster* MySQL-cluster* mysql-cluster* galera*"	
+	remote_cmd_nofail $XHOSTNAME "apt-get -y remove MySQL* mysql* Percona* percona* MariaDB* mariadb* MySQL-Cluster* MySQL-cluster* mysql-cluster* galera*"	
     fi
 
     case $VENDOR in
