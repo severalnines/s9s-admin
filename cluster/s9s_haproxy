@@ -853,6 +853,7 @@ function install_haproxy
     echo "* Installing haproxy on $LB_HOSTNAME                            *"
     echo "*************************************************************"
 
+    remote_cmd $LB_HOSTNAME "$PKG_MGR wget"
 
     if [ $OS = "rhel" ] || [ $OS = "centos6" ]; then
 	remote_cmd_nofail $LB_HOSTNAME "wget  --no-check-certificate --tries=5 -O ${S9S_TMPDIR}/epel-release-6-8.noarch.rpm  http://dl.fedoraproject.org/pub/epel/6/x86_64/epel-release-6-8.noarch.rpm"
