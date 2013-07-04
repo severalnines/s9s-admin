@@ -19,7 +19,7 @@ CMON_DB_DB=cmon
 MYSQL_BIN=$mysql_bindir/mysql
 BACKUP_LOGFILE=/tmp/s9s_backup.log
 LOCKFILE="/tmp/s9s_backup.lock"
-jobid=0
+JOBID=0
 ### NO MODS BELOW UNLESS YOU KNOW WHAT YOU DO:
 
 OSUSER=$USER
@@ -42,7 +42,7 @@ function log_job_message
 {    
     MSG=$1
     EXIT_CODE=$2
-    QUERY="INSERT INTO cmon_job_message(cid, jobid,message,exit_code,report_ts) VALUES($CLUSTER_ID,$JOBID,\"$MSG\",$EXIT_CODE,now())"
+    QUERY="INSERT INTO cmon_job_message(cid, JOBID,message,exit_code,report_ts) VALUES($CLUSTER_ID,$JOBID,\"$MSG\",$EXIT_CODE,now())"
     echo $QUERY >> /tmp/queries
     if [ $JOBID -ne 0 ]; then 
 	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
@@ -60,7 +60,7 @@ function create_job
     MSG=$1
     STATUS=$2
     EXIT_CODE=$3
-    QUERY="INSERT INTO cmon_job(cid, jobid, jobspec,status,status_txt,exit_code,report_ts) VALUES($CLUSTER_ID,$JOBID,'internal','$STATUS',\"$MSG\",$EXIT_CODE,now())"
+    QUERY="INSERT INTO cmon_job(cid, JOBID, jobspec,status,status_txt,exit_code,report_ts) VALUES($CLUSTER_ID,$JOBID,'internal','$STATUS',\"$MSG\",$EXIT_CODE,now())"
     echo $QUERY >> /tmp/queries
     if [ $JOBID -ne 0 ]; then 
 	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
@@ -78,7 +78,7 @@ function log_job
     STATUS=$1
     STATUS_TXT=$2
     EXIT_CODE=$3
-    QUERY="UPDATE cmon_job SET status='$STATUS', status_txt='$STATUS_TXT', exit_code=$EXIT_CODE, report_ts=NOW()  WHERE cid=$CLUSTER_ID AND jobid=$JOBID"
+    QUERY="UPDATE cmon_job SET status='$STATUS', status_txt='$STATUS_TXT', exit_code=$EXIT_CODE, report_ts=NOW()  WHERE cid=$CLUSTER_ID AND JOBID=$JOBID"
     if [ $JOBID -ne 0 ]; then 
 	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
     fi
@@ -482,7 +482,7 @@ function install_mysql
 		PKG_NAME="$2"; shift;
 		shift;;
             -j)
-		jobid="$2"; shift;
+		JOBID="$2"; shift;
 		shift;;
             --)
 		shift; break;;
