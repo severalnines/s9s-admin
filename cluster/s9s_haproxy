@@ -343,6 +343,19 @@ EOF
 
 }
 
+function remote_cmd_getreply()
+{
+   desthost=$1
+   xcommand=$2
+   x=`ssh -q $SSH_OPTS $SSH_USER@$desthost "$SUDO $xcommand"`
+   if [ $? -ne 0 ]; then
+       echo "Command failed: ssh -q $SSH_OPTS $SSH_USER@$desthost \"$SUDO $xcommand\""
+       log_job_message "FAILED: ${desthost}@${xcommand}" 1
+       exit 1
+   fi
+   x=`echo $x | grep -v "password"`
+   echo $x
+}
 
 function remote_copy()
 {
@@ -740,7 +753,7 @@ function install_haproxy
             PKG_MGR2="yum -y install "
             PHP_CURL="php-curl"
 	    BUILD="gcc make"
-	    CENTOS=`cat /etc/redhat-release  | grep -i centos |grep "6"`
+            CENTOS=$(remote_cmd_getreply $LB_HOSTNAME 'cat /etc/redhat-release  | grep -i centos |grep "6"')
 	    if [ -n "$CENTOS" ]; then
 		remote_cmd $LB_HOSTNAME "yum -y install centos-release-cr"
 		remote_cmd_nofail $LB_HOSTNAME "sed  -i.bak  's/enabled=1/enabled=0/g' /etc/yum.repos.d/CentOS-CR.repo"
