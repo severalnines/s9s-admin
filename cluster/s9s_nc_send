@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-[ $# -lt 2 ] && echo "$(basename $0) <source dir> <localhost|remote host> [port|8888] [compression level|5]" && exit 1
+[ $# -lt 1 ] && echo "$(basename $0) <source dir> [localhost|remote host] [port|8888] [compression level|5]" && exit 1
 
 [ ! $(command -v nc) ] && echo "Unable to find nc. Please install it first." && exit 1
 [ ! $(command -v gzip) ] && echo "Unable to find gzip. Please install it first." && exit 1
@@ -13,8 +13,8 @@ remote_host=localhost
 port=8888
 c=5
 [ $# -gt 1 ] && remote_host=$2
-[ $# -gt 2 ] && remote_host=$2&&port=$3
-[ $# -gt 3 ] && remote_host=$2&&port=$3&&c=$4
+[ $# -gt 2 ] && remote_host=$2 && port=$3
+[ $# -gt 3 ] && remote_host=$2 && port=$3 && c=$4
 dir=$1
 
 size=$(du -sh $dir | cut -f1)

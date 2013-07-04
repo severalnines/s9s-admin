@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-[ $# -lt 1 ] && echo "$(basename $0) <localhost|remote host> [port|8888]" && exit 1
+#[ $# -lt 1  ] && echo "$(basename $0) [localhost|remote host] [port|8888]" && exit 1
 
 [ ! $(command -v nc) ] && echo "Unable to find nc. Please install it first." && exit 1
 [ ! $(command -v gzip) ] && echo "Unable to find gzip. Please install it first." && exit 1
@@ -9,8 +9,8 @@
 
 host=localhost
 port=8888
-[ $# -gt 1 ] && port=$2
-host=$1
+[ $# -eq 1 ] && host=$1
+[ $# -gt 1 ] && host=$1 && port=$2
 
 if [ $host = "localhost" ]
 then
