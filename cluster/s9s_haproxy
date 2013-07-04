@@ -872,7 +872,7 @@ function install_haproxy
 	    HAPROXY_SRC=`basename $BUILD_FROM_SRC_FILE`
 	    remote_copy $BUILD_FROM_SRC_FILE $LB_HOSTNAME /tmp/
 	else
-	    remote_cmd $LB_HOSTNAME "wget -O/tmp/${HAPROXY_SRC}  http://haproxy.1wt.eu/download/1.4/src/${HAPROXY_SRC}"	 	
+	    remote_cmd $LB_HOSTNAME "sh -c 'wget -O/tmp/${HAPROXY_SRC}  http://haproxy.1wt.eu/download/1.4/src/${HAPROXY_SRC}'"	 	
 	    
 	fi
 	remote_cmd $LB_HOSTNAME "$PKG_MGR $BUILD"
