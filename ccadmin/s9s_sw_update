@@ -657,16 +657,6 @@ function install_mysql
 		remote_cmd $XHOSTNAME "LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive /usr/bin/dpkg -i $DEBLIST"
 	    fi	    
 	    ;;
-	percona_nonet)
-	    if [ "$OS" = "redhat" ]; then
-		remote_cmd $XHOSTNAME "chown 755 /etc/init.d/mysql"
-		remote_cmd $XHOSTNAME "/sbin/chkconfig --add mysql "
-	    else
-		remote_cmd $XHOSTNAME "cp /usr/share/mysql/mysql.server  /etc/init.d/mysql"
-		remote_cmd $XHOSTNAME "chown 755 /etc/init.d/mysql"
-		remote_cmd $XHOSTNAME "/usr/sbin/update-rc.d mysql defaults"
-	    fi
-	    ;;
 	mariadb)
 	    if [ "$OS" = "redhat" ]; then
 		cat << 'EOF' > $S9S_TMPDIR/MariaDB.centos5
@@ -770,7 +760,7 @@ EOF
 	    if [ "$OS" = "redhat" ]; then   
 		remote_cmd $XHOSTNAME "chown 755 /etc/init.d/mysql"
 		remote_cmd $XHOSTNAME "/sbin/chkconfig --add mysql "
-		remote_cmd $XHOSTNAME "/sbin/chkconfig mysqld off --level 2345"
+		remote_cmd $XHOSTNAME "/sbin/chkconfig mysql off --level 2345"
 	    else
 		remote_cmd $XHOSTNAME "cp /usr/local/mysql/support-files/mysql.server  /etc/init.d/mysql"
 		remote_cmd $XHOSTNAME "chown 755 /etc/init.d/mysql"
@@ -782,7 +772,7 @@ EOF
 	    if [ "$OS" = "redhat" ]; then
 		remote_cmd $XHOSTNAME "chown 755 /etc/init.d/mysql"
 		remote_cmd $XHOSTNAME "/sbin/chkconfig --add mysql "
-		remote_cmd $XHOSTNAME "/sbin/chkconfig mysqld off --level 2345"
+		remote_cmd $XHOSTNAME "/sbin/chkconfig mysql off --level 2345"
 	    else
 		remote_cmd $XHOSTNAME "cp /usr/share/mysql/mysql.server  /etc/init.d/mysql"
 		remote_cmd $XHOSTNAME "chown 755 /etc/init.d/mysql"
@@ -794,7 +784,7 @@ EOF
 	    if [ "$OS" = "redhat" ]; then
 		remote_cmd $XHOSTNAME "chown 755 /etc/init.d/mysql"
 		remote_cmd $XHOSTNAME "/sbin/chkconfig --add mysql "
-		remote_cmd $XHOSTNAME "/sbin/chkconfig mysqld off --level 2345"
+		remote_cmd $XHOSTNAME "/sbin/chkconfig mysql off --level 2345"
 	    else
 		echo "debian/ubuntu not supported yet"
 		remote_cmd_nofail $XHOSTNAME "/usr/sbin/update-rc.d -f mysql remove"
