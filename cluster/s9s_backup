@@ -824,11 +824,6 @@ function install
 	BACKUPDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='BACKUPDIR' AND cid=$CLUSTER_ID"`
     fi
 
-    if [ -z "$BACKUPDIR" ]; then
-      echo "s9s_backup  --install -b <backupdir> missing"
-      exit 1
-    fi
-
     OS=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='OS' AND cid=$CLUSTER_ID"`
     if [ $? -ne 0 ]; then 
 	log_job_message "Failed to read OS property from cmon_configuration" 1
@@ -912,7 +907,7 @@ function install
 	    exit 1;	           	     
     esac
     
-    
+
 #    if [ "$PWD" != "/usr/bin/" ]; then
 #    echo "You must run this from /usr/bin"
 #    echo "cd /usr/bin"
@@ -924,7 +919,11 @@ function install
 # Incremental backup every other day at 0300
 #
     if [ -n "$CROND" ]; then
-	cat > /etc/cron.d/s9s_backup <<EOF
+	if [ -z "$BACKUPDIR" ]; then
+	    echo "s9s_backup  --install -b <backupdir> missing"
+	    echo "cron will not be installed"
+	else
+	    cat > /etc/cron.d/s9s_backup <<EOF
 0 3 * * 0 root /usr/bin/s9s_backup --backup -i $CLUSTER_ID -t full -b $BACKUPDIR
 0 3 * * 1 root /usr/bin/s9s_backup --backup -i $CLUSTER_ID -t incr -b $BACKUPDIR
 0 3 * * 2 root /usr/bin/s9s_backup --backup -i $CLUSTER_ID -t incr -b $BACKUPDIR
@@ -935,6 +934,7 @@ function install
 0 6 * * 0 root /usr/bin/s9s_backup --purge -i $CLUSTER_ID
 
 EOF
+	fi
     fi
     log_job_message "Installation of xtrabackup completed" 0
     echo "Install complete"

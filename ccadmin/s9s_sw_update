@@ -37,15 +37,39 @@ fi
 
 WWWROOT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='WWWROOT' AND cid=$CID"`
 
+
 function log_job_message
 {    
     MSG=$1
     EXIT_CODE=$2
-    QUERY="INSERT INTO cmon_job_message(cid, jobid,message,exit_code,report_ts) VALUES($CID,$jobid,'$MSG',$EXIT_CODE,now())"
-    if [ $jobid -ne 0 ]; then 
+    QUERY="INSERT INTO cmon_job_message(cid, jobid,message,exit_code,report_ts) VALUES($CLUSTER_ID,$JOBID,\"$MSG\",$EXIT_CODE,now())"
+    echo $QUERY >> /tmp/queries
+    if [ $JOBID -ne 0 ]; then 
 	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
     else
-	echo "$MSG"
+	if [ $EXIT_CODE -eq 0 ]; then
+   	   echo "$MSG"
+	else
+   	   echo "Failed: $MSG"
+	fi
+    fi
+}
+
+function create_job
+{    
+    MSG=$1
+    STATUS=$2
+    EXIT_CODE=$3
+    QUERY="INSERT INTO cmon_job(cid, jobid, jobspec,status,status_txt,exit_code,report_ts) VALUES($CLUSTER_ID,$JOBID,'internal','$STATUS',\"$MSG\",$EXIT_CODE,now())"
+    echo $QUERY >> /tmp/queries
+    if [ $JOBID -ne 0 ]; then 
+	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
+    else
+	if [ $EXIT_CODE -eq 0 ]; then
+   	   echo "$MSG"
+	else
+   	   echo "Failed: $MSG"
+	fi
     fi
 }
 
@@ -54,11 +78,9 @@ function log_job
     STATUS=$1
     STATUS_TXT=$2
     EXIT_CODE=$3
-    QUERY="UPDATE cmon_job SET status='$STATUS', status_txt='$STATUS_TXT', exit_code=$EXIT_CODE, report_ts=NOW()  WHERE cid=$CID AND jobid=$jobid"
-    if [ $jobid -ne 0 ]; then 
+    QUERY="UPDATE cmon_job SET status='$STATUS', status_txt='$STATUS_TXT', exit_code=$EXIT_CODE, report_ts=NOW()  WHERE cid=$CLUSTER_ID AND jobid=$JOBID"
+    if [ $JOBID -ne 0 ]; then 
 	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
-    else
-	echo "$MSG"
     fi
 }
 
@@ -135,7 +157,7 @@ function remote_cmd()
 {
    desthost=$1
    xcommand=$2
-   MAX_RETRIES=1
+   MAX_RETRIES=3
    printf "%-4s: Executing '%s' " "$desthost" "$xcommand"
    retry=0
    while [ $retry -lt $MAX_RETRIES ]; 
@@ -438,7 +460,7 @@ function install_mysql_pkg
 
 function install_mysql
 {
-    args=`getopt p:i:P:t:d:j:h:f:V: $*`
+    args=`getopt p:i:P:t:d:j:h:f:V:n: $*`
     set -- $args
     for i
     do
@@ -452,7 +474,7 @@ function install_mysql
             -h)
 		XHOSTNAME="$2"; shift;
 		shift;;
-            -P)
+            -n)
 		PKG_NAME="$2"; shift;
 		shift;;
             -j)
@@ -463,17 +485,15 @@ function install_mysql
 	esac
     done    
     
-
-    if [ -z "$CMON_PASSWORD" ]; then
-      exit 1
-    fi
-
-    if [ -z "$CLUSTER_ID" ]; then
-      exit 1
-    fi
-
     if [ -z "$XHOSTNAME" ]; then
-      exit 1
+	echo 'Syntax:'
+	echo ' s9s_sw_update --install-mysql -i <clusterid> -n <package_name> -h <hostname>'
+	exit 1
+    fi
+    if [ -z "$CID" ]; then
+	echo 'Syntax:'
+	echo ' s9s_sw_update --install-mysql -i <clusterid> -n <package_name> -h <hostname>'
+	exit 1
     fi
 
     
@@ -494,17 +514,49 @@ function install_mysql
 
     mkdir -p $S9S_TMPDIR
     chown $SSH_USER:$SSH_USER $S9S_TMPDIR
-    remote_cmd_nofail $XHOSTNAME "mkdir -p $S9S_TMPDIR"
-    remote_copy $S9S_TMPDIR/my.cnf $XHOSTNAME $S9S_TMPDIR
-    remote_cmd $XHOSTNAME "mkdir -p $CONFIGDIR/"
-    remote_cmd $XHOSTNAME "mv -f $S9S_TMPDIR/my.cnf $CONFIGDIR/"
+    if [ -z "$DATADIR" ]; then
+	log_job_message "datadir is not set in my.cnf - aborting" 1 
+	exit 1
+    fi
     
     if [ "$OS" = "redhat" ]; then
+	remote_cmd_nofail $XHOSTNAME "rm -rf /var/lib/mysql/RPM_UPGRADE_MARKER"
 	remote_cmd_nofail $XHOSTNAME "yum -y remove MySQL* mysql* Percona* percona* MariaDB* mariadb* MySQL-Cluster* MySQL-cluster* mysql-cluster* galera*"	
+	remote_cmd_nofail $XHOSTNAME "/usr/sbin/setenforce 0 "
+	remote_cmd_nofail $XHOSTNAME "echo '0' > /selinux/enforce "
+        remote_cmd_nofail $XHOSTNAME "sed -i.bak 's#SELINUX=enforcing#SELINUX=permissive#g' /etc/selinux/config"
+	remote_cmd_nofail $XHOSTNAME "yum -y install nc libaio"	
     else
 	remote_cmd_nofail $XHOSTNAME "apt-get -y remove MySQL* mysql* Percona* percona* MariaDB* mariadb* MySQL-Cluster* MySQL-cluster* mysql-cluster* galera*"	
+	remote_cmd_nofail $XHOSTNAME "LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive dpkg -P galera percona-xtradb-cluster-galera-2.x percona-server-server percona-server-server-5.1 percona-server-server-5.5 percona-server-client percona-server-client-5.1 percona-server-client-5.5 percona-server-common percona-server-common-5.5 percona-xtradb-cluster-galera percona-xtradb-cluster-client-5.5 percona-xtradb-cluster-server-5.5 percona-xtrabackup mysql-server mysql-libs mysql-client-core-5.5 mysql-server-core-5.5"			
+	remote_cmd_nofail $XHOSTNAME "LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive dpkg --configure -a"
+	remote_cmd_nofail $XHOSTNAME "apt-get -y update"
+	remote_cmd_nofail $XHOSTNAME "apt-get -y install libssl0.9.8  wget rsync psmisc netcat-openbsd"
+	remote_cmd_nofail $XHOSTNAME "apt-get -y install libdbd-mysql-perl"
+    fi
+    remote_cmd_nofail $XHOSTNAME "rm -rf /etc/my.cnf"
+    remote_cmd_nofail $XHOSTNAME "rm -rf /usr/bin/wsre*"
+    remote_cmd_nofail $XHOSTNAME "rm -rf /etc/mysql/*"
+    remote_cmd_nofail $XHOSTNAME "rm -rf /var/lib/mysql"
+    remote_cmd_nofail $XHOSTNAME "rm -rf /var/run/mysqld"
+    remote_cmd_nofail $XHOSTNAME "rm -rf /etc/init.d/mysql"
+    remote_cmd_nofail $XHOSTNAME "rm -rf /etc/init.d/mysql.server"
+    
+    remote_cmd_nofail $XHOSTNAME "mkdir -p $S9S_TMPDIR"
+#    remote_copy $S9S_TMPDIR/my.cnf $XHOSTNAME $S9S_TMPDIR
+#    remote_cmd $XHOSTNAME "mkdir -p $CONFIGDIR/"
+#    remote_cmd $XHOSTNAME "mv -f $S9S_TMPDIR/my.cnf $CONFIGDIR/"
+
+    if [ -n "$DATADIR" ]; then
+	if [ "$DATADIR" != "/" ]; then
+	    remote_cmd_nofail $XHOSTNAME "rm -rf $DATADIR/*"	    
+	fi
+    else
+	echo "datadir is not set in my.cnf - aborting"
     fi
 
+    remote_cmd $XHOSTNAME "mkdir -p $DATADIR/"
+    
     QUERY="GRANT INSERT,UPDATE,DELETE, SELECT ON $CMON_DB_DB.* TO 'cmon'@'$XHOSTNAME' IDENTIFIED BY '$CMON_PASSWORD'"    
     $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log    
     if [ $? -ne 0 ]; then 
@@ -520,14 +572,18 @@ function install_mysql
 	exit 1
     fi	
 
+    remote_cmd_nofail $XHOSTNAME "killall -9 mysqld mysqld_safe mysql mysql_chk ndb_mgmd ndbmtd ndbd "
+    
+    if [ "$NETWORKLESS" = "yes" ]; then
+	VENDOR=percona_nonet
+    fi    
     case $VENDOR in
 	percona)
 	    if [ "$OS" = "redhat" ]; then
 		remote_cmd $XHOSTNAME "rpm -Uhv --force http://www.percona.com/downloads/percona-release/percona-release-0.0-1.x86_64.rpm"
-		remote_cmd $XHOSTNAME "yum -y install Percona-XtraDB-Cluster-galera"
+		remote_cmd $XHOSTNAME "yum -y install Percona-XtraDB-Cluster-server Percona-XtraDB-Cluster-client xtrabackup"
 	    else
 		remote_cmd $XHOSTNAME "apt-get update"
-		remote_cmd_nofail $XHOSTNAME "apt-get -y install  libssl0.9.8  wget rsync psmisc"
 		remote_cmd_nofail $XHOSTNAME "sed -i.bak '/repo.percona.com/d'  /etc/apt/sources.list"
 		wget --no-check-certificate --tries=5  -O ${S9S_TMPDIR}/RPM-GPG-KEY-percona http://www.percona.com/redir/downloads/RPM-GPG-KEY-percona
 		if [ $? -ne 0 ]; then
@@ -541,11 +597,11 @@ function install_mysql
 		remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"deb http://repo.percona.com/apt `lsb_release -c -s` main\" >> /etc/apt/sources.list'"
 		remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"deb-src http://repo.percona.com/apt `lsb_release -c -s` main\" >> /etc/apt/sources.list'"
 		remote_cmd $XHOSTNAME "apt-get -q -y update"
-		remote_cmd $XHOSTNAME "LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::='--force-confnew' -y -q install  percona-xtradb-cluster-galera-2.x"
-		remote_cmd $XHOSTNAME "sync"
+		remote_cmd $XHOSTNAME "LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::='--force-confnew' -y -q install percona-xtradb-cluster-galera percona-xtradb-cluster-client-5.5 percona-xtradb-cluster-server-5.5 percona-xtrabackup"
+		remote_cmd $XHOSTNAME "sync"	
 	    fi
 	    ;;
-	internal_pkg)	    
+	internal_pkg | codership | percona_nonet)	    
 	    QUERY="SELECT packageid FROM ${CMON_DB}.cmon_sw_package WHERE name='$PKG_NAME' AND cid=$CID"
 	    PID=`$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY"`	
 	    if [ -z "$PID" ]; then
@@ -598,8 +654,18 @@ function install_mysql
 		remote_cmd $XHOSTNAME "rpm -Uvh $RPMLIST"
 	    fi
 	    if [ -n "$DEBLIST" ]; then
-		remote_cmd $XHOSTNAME "/usr/bin/dpkg -i $DEBLIST"
+		remote_cmd $XHOSTNAME "LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive /usr/bin/dpkg -i $DEBLIST"
 	    fi	    
+	    ;;
+	percona_nonet)
+	    if [ "$OS" = "redhat" ]; then
+		remote_cmd $XHOSTNAME "chown 755 /etc/init.d/mysql"
+		remote_cmd $XHOSTNAME "/sbin/chkconfig --add mysql "
+	    else
+		remote_cmd $XHOSTNAME "cp /usr/share/mysql/mysql.server  /etc/init.d/mysql"
+		remote_cmd $XHOSTNAME "chown 755 /etc/init.d/mysql"
+		remote_cmd $XHOSTNAME "/usr/sbin/update-rc.d mysql defaults"
+	    fi
 	    ;;
 	mariadb)
 	    if [ "$OS" = "redhat" ]; then
@@ -635,7 +701,7 @@ EOF
 		OS2=$(awk '{print $1}' /etc/redhat-release | tr '[:upper:]' '[:lower:]')
 		remote_copy ${S9S_TMPDIR}/MariaDB.${OS2}${RHEL} $XHOSTNAME ${S9S_TMPDIR}/MariaDB.${OS2}${RHEL}.tmp
 		remote_cmd $XHOSTNAME "mv -f ${S9S_TMPDIR}/MariaDB.${OS2}${RHEL}.tmp /etc/yum.repos.d/MariaDB.repo"
-                remote_cmd $XHOSTNAME "yum -y install galera "
+                remote_cmd $XHOSTNAME "yum -y install MariaDB-Galera-server.x86_64 MariaDB-client.x86_64 galera"
 	    else
 		echo "debian/ubuntu not supported yet"
 	    fi
@@ -645,14 +711,101 @@ EOF
 	    exit 1;	           	     
     esac
 
+    
+    remote_cmd_nofail $XHOSTNAME "killall -9 mysqld mysqld_safe mysql mysql_chk ndb_mgmd ndbmtd ndbd "
+    remote_cmd_nofail $XHOSTNAME "rm -rf /etc/my.cnf"
+    remote_cmd_nofail $XHOSTNAME "rm -rf /etc/mysql/*"
+    remote_cmd_nofail $XHOSTNAME "rm -rf /var/lib/mysql"
+    remote_cmd_nofail $XHOSTNAME "rm -rf /var/run/mysqld"
+    # remote_cmd_nofail $XHOSTNAME "rm -rf /etc/init.d/mysql"
+
+    if [ -n "$DATADIR" ]; then
+	if [ "$DATADIR" != "/" ]; then
+	    remote_cmd_nofail $XHOSTNAME "rm -rf $DATADIR/*"	    
+	fi
+    else
+	echo "datadir is not set in my.cnf - aborting"
+	exit 1
+    fi
+
+    if [ -n "$CONFIGDIR" ]; then
+	remote_cmd_nofail $XHOSTNAME "rm -rf /etc/mysql/*"
+    fi
+
+
+    remote_cmd_nofail $XHOSTNAME "mkdir -p $S9S_TMPDIR"
+    remote_copy $S9S_TMPDIR/my.cnf $XHOSTNAME $S9S_TMPDIR
+    remote_cmd $XHOSTNAME "mkdir -p $CONFIGDIR/"
+    remote_cmd $XHOSTNAME "mv -f $S9S_TMPDIR/my.cnf $CONFIGDIR/"
+    
 
     case $CLUSTER_TYPE in
 	galera)
-	    remote_cmd $XHOSTNAME "/usr/bin/s9s_backup --install -i $CLUSTER_ID -b /tmp/"
+	    if [ "$VENDOR" != "percona_nonet" ]; then
+		remote_cmd $XHOSTNAME "/usr/bin/s9s_backup --install -i $CLUSTER_ID -b /tmp/"
+	    fi
 	    ;;
 	*)
 	    ;;
     esac
+
+
+    ### POST INSTALL
+
+    case $VENDOR in
+	percona)
+	    if [ "$OS" = "redhat" ]; then
+		remote_cmd $XHOSTNAME "cp /usr/share/mysql/mysql.server  /etc/init.d/mysql"
+		remote_cmd $XHOSTNAME "chown 755 /etc/init.d/mysql"
+		remote_cmd $XHOSTNAME "/sbin/chkconfig --add mysql "
+		remote_cmd $XHOSTNAME "/sbin/chkconfig mysqld off --level 2345"
+	    else
+		remote_cmd $XHOSTNAME "cp /usr/share/mysql/mysql.server  /etc/init.d/mysql"
+		remote_cmd $XHOSTNAME "chown 755 /etc/init.d/mysql"
+		remote_cmd_nofail $XHOSTNAME "/usr/sbin/update-rc.d -f mysql remove"
+		remote_cmd_nofail $XHOSTNAME "/usr/sbin/update-rc.d mysql stop 20 0 1 6 ."
+	    fi
+	    ;;
+	internal_pkg | codership)	 
+	    if [ "$OS" = "redhat" ]; then   
+		remote_cmd $XHOSTNAME "chown 755 /etc/init.d/mysql"
+		remote_cmd $XHOSTNAME "/sbin/chkconfig --add mysql "
+		remote_cmd $XHOSTNAME "/sbin/chkconfig mysqld off --level 2345"
+	    else
+		remote_cmd $XHOSTNAME "cp /usr/local/mysql/support-files/mysql.server  /etc/init.d/mysql"
+		remote_cmd $XHOSTNAME "chown 755 /etc/init.d/mysql"
+		remote_cmd_nofail $XHOSTNAME "/usr/sbin/update-rc.d -f mysql remove"
+		remote_cmd_nofail $XHOSTNAME "/usr/sbin/update-rc.d mysql stop 20 0 1 6 ."
+	    fi
+	    ;;
+	percona_nonet)
+	    if [ "$OS" = "redhat" ]; then
+		remote_cmd $XHOSTNAME "chown 755 /etc/init.d/mysql"
+		remote_cmd $XHOSTNAME "/sbin/chkconfig --add mysql "
+		remote_cmd $XHOSTNAME "/sbin/chkconfig mysqld off --level 2345"
+	    else
+		remote_cmd $XHOSTNAME "cp /usr/share/mysql/mysql.server  /etc/init.d/mysql"
+		remote_cmd $XHOSTNAME "chown 755 /etc/init.d/mysql"
+		remote_cmd_nofail $XHOSTNAME "/usr/sbin/update-rc.d -f mysql remove"
+		remote_cmd_nofail $XHOSTNAME "/usr/sbin/update-rc.d mysql stop 20 0 1 6 ."
+	    fi
+	    ;;
+	mariadb)
+	    if [ "$OS" = "redhat" ]; then
+		remote_cmd $XHOSTNAME "chown 755 /etc/init.d/mysql"
+		remote_cmd $XHOSTNAME "/sbin/chkconfig --add mysql "
+		remote_cmd $XHOSTNAME "/sbin/chkconfig mysqld off --level 2345"
+	    else
+		echo "debian/ubuntu not supported yet"
+		remote_cmd_nofail $XHOSTNAME "/usr/sbin/update-rc.d -f mysql remove"
+		remote_cmd_nofail $XHOSTNAME "/usr/sbin/update-rc.d mysql stop 20 0 1 6 ."
+	    fi
+	    ;;
+	*)
+	    echo "Not a supported vendor"
+	    exit 1;	           	     
+    esac
+
     
 }
 
@@ -720,8 +873,9 @@ function load_opts
     SSH_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_PORT' AND cid=$CLUSTER_ID" 2>/dev/null`
     SSH_OPTSX=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_OPTS' AND cid=$CLUSTER_ID" 2>/dev/null`
     SUDO=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SUDO' AND cid=$CLUSTER_ID" 2>/dev/null`
-
+    XVENDOR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='VENDOR' AND cid=$CLUSTER_ID" 2>/dev/null`
     OS_USER_HOME=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='OS_USER_HOME' AND cid=$CLUSTER_ID" 2>/dev/null`
+    NETWORKLESS=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='NETWORKLESS' AND cid=$CLUSTER_ID" 2>/dev/null`
     DATADIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon.cluster_config where variable='datadir' and cid=1 order by id asc limit 1" 2>/dev/null`
     MYCNF=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select data  from cmon.cluster_configuration where cid=1 limit 1"`
 
@@ -755,6 +909,8 @@ function load_opts
     SSH_OPTS="$SSH_OPTSX -p$SSH_PORT $SSH_OPTS"    
     SSH_OPTS2="-P$SSH_PORT $SSH_OPTS2"    
     echo $MYCNF |  sed 's#\\n#\n\r#g' > $S9S_TMPDIR/my.cnf
+    DATADIR=`cat $S9S_TMPDIR/my.cnf  |grep -i datadir |head -n 1 | awk -F= '{print $2;}'`
+
 }
 
 
