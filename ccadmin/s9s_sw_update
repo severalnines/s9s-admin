@@ -23,17 +23,12 @@ JOBID=0
 ### NO MODS BELOW UNLESS YOU KNOW WHAT YOU DO:
 
 OSUSER=$USER
-if [ "$OSUSER" != "root" ]; then
+if [ "$USER" != "root" ]; then
     echo "must be executed as 'root' or with 'sudo'"
     exit 1
 fi
 
 
-
-if ! test -f $MYSQL_BIN; then
-    echo "Could not find mysql client binary"
-    exit 1
-fi
 
 WWWROOT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='WWWROOT' AND cid=$CID"`
 
@@ -846,7 +841,7 @@ function update_mysql_pkg_yum
 function load_opts 
 {
     local CLUSTER_ID=$1
-    log_job_message "load opts $CLUSTER_ID" 1
+    log_job_message "load opts from $CLUSTER_ID" 0
     OS=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='OS' AND cid=$CLUSTER_ID" 2>/dev/null`
     CONFIGDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='CONFIGDIR' AND cid=$CLUSTER_ID" 2>/dev/null`
     MYSQL_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MYSQL_PORT' AND cid=$CLUSTER_ID" 2>/dev/null`
