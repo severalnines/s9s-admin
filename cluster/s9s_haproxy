@@ -754,16 +754,19 @@ function install_haproxy
             PHP_CURL="php-curl"
 	    BUILD="gcc make"
             CENTOS=$(remote_cmd_getreply $LB_HOSTNAME 'cat /etc/redhat-release  | grep -i centos |grep "6"')
-	    if [ -n "$CENTOS" ]; then
-		remote_cmd $LB_HOSTNAME "yum -y install centos-release-cr"
-		remote_cmd_nofail $LB_HOSTNAME "sed  -i.bak  's/enabled=1/enabled=0/g' /etc/yum.repos.d/CentOS-CR.repo"
-		PKG_MGR2="yum -y --enablerepo=cr install "
-		PKG_MGR="yum -y install "
-		PHP_CURL="php-curl"
-		OS=rhel
-	    else
-		OS=rhel
+	    if [ -z "$BUILD_FROM_SRC" ]; then
+		if [ -n "$CENTOS" ]; then
+		    remote_cmd $LB_HOSTNAME "yum -y install centos-release-cr"
+		    remote_cmd_nofail $LB_HOSTNAME "sed  -i.bak  's/enabled=1/enabled=0/g' /etc/yum.repos.d/CentOS-CR.repo"
+		    PKG_MGR2="yum -y --enablerepo=cr install "
+		    PKG_MGR="yum -y install "
+		    PHP_CURL="php-curl"
+		    OS=rhel
+		else
+		    OS=rhel
+		fi
 	    fi
+	    OS=rhel		
             ;;
 	centos6)
 	    BUILD="gcc make"
@@ -777,11 +780,11 @@ function install_haproxy
             OS=debian
             ;;
         *)
-        echo "OS $OS not supported"
-        exit
-        ;;
+            echo "OS $OS not supported"
+            exit
+            ;;
     esac
-
+    
     case $CLUSTER_TYPE in
         galera)
         ;;
