@@ -151,7 +151,7 @@ function remote_cmd()
    printf "\033[31m[failed]\033[0m\n"
    echo $x
    echo 'The following command failed:'
-   echo "ssh -q $SSH_OPTS $SSH_USER@$desthost \" $xcommand \""
+   echo "ssh -q $SSH_OPTS $SSH_USER@$desthost \" $SUDO  $xcommand \""
    cat $HOME/s9s_cmd.log
    echo 'Try running the command on the line above again, contact http://support.severalnines.com/ticket/new, attach the output from deploy.sh and the error from running the command to the Support issue.'
    exit 1

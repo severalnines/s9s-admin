@@ -157,14 +157,15 @@ function remote_cmd()
 {
    desthost=$1
    xcommand=$2
-   MAX_RETRIES=3
+   MAX_RETRIES=1
    printf "%-4s: Executing '%s' " "$desthost" "$xcommand"
    retry=0
    while [ $retry -lt $MAX_RETRIES ]; 
    do
-      x=`ssh -q $SSH_OPTS $SSH_USER@$desthost "$SUDO $xcommand " 2>&1  >> $HOME/s9s_deploy.log`
+      x=`ssh -q $SSH_OPTS $SSH_USER@$desthost "$SUDO $xcommand " > $HOME/s9s_cmd.log 2>&1`
       if [ $? -eq 0 ]; then
         printf "\033[32m[ok]\033[0m\n"
+	log_job_message "Executed on $desthost : $xcommand" 0
         return 0
       fi
       retry=`expr $retry + 1`
@@ -173,10 +174,13 @@ function remote_cmd()
       sleep 1
    done
    
+   log_job_message "Command failed: $xcommand" 1
+   log_job 'FAILED' 's9s_sw_update failed' 1
    printf "\033[31m[failed]\033[0m\n"
    echo $x
    echo 'The following command failed:'
-   echo "ssh -q $SSH_OPTS $SSH_USER@$desthost \"$SUDO $xcommand \""
+   echo "ssh -q $SSH_OPTS $SSH_USER@$desthost \" $SUDO  $xcommand \""
+   cat $HOME/s9s_cmd.log
    echo 'Try running the command on the line above again, contact http://support.severalnines.com/ticket/new, attach the output from deploy.sh and the error from running the command to the Support issue.'
    exit 1
 }
