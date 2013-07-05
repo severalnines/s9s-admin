@@ -343,6 +343,27 @@ EOF
 
 }
 
+function test_ssh()
+{
+  tmphost=$1
+  printf "Testing ssh to $tmphost: "
+  ssh $SSH_OPTS -oNumberOfPasswordPrompts=0 $SSH_USER@$tmphost "$SUDO ls -al /usr " 2>&1 > /dev/null
+  if [ $? -eq 0 ]; then
+        printf "[32m[ok][0m\n"
+        return 0
+  else
+       printf "[32m[failed][0m\n"
+       echo "ssh test failed, it was not possible to ssh without passwords or password-less sudo (for non-root users) failed"
+       echo "You must setup shared keys and or verify IDENTITY in .s9s/config"
+       echo "If you need help please read how to setup password less sudo and ssh:"
+       echo "   http://support.severalnines.com/entries/20614858-server-requirements-on-premise-amis-other-images"
+       echo "   or file a support request at:"
+       echo "   http://support.severalnines.com/tickets/new"
+       exit 1
+       return 1
+  fi
+}
+
 function remote_cmd_getreply()
 {
    desthost=$1
@@ -744,6 +765,9 @@ function install_haproxy
 
     log_job 'RUNNING' 'Job is running' 1
     load_opts $CLUSTER_ID
+    
+    test_ssh $LB_HOSTNAME
+
     rm -rf $TMPDIR/haproxy/*
     prepare
 
