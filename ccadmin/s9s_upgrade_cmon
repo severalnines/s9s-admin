@@ -543,7 +543,8 @@ upgradeCmon()
 		printf "%-70s" "Extracting $cmon_package" && spinner $! && printf "[\e[00;32m %s\e[00m ]\n" OK
 		cmon_name=`ls -1 $install_dir | grep cmon- | tail -1`
                 ln -s $install_dir/$cmon_name $install_dir_cmon
-                commandStatus "Upgrading CMON binary" "cp -rf $install_dir_cmon/bin/* /usr/bin/"
+                commandStatus "Upgrading CMON binary" "cp -rf $install_dir_cmon/bin/cmon* /usr/bin/"
+		commandStatus "Upgrading S9S binary" "cp -rf $install_dir_cmon/bin/s9s* /usr/bin/"
 		commandStatus "Upgrading CMON sbin binary" "cp -rf $install_dir_cmon/sbin/* /usr/sbin/"
                 commandStatus "Upgrading CMON init.d script" "cp $install_dir_cmon/etc/init.d/cmon /etc/init.d/"
 		[ "$install_dir_cmon" != "/usr/local/cmon" ] && sed -i "s|^SBINDIR=.*|SBINDIR=$install_dir_cmon/sbin|g" /etc/init.d/cmon
