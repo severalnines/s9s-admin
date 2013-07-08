@@ -417,6 +417,7 @@ function install_mysql_pkg
 	fi
 
 	remote_cmd $XHOSTNAME "mkdir -p $STAGING_DIR"
+	remote_cmd $XHOSTNAME "chown  -R $SSH_USER:$SSH_USER $STAGING_DIR"
 	
 	for f in $FILELIST 
 	do
@@ -506,7 +507,7 @@ function install_mysql
     log_job_message "vendor = $VENDOR" 0
 
     mkdir -p $S9S_TMPDIR
-    chown $SSH_USER:$SSH_USER $S9S_TMPDIR
+    chown -R $SSH_USER:$SSH_USER $S9S_TMPDIR
     if [ -z "$DATADIR" ]; then
 	log_job_message "datadir is not set in my.cnf - aborting" 1 
 	exit 1
@@ -536,6 +537,7 @@ function install_mysql
     remote_cmd_nofail $XHOSTNAME "rm -rf /etc/init.d/mysql.server"
     
     remote_cmd_nofail $XHOSTNAME "mkdir -p $S9S_TMPDIR"
+    remote_cmd_nofail $XHOSTNAME "chown  -R $SSH_USER:$SSH_USER $STAGING_DIR"
 #    remote_copy $S9S_TMPDIR/my.cnf $XHOSTNAME $S9S_TMPDIR
 #    remote_cmd $XHOSTNAME "mkdir -p $CONFIGDIR/"
 #    remote_cmd $XHOSTNAME "mv -f $S9S_TMPDIR/my.cnf $CONFIGDIR/"
@@ -614,6 +616,7 @@ function install_mysql
 	    
 	    
 	    remote_cmd $XHOSTNAME "mkdir -p $STAGING_DIR"
+	    remote_cmd $XHOSTNAME "chown  -R $SSH_USER:$SSH_USER $STAGING_DIR"
 	    
 	    for f in $FILELIST 
 	    do
@@ -715,6 +718,7 @@ EOF
 
 
     remote_cmd_nofail $XHOSTNAME "mkdir -p $S9S_TMPDIR"
+    remote_cmd_nofail $XHOSTNAME "chown  -R $SSH_USER:$SSH_USER $STAGING_DIR"
     remote_copy $S9S_TMPDIR/my.cnf $XHOSTNAME $S9S_TMPDIR
     remote_cmd $XHOSTNAME "mkdir -p $CONFIGDIR/"
     remote_cmd $XHOSTNAME "mv -f $S9S_TMPDIR/my.cnf $CONFIGDIR/"
