@@ -662,6 +662,7 @@ function load_opts
 
     mkdir -p $TMPDIR/haproxy
     TMPDIR=$TMPDIR/haproxy
+    chown -R $SSH_USER:$SSH_USER $TMPDIR/haproxy
 }
 
 function install_mysqlchk
