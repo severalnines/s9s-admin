@@ -790,16 +790,17 @@ function install_haproxy
     fi
 
     sleep 1
-    log_job 'RUNNING' 'Job is running' 1
+    log_job 'RUNNING' 'Job is running' 0
     load_opts $CLUSTER_ID
     
     test_ssh $LB_HOSTNAME
-    log_job 'RUNNING' 'Job is running' 1
+    sleep 2
+    log_job 'RUNNING' 'Job is running' 0
     rm -rf $TMPDIR/haproxy/*
     prepare
     chown -R $SSH_USER:$SSH_USER $TMPDIR
-    sleep 1
-    log_job 'RUNNING' 'Job is running' 1
+    sleep 2
+    log_job 'RUNNING' 'Job is running' 0
     case $OS in
         rhel|redhat)
             PKG_MGR="yum -y install "
@@ -872,7 +873,7 @@ function install_haproxy
        log_job 'FAILED' 's9s_haproxy failed' 1
        exit 1
     fi
-
+    log_job 'RUNNING' 'Job is running' 0
     echo "cp $TMPDIR/haproxy.cfg.tmpl.$OS $TMPDIR/haproxy.cfg.tmpl"
     cp $TMPDIR/haproxy.cfg.tmpl.$OS $TMPDIR/haproxy.cfg.tmpl
     sed -i "s#ADMIN_PASSWORD#$LB_ADMIN_PASSWORD#g" $TMPDIR/haproxy.cfg.tmpl
