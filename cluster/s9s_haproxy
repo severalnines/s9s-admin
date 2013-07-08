@@ -359,6 +359,8 @@ function test_ssh()
        echo "   http://support.severalnines.com/entries/20614858-server-requirements-on-premise-amis-other-images"
        echo "   or file a support request at:"
        echo "   http://support.severalnines.com/tickets/new"
+       log_job_message 'Could not ssh to remote host, you must setup shared keys to the host first.' 1
+       log_job 'FAILED' 's9s_haproxy failed' 1
        exit 1
        return 1
   fi
@@ -372,6 +374,7 @@ function remote_cmd_getreply()
    if [ $? -ne 0 ]; then
        echo "Command failed: ssh -q $SSH_OPTS $SSH_USER@$desthost \"$SUDO $xcommand\""
        log_job_message "FAILED: ${desthost}@${xcommand}" 1
+       log_job 'FAILED' 's9s_haproxy failed' 1
        exit 1
    fi
    x=`echo $x | grep -v "password"`
@@ -449,6 +452,7 @@ function remote_cmd()
       sleep 1
    done
    log_job_message "FAILED: ${desthost} : ${xcommand}" 1
+   log_job 'FAILED' 's9s_haproxy failed' 1
    printf "\033[31m[failed]\033[0m\n"
    echo $x
    echo 'The following command failed:'
@@ -471,6 +475,7 @@ function remote_cmd3()
    else
        printf "\033[31m[failed]\033[0m\n"
        log_job_message "FAILED: ${desthost}@${xcommand}" 1
+       log_job 'FAILED' 's9s_haproxy failed' 1
        exit 1
    fi
 }
@@ -605,27 +610,32 @@ function load_opts
 
 
     if [ $? -ne 0 ]; then 
-        log_job_message "load opts failed"       
+        log_job_message "load opts failed"     
+	log_job 'FAILED' 's9s_haproxy failed' 1  
         exit 1
     fi
 
     if [ -z "$MYSQL_PORT" ]; then 
         log_job_message "MYSQL_PORT not set in Cluster Settings"
+	log_job 'FAILED' 's9s_haproxy failed' 1
         exit 1
     fi
 
     if [ -z "$SSH_USER" ]; then 
         log_job_message "SSH_USER not set in Cluster Settings"
+	log_job 'FAILED' 's9s_haproxy failed' 1
         exit 1
     fi
 
     if [ -z "$TMPDIR" ]; then 
         log_job_message "STAGING_DIR not set in Cluster Settings"
+	log_job 'FAILED' 's9s_haproxy failed' 1
         exit 1
     fi
 
     if [ -z "$OS" ]; then 
         log_job_message "OS not set in Cluster Settings"
+	log_job 'FAILED' 's9s_haproxy failed' 1
         exit 1
     fi
 
@@ -810,6 +820,7 @@ function install_haproxy
             ;;
         *)
             echo "OS $OS not supported"
+	    log_job 'FAILED' 's9s_haproxy failed' 1
             exit
             ;;
     esac
