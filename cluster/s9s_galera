@@ -721,8 +721,8 @@ function start_node_donor
 	echo "Node $xHNAME is already started"
 	exit 1
     fi
-    remote_cmd3 $xHNAME "nohup nice /etc/init.d/mysql start --wsrep-cluster-address=gcomm:// > /dev/null 2>&1"    
-    ##remote_cmd3 $xHNAME "nohup nice $MYSQL_BASEDIR/bin/mysqld_safe --wsrep-cluster-address=gcomm:// > /dev/null 2>&1 &"    
+    ###remote_cmd3 $xHNAME "nohup nice /etc/init.d/mysql start --wsrep-cluster-address=gcomm:// > /dev/null 2>&1"    
+    remote_cmd3 $xHNAME "nohup nice $MYSQL_BASEDIR/bin/mysqld_safe --wsrep-cluster-address=gcomm:// > /dev/null 2>&1 &"    
     sleep 2
     STATE=$(check_node_up $xHNAME)
     if [ "$STATE" = "UP" ]; then	
@@ -1031,8 +1031,8 @@ function start_node_int
 
     STATE=$(check_node_up $xHNAME)
     if [ "$STATE" = "DOWN" ]; then
-	##remote_cmd3 $xHNAME "nohup nice $MYSQL_BASEDIR/bin/mysqld_safe --wsrep-cluster-address=gcomm://$DONOR_HOSTNAME:$xGALERA_PORT > /dev/null 2>&1 &"    
-       remote_cmd3 $xHNAME "nohup nice /etc/init.d/mysql start --wsrep-cluster-address=gcomm://$DONOR_HOSTNAME:$xGALERA_PORT > /dev/null 2>&1"
+       remote_cmd $xHNAME "nohup nice $MYSQL_BASEDIR/bin/mysqld_safe --wsrep-cluster-address=gcomm://$DONOR_HOSTNAME:$xGALERA_PORT > /dev/null 2>&1 &"    
+       ###remote_cmd3 $xHNAME "nohup nice /etc/init.d/mysql start --wsrep-cluster-address=gcomm://$DONOR_HOSTNAME:$xGALERA_PORT > /dev/null 2>&1"
        sleep 2
        STATE=$(check_node_up $xHNAME)
        if [ "$STATE" = "UP" ]; then
