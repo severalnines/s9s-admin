@@ -789,16 +789,17 @@ function install_haproxy
 	JOBID=0
     fi
 
-
+    sleep 1
     log_job 'RUNNING' 'Job is running' 1
     load_opts $CLUSTER_ID
     
     test_ssh $LB_HOSTNAME
-
+    log_job 'RUNNING' 'Job is running' 1
     rm -rf $TMPDIR/haproxy/*
     prepare
     chown -R $SSH_USER:$SSH_USER $TMPDIR
-
+    sleep 1
+    log_job 'RUNNING' 'Job is running' 1
     case $OS in
         rhel|redhat)
             PKG_MGR="yum -y install "
