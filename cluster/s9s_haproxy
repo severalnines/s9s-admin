@@ -372,10 +372,8 @@ function remote_cmd_getreply()
    xcommand=$2
    x=`ssh -q $SSH_OPTS $SSH_USER@$desthost "$SUDO $xcommand"`
    if [ $? -ne 0 ]; then
-       echo "Command failed: ssh -q $SSH_OPTS $SSH_USER@$desthost \"$SUDO $xcommand\""
-       log_job_message "FAILED: ${desthost}@${xcommand}" 1
-       log_job 'FAILED' 's9s_haproxy failed' 1
-       exit 1
+       echo ""
+       return 0
    fi
    x=`echo $x | grep -v "password"`
    echo $x
@@ -672,7 +670,7 @@ function load_opts
 
     mkdir -p $TMPDIR/haproxy
     TMPDIR=$TMPDIR/haproxy
-    chown -R $SSH_USER:$SSH_USER $TMPDIR/haproxy
+    chown -R $SSH_USER:$SSH_USER $TMPDIR
 }
 
 function install_mysqlchk
@@ -807,7 +805,7 @@ function install_haproxy
             PKG_MGR2="yum -y install "
             PHP_CURL="php-curl"
 	    BUILD="gcc make"
-            CENTOS=$(remote_cmd_getreply $LB_HOSTNAME 'cat /etc/redhat-release  | grep -i centos |grep "6"')
+            CENTOS=$(remote_cmd_getreply $LB_HOSTNAME 'test -f /etc/redhat-release && cat /etc/redhat-release  | grep -i centos |grep "6"')
 	    if [ -z "$BUILD_FROM_SRC" ]; then
 		if [ -n "$CENTOS" ]; then
 		    remote_cmd $LB_HOSTNAME "yum -y install centos-release-cr"
