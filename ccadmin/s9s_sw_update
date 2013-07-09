@@ -681,8 +681,13 @@ baseurl = http://yum.mariadb.org/5.5/rhel6-amd64
 gpgkey=https://yum.mariadb.org/RPM-GPG-KEY-MariaDB
 gpgcheck=1                 
 EOF
-		RHEL=$(cat /etc/redhat-release | egrep "[0-9]" -o | head -1)
-		OS2=$(awk '{print $1}' /etc/redhat-release | tr '[:upper:]' '[:lower:]')
+		if [ -f /etc/system-release ]; then
+		    RHEL=6
+		    OS2='rhel'		    
+		else
+		    RHEL=$(cat /etc/redhat-release | egrep "[0-9]" -o | head -1)
+		    OS2=$(awk '{print $1}' /etc/redhat-release | tr '[:upper:]' '[:lower:]')
+		fi
 		remote_copy ${S9S_TMPDIR}/MariaDB.${OS2}${RHEL} $XHOSTNAME ${S9S_TMPDIR}/MariaDB.${OS2}${RHEL}.tmp
 		remote_cmd $XHOSTNAME "mv -f ${S9S_TMPDIR}/MariaDB.${OS2}${RHEL}.tmp /etc/yum.repos.d/MariaDB.repo"
                 remote_cmd $XHOSTNAME "yum -y install MariaDB-Galera-server.x86_64 MariaDB-client.x86_64 galera"
