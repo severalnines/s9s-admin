@@ -519,6 +519,7 @@ function install_mysql
 	remote_cmd_nofail $XHOSTNAME "rm -rf /var/lib/mysql/RPM_UPGRADE_MARKER"
 	remote_cmd_nofail $XHOSTNAME "yum -y remove MySQL* mysql* Percona* percona* MariaDB* mariadb* MySQL-Cluster* MySQL-cluster* mysql-cluster* galera*"	
 	remote_cmd_nofail $XHOSTNAME "rpm -e `rpm -qa |grep -i maria`"	
+	remote_cmd_nofail $XHOSTNAME "rpm -e `rpm -qa |grep -i percona`"	
 	remote_cmd_nofail $XHOSTNAME "rpm -e `rpm -qa |grep -i mysql`"	
 	remote_cmd_nofail $XHOSTNAME "/usr/sbin/setenforce 0 "
 	remote_cmd_nofail $XHOSTNAME "echo '0' > /selinux/enforce "
