@@ -495,6 +495,8 @@ function install_mysql
     fi
     
     log_job_message "Installing .. " 0
+    sleep 5
+    log_job 'RUNNING' 's9s_sw_update is running' 0
     load_opts $CLUSTER_ID
     
     if [ -z "$VENDOR" ]; then
@@ -512,7 +514,7 @@ function install_mysql
 	log_job_message "datadir is not set in my.cnf - aborting" 1 
 	exit 1
     fi
-    
+    log_job 'RUNNING' 's9s_sw_update is running' 0
     if [ "$OS" = "redhat" ]; then
 	remote_cmd_nofail $XHOSTNAME "rm -rf /var/lib/mysql/RPM_UPGRADE_MARKER"
 	remote_cmd_nofail $XHOSTNAME "yum -y remove MySQL* mysql* Percona* percona* MariaDB* mariadb* MySQL-Cluster* MySQL-cluster* mysql-cluster* galera*"	
@@ -530,6 +532,7 @@ function install_mysql
 	remote_cmd_nofail $XHOSTNAME "apt-get -y install libssl0.9.8  wget rsync psmisc netcat-openbsd"
 	remote_cmd_nofail $XHOSTNAME "apt-get -y install libdbd-mysql-perl"
     fi
+    log_job 'RUNNING' 's9s_sw_update is running' 0
     remote_cmd_nofail $XHOSTNAME "rm -rf /etc/my.cnf"
     remote_cmd_nofail $XHOSTNAME "rm -rf /usr/bin/wsre*"
     remote_cmd_nofail $XHOSTNAME "rm -rf /etc/mysql/*"
