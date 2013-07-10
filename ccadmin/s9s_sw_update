@@ -515,7 +515,7 @@ function install_mysql
 	exit 1
     fi
     log_job 'RUNNING' 's9s_sw_update is running' 0
-    remote_cmd_nofail $XHOSTNAME "touch /etc/init.d/mysql"	
+    remote_cmd_nofail $XHOSTNAME "cp /etc/init.d/mysql.bak /etc/init.d/mysql"	
     if [ "$OS" = "redhat" ]; then
 	remote_cmd_nofail $XHOSTNAME "rm -rf /var/lib/mysql/RPM_UPGRADE_MARKER"
 	remote_cmd_nofail $XHOSTNAME "yum -y remove MySQL* mysql* Percona* percona* MariaDB* mariadb* MySQL-Cluster* MySQL-cluster* mysql-cluster* galera*"	
