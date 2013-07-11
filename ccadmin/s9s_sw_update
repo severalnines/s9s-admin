@@ -487,10 +487,12 @@ function install_mysql
     
     if [ -z "$XHOSTNAME" ]; then
 	log_job_message 'Syntax: s9s_sw_update --install-mysql -i <clusterid> -n <package_name> -h <hostname>' 1
+	log_job 'FAILED' 'job failed' 1
 	exit 1
     fi
     if [ -z "$CID" ]; then
 	log_job_message 'Syntax: s9s_sw_update --install-mysql -i <clusterid> -n <package_name> -h <hostname>' 1
+	log_job 'FAILED' 'job failed' 1
 	exit 1
     fi
     
@@ -512,6 +514,7 @@ function install_mysql
     chown -R $SSH_USER:$SSH_USER $S9S_TMPDIR
     if [ -z "$DATADIR" ]; then
 	log_job_message "datadir is not set in my.cnf - aborting" 1 
+	log_job 'FAILED' 'job failed' 1
 	exit 1
     fi
     log_job 'RUNNING' 's9s_sw_update is running' 0
@@ -563,12 +566,14 @@ function install_mysql
     $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log    
     if [ $? -ne 0 ]; then 
 	log_job_message "FAILED: $QUERY" 1
+	log_job 'FAILED' 'job failed' 1
 	exit 1
     fi	
     QUERY="GRANT SUPER ON *.* TO 'cmon'@'$XHOSTNAME' IDENTIFIED BY '$CMON_PASSWORD'"    
     $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log    
     if [ $? -ne 0 ]; then 
 	log_job_message "FAILED: $QUERY" 1
+	log_job 'FAILED' 'job failed' 1
 	exit 1
     fi	
 
@@ -605,19 +610,22 @@ function install_mysql
 	    QUERY="SELECT packageid FROM ${CMON_DB}.cmon_sw_package WHERE name='$PKG_NAME' AND cid=$CID"
 	    PID=`$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY"`	
 	    if [ -z "$PID" ]; then
-		echo "Invalid $PKG_NAME"
+		log_job_message "Invalid $PKG_NAME" 1
+		log_job 'FAILED' 'job failed' 1
 		exit 1
 	    fi
 	    QUERY="SELECT group_concat(concat(path,',', filename) SEPARATOR ' ') FROM ${CMON_DB}.cmon_uploads WHERE packageid='$PID' AND cid=$CID"
 	    FILELIST=`$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY"`
 	
 	    if [ -z "$FILELIST" ]; then
-		echo "No files in package $PKG_NAME"
+		log_job_message "No files in package $PKG_NAME" 1
+		log_job 'FAILED' 'job failed' 1
 		exit 1	    
 	    fi
 	    
 	    if [ "$FILELIST" = "NULL" ]; then
-		echo "No files in package $PKG_NAME"
+		log_job_message "No files in package $PKG_NAME" 1
+		log_job 'FAILED' 'job failed' 1
 		exit 1	    
 	    fi
 	    
@@ -628,8 +636,14 @@ function install_mysql
 	    for f in $FILELIST 
 	    do
 		path=`echo $f | awk -F, '{print $1;}'`
-		filename=`echo $f | awk -F, '{print $2;}'`	    
-		remote_copy $path/$filename $XHOSTNAME $STAGING_DIR	    	    
+		filename=`echo $f | awk -F, '{print $2;}'`	 
+		if [ -f $path/$filename ]; then
+		    remote_copy $path/$filename $XHOSTNAME $STAGING_DIR	    	    
+		else
+		    log_job_message "File did not exist: $path/$filename" 1
+		    log_job 'FAILED' 'job failed' 1
+		    exit 1	    
+		fi
 	    done
 	    RPMLIST=""
 	    for f in $FILELIST 
@@ -703,7 +717,8 @@ EOF
 	    fi
 	    ;;
 	*)
-	    echo "Not a supported vendor"
+	    log_job_message "Not a supported vendor" 1
+	    log_job 'FAILED' 'job failed' 1
 	    exit 1;	           	     
     esac
 
@@ -720,7 +735,8 @@ EOF
 	    remote_cmd_nofail $XHOSTNAME "rm -rf $DATADIR/*"	    
 	fi
     else
-	echo "datadir is not set in my.cnf - aborting"
+	log_job_message "datadir is not set in my.cnf - aborting" 1
+	log_job 'FAILED' 'job failed' 1
 	exit 1
     fi
 
@@ -799,7 +815,8 @@ EOF
 	    fi
 	    ;;
 	*)
-	    echo "Not a supported vendor"
+	    log_job_message  "Not a supported vendor" 1
+	    log_job 'FAILED' 'job failed' 1
 	    exit 1;	           	     
     esac
 
