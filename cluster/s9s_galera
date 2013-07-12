@@ -856,12 +856,31 @@ function install_garbd
 	    fi
 	    ;;
 	codership)	    
+
 	    if [ -z "$XFILENAME" ]; then
-		echo "s9s_galera --install-garbd -f <galera package missing>"
+		
+		if [ "$OS" = "redhat" ]; then
+		    QUERY="select concat(path, filename) from cmon_uploads a , cmon_sw_package b where a.packageid=b.packageid and a.cid=b.cid and a.cid=1 and b.selected=1 and (filename like 'galera%.rpm')"
+		else
+		    QUERY="select concat(path, filename) from cmon_uploads a , cmon_sw_package b where a.packageid=b.packageid and a.cid=b.cid and a.cid=1 and b.selected=1 and (filename like 'galera%.deb')"
+		fi
+		
+		XFILENAME=`$MYSQL_BIN -B -N $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$DONOR_HOSTNAME --port=$CMON_DB_PORT --database=$CMON_DB_DB  -e "$QUERY"`
+		if [ ! -f $XFILENAME ]; then
+		    log_job_message "Could not find $XFILENAME - You must have a selected deployment package, or specify with -f <package name>" 1
+		    log_job 'FAILED' 'install garbd failed' 1
+		    exit 1
+		fi
+	    fi
+	    
+	    if [ -z "$XFILENAME" ]; then
+		log_job_message "s9s_galera --install-garbd -f <galera package missing>" 1
+		log_job 'FAILED' 'install garbd failed' 1
 		exit 1
 	    fi
 	    if [ ! -f "$XFILENAME" ]; then
-		echo "s9s_galera --install-garbd -f <galera package missing>"
+		log_job_message "s9s_galera --install-garbd -f <galera package missing>" 1
+		log_job 'FAILED' 'install garbd failed' 1
 		exit 1
 	    fi	    
 	    remote_copy $XFILENAME $XHOSTNAME $TMPDIR	    
@@ -931,12 +950,14 @@ EOF
     QUERY="REPLACE INTO ext_proc (cid, hostname,bin, opts,cmd, proc_name, port, status) VALUES($CLUSTER_ID, '$XHOSTNAME','/usr/bin/garbd', '-a gcomm://${DONOR_HOSTNAME}:${GALERA_PORT} -g  -d', '/usr/bin/garbd  -a gcomm://${DONOR_HOSTNAME}:${GALERA_PORT} -g $CLUSTER_NAME -d','garbd', $GALERA_PORT , 0)"
     $MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$CMON_DB_HOST --port=$CMON_DB_PORT --database=$CMON_DB_DB -N -Bse "$QUERY"  2>&1 >${S9S_TMPDIR}/err.log    
     if [  $? -ne 0 ]; then
-	echo "Query failed."
-	echo "Garbd started but ClusterControl will not be able to manage the garbd"
+	log_job_message "Query failed: $QUERY" 1
+	log_job_message "Garbd started but ClusterControl will not be able to manage the garbd" 1
+	log_job 'FAILED' 'install garbd failed' 1
 	cat ${S9S_TMPDIR}/err.log
 	exit 1
     fi
-    echo "Successfully installed garbd on $XHOSTNAME"
+    log_job 'FINISHED' 'install garbd' 0
+    log_job_message "Successfully installed garbd on $XHOSTNAME" 0
 }
 
 
@@ -1009,7 +1030,8 @@ function remove_garbd
 	exit 1
     fi
     remote_cmd_nofail $XHOSTNAME "killall -9 garbd"   
-    echo "Successfully removed garbd from $XHOSTNAME"
+    log_job 'FINISHED' 'remove garbd' 0
+    log_job_message "Successfully removed garbd on $XHOSTNAME" 0
 }
 
 
