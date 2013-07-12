@@ -830,6 +830,7 @@ function install_garbd
     mkdir -p $S9S_TMPDIR
     chown $SSH_USER:$SSH_USER $S9S_TMPDIR
     remote_cmd_nofail $XHOSTNAME "mkdir -p $S9S_TMPDIR"
+    remote_cmd $XHOSTNAME "chown $SSH_USER:$SSH_USER $S9S_TMPDIR"
     case $VENDOR in
 	percona)
 	    if [ "$OS" = "redhat" ]; then
