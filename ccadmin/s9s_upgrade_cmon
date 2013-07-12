@@ -577,6 +577,7 @@ upgradeCmon()
                 commandStatus "Creating CMON upload directory" "mkdir -p $wwwroot/cmon/upload"
                 mkdir -p $wwwroot/cmon/upload/schema
                 commandStatus "Copying package to upload directory" "cp $repo_dir/* $wwwroot/cmon/upload/"
+		commandStatus "Restoring other packages to upload directory" "cp -rf $tmp_dir/wwwroot/cmon/upload/* $wwwroot/cmon/upload/"
 
 		cmon_agent_file=$repo_dir/$rpm_agent &&	fname=$rpm_agent
 		[ "$os" == "debian" ] && cmon_agent_file=$repo_dir/$cmon_package && fname=$cmon_package
