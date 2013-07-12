@@ -749,6 +749,7 @@ EOF
 
     remote_cmd_nofail $XHOSTNAME "mkdir -p $S9S_TMPDIR"
     remote_cmd_nofail $XHOSTNAME "chown  -R $SSH_USER:$SSH_USER $STAGING_DIR"
+    remote_cmd $XHOSTNAME "chown -R $SSH_USER:$SSH_USER $S9S_TMPDIR"
     remote_copy $S9S_TMPDIR/my.cnf $XHOSTNAME $S9S_TMPDIR
     remote_cmd $XHOSTNAME "mkdir -p $CONFIGDIR/"
     remote_cmd $XHOSTNAME "mv -f $S9S_TMPDIR/my.cnf $CONFIGDIR/"
