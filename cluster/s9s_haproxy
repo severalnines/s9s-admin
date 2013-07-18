@@ -1192,6 +1192,153 @@ function install_keepalived
 
 
 
+
+function delete_keepalived
+{
+    LB_NODE_LIST=""
+    KEEPALIVED_NAME="keepalived"
+    args=`getopt p:P:h:i:N:n:j:sf:c:x:y:v: $*`
+    set -- $args
+    for i
+    do
+        case "$i" in
+            -p)
+                CMON_PASSWORD="$2"; shift;
+                shift;;
+            -v)
+		VIRTUAL_IP="$2"; shift;
+                shift;;
+            -i)
+                CLUSTER_ID="$2"; shift;
+                shift;;
+            -x)
+                LB_HOSTNAME1="$2"; shift;
+                shift;;
+            -y)
+                LB_HOSTNAME2="$2"; shift;
+                shift;;
+            -N)
+                KEEPALIVED_NAME="$2"; shift;
+                shift;;
+            -j)
+                JOBID="$2"; shift;
+                shift;;
+            --)
+                shift; break;;
+                esac
+    done
+
+    
+    if [ -z "$CMON_PASSWORD" ]; then
+      log_job_message  "s9s_haproxy --delete-ka -p  missing" 1
+      log_job 'FAILED' 's9s_haproxy failed' 1
+      exit 1
+    fi
+
+    if [ -z "$CLUSTER_ID" ]; then
+	log_job_message "s9s_haproxy --delete-ka -i <cluster id>  missing" 1
+	log_job 'FAILED' 's9s_haproxy failed' 1
+      exit 1
+    fi
+
+    if [ -z "$LB_HOSTNAME1" ]; then
+        log_job_message "s9s_haproxy --delete-ka  -x <loadbalancer host> missing" 1
+	log_job 'FAILED' 's9s_haproxy failed' 1
+        exit 1
+    fi
+
+    if [ -z "$LB_HOSTNAME2" ]; then
+        log_job_message "s9s_haproxy --delete-ka  -y <loadbalancer host> missing" 1
+	log_job 'FAILED' 's9s_haproxy failed' 1
+        exit 1
+    fi
+
+    if [ -z "$VIRTUAL_IP" ]; then
+        log_job_message "s9s_haproxy --delete-ka  -v <virtual ip> missing" 1
+	log_job 'FAILED' 's9s_haproxy failed' 1
+        exit 1
+    fi
+    
+
+    if [ -z "$JOBID" ]; then
+	JOBID=0
+    fi
+
+
+    log_job 'RUNNING' 'Job is running' 1
+    load_opts $CLUSTER_ID
+    case $OS in
+        rhel|redhat)
+            PKG_MGR="yum -y remove "
+            PHP_CURL="php-curl"
+	    OS=rhel
+            ;;
+	centos6)
+	    OS=centos6
+	    ;;	
+        debian|ubuntu)
+            PKG_MGR="apt-get remove -y "	    
+            OS=debian
+            ;;
+        *)
+        echo "OS $OS not supported"
+        exit
+        ;;
+    esac
+
+    case $CLUSTER_TYPE in
+        galera)
+        ;;
+        mysqlcluster)
+        ;;
+        *)
+        log_job_message "Cluster $CLUSTER_TYPE not supported" 1
+	log_job 'FAILED' 's9s_haproxy failed' 1
+	exit 1
+        ;;
+    esac
+
+    for LB_HOSTNAME in $LB_HOSTNAME1 $LB_HOSTNAME2
+    do    
+	echo "Removing keepalived on $LB_HOSTNAME"
+	remote_cmd_nofail $LB_HOSTNAME "killall -q -15 keepalived"
+	remote_cmd $LB_HOSTNAME "$PKG_MGR keepalived"
+	remote_cmd $LB_HOSTNAME "rm -f /etc/keepalived/keepalived.conf"
+	
+	if [ $OS = "rhel" ] || [ $OS = "centos6"  ] ; then
+            remote_cmd $LB_HOSTNAME "/sbin/chkconfig --del keepalived"
+            remote_cmd_nofail $LB_HOSTNAME "/sbin/chkconfig keepalived off"
+	else
+            remote_cmd $LB_HOSTNAME "/usr/sbin/update-rc.d -f keepalived remove"
+	fi
+	
+	QUERY="DELETE FROM keepalived WHERE cid=${CLUSTER_ID} AND virtual_ip='$VIRTUAL_IP' AND name='$KEEPALIVED_NAME'"
+	$MYSQL_BIN --host=$CMON_DB_HOST --port=$CMON_DB_PORT --user=cmon --password=$CMON_PASSWORD --database=$CMON_DB_DB -e "$QUERY"
+	if [  $? -ne 0 ]; then
+	    log_job_message "Query failed: $QUERY"
+	    echo ""
+	    cat /tmp/err.log
+	    log_job 'FAILED' 's9s_haproxy --delete-ka failed' 1
+	    exit 1
+	fi
+
+	QUERY="DELETE FROM ext_proc WHERE cid=${cluster_id} AND hostname='$LB_HOSTNAME' AND proc_name='keepalived'"
+	$MYSQL_BIN -B -N  -ucmon -p$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST  --port=${CMON_DB_PORT} -e "$QUERY" 2>&1 >/tmp/err.log
+	if [  $? -ne 0 ]; then
+	    log_job_message "Query failed: $QUERY"
+	    echo ""
+	    cat /tmp/err.log
+	    log_job 'FAILED' 's9s_haproxy --delete-ka failed' 1
+	    exit 1
+	fi
+    done
+    log_job 'FINISHED' 's9s_haproxy --delete-ka completed' 0
+    exit 0
+
+}
+
+
+
 function delete_haproxy
 {
     LB_NODE_LIST=""
@@ -1549,6 +1696,9 @@ if [ ! -e $LOCKFILE ]; then
 	--install-keepalived)
 	    install_keepalived $*
 	    ;;
+	--delete-keepalived)
+	    delete_keepalived $*
+	    ;;
 	--add-node)	
 	    add_node $*
 	    ;;
@@ -1560,7 +1710,7 @@ if [ ! -e $LOCKFILE ]; then
 	    ;;
 	*)
 	    echo "Usage: "
-	    echo "s9s_haproxy --[install|delete|add-node|remove-node|install-keepalived]: "
+	    echo "s9s_haproxy --[install|delete|add-node|remove-node|install-keepalived|delete-keepalived]: "
 	    exit 1
 	    ;;
     esac
