@@ -698,18 +698,16 @@ EOF
 	  RS_HNAME=`echo $r | awk -F ',' '{print $1};'`
 	  RS_NODEID=`echo $r | awk -F ',' '{print $2};'`
 	  RS_PORT=`echo $r | awk -F ',' '{print $3};'`
-#	  if [ "$VENDOR" != "tokutek" ]; then
-              echo "Locking shard server $RS_HNAME"
+          echo "Locking shard server $RS_HNAME"
 	  #stop_node $RS_HNAME $RS_NODEID	 
-	      echo "LC_ALL=C  $MONGODB_BASEDIR/bin/mongo $RS_HNAME:$RS_PORT"
-              LC_ALL=C $MONGODB_BASEDIR/bin/mongo $RS_HNAME:$RS_PORT /tmp/lock.js >> $BACKUP_LOGFILE  2>&1
-              if [ $? -ne 0 ];  then
-		  echo "Failed to lock shard server" >> $BACKUP_LOGFILE
-		  log_job_message "Failed to lock shard  $RS_HNAME:$RS_PORT" 1
-		  set_backup_status 'failed' 1
-		  exit 1
-	      fi
- #         fi
+	  echo "LC_ALL=C  $MONGODB_BASEDIR/bin/mongo $RS_HNAME:$RS_PORT"
+          LC_ALL=C $MONGODB_BASEDIR/bin/mongo $RS_HNAME:$RS_PORT /tmp/lock.js >> $BACKUP_LOGFILE  2>&1
+          if [ $? -ne 0 ];  then
+	      echo "Failed to lock shard server" >> $BACKUP_LOGFILE
+	      log_job_message "Failed to lock shard  $RS_HNAME:$RS_PORT" 1
+	      set_backup_status 'failed' 1
+	      exit 1
+	  fi	  
       done
   else
       echo "No rs servers"
@@ -730,7 +728,11 @@ EOF
 	  CFG_PORT=`echo $r | awk -F ',' '{print $3};'`
 	  log_job_message "Backing up config server $CFG_HNAME:$CFG_PORT" 0
 	  mkdir -p $BACKUPDIR/config/
-	  LC_ALL=C  $MONGODB_BASEDIR/bin/mongodump --journal --db config -h $CFG_HNAME:$CFG_PORT -o $BACKUPDIR  >> $BACKUP_LOGFILE  2>&1
+	  if [ "$VENDOR" = "tokutek" ]; then
+	      LC_ALL=C  $MONGODB_BASEDIR/bin/mongodump --db config -h $CFG_HNAME:$CFG_PORT -o $BACKUPDIR  >> $BACKUP_LOGFILE  2>&1
+	  else
+	      LC_ALL=C  $MONGODB_BASEDIR/bin/mongodump --journal --db config -h $CFG_HNAME:$CFG_PORT -o $BACKUPDIR  >> $BACKUP_LOGFILE  2>&1
+	  fi
 	  break
       done
 #  else
@@ -750,7 +752,12 @@ EOF
 	  remote_cmd $RS_HNAME "mkdir -p $BACKUPDIR/$RS_NAME"
 	  mkdir -p $BACKUPDIR/$RS_NAME
 	  echo "Backing up shard server $RS_HNAME"
-	  LC_ALL=C  $MONGODB_BASEDIR/bin/mongodump --journal  -h $RS_HNAME:$RS_PORT -o $BACKUPDIR/$RS_NAME  >> $BACKUP_LOGFILE  2>&1  &
+	  if [ "$VENDOR" = "tokutek" ]; then
+	      LC_ALL=C  $MONGODB_BASEDIR/bin/mongodump  -h $RS_HNAME:$RS_PORT -o $BACKUPDIR/$RS_NAME  >> $BACKUP_LOGFILE  2>&1  &
+	  else
+	      LC_ALL=C  $MONGODB_BASEDIR/bin/mongodump --journal  -h $RS_HNAME:$RS_PORT -o $BACKUPDIR/$RS_NAME  >> $BACKUP_LOGFILE  2>&1  &
+	  fi
+	      
       done
   else
       set_backup_status 'failed' 1
@@ -775,12 +782,12 @@ EOF
   
   sleep 10
 
-#  if [ "$VENDOR" != "tokutek" ]; then
-      echo "Unlocking shard server" >> $BACKUP_LOGFILE
-      
-      if [ "$RS_VICTIM_LIST" != "NULL" ]; then
-	  for r in $RS_VICTIM_LIST
-	  do	  
+  
+  echo "Unlocking shard server" >> $BACKUP_LOGFILE
+  
+  if [ "$RS_VICTIM_LIST" != "NULL" ]; then
+      for r in $RS_VICTIM_LIST
+      do	  
 	  RS_HNAME=`echo $r | awk -F ',' '{print $1};'`
 	  RS_NODEID=`echo $r | awk -F ',' '{print $2};'`
 	  RS_PORT=`echo $r | awk -F ',' '{print $3};'`
@@ -788,18 +795,18 @@ EOF
           #stop_node $RS_HNAME $RS_NODEID
           LC_ALL=C  $MONGODB_BASEDIR/bin/mongo $RS_HNAME:$RS_PORT /tmp/unlock.js >> $BACKUP_LOGFILE  2>&1
           if [ $? -ne 0 ];  then
-              echo "Failed to unlock shard server" >> $BACKUP_LOGFILE
-              log_job_message "Failed to unlock shard  $RS_HNAME:$PORT" 1
-              set_backup_status 'failed' 1
-              exit 1
+	      echo "Failed to unlock shard server" >> $BACKUP_LOGFILE
+	      log_job_message "Failed to unlock shard  $RS_HNAME:$PORT" 1
+	      set_backup_status 'failed' 1
+	      exit 1
           fi
 	 # start_node $RS_HNAME $RS_NODEID	 
-	  done
-      else
-	  set_backup_status 'failed' 1
-	  exit 1
-      fi
- # fi
+      done
+  else
+      set_backup_status 'failed' 1
+      exit 1
+  fi
+
   echo "Starting config server" >> $BACKUP_LOGFILE
   
   ##  START CONFIG SVR
