@@ -421,7 +421,7 @@ function get_count_all
 function get_count_type
 {
     local TYPE=$1
-    local QUERY="select count(m.id) from mongodb_server m,mongodb_nodetype_map n WHERE m.cid=$CLUSTER_ID  and m.node_type=n.id and n.name='$TYPE'"
+    local QUERY="select count(m.serverid) from mongodb_server m,mongodb_nodetype_map n WHERE m.cid=$CLUSTER_ID  and m.node_type=n.id and n.name='$TYPE'"
     local CNT=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=127.0.0.1 --port=$CMON_DB_PORT -N -Bse "$QUERY"`   
     if [ $? -ne 0 ]; then
 	echo "getting server list failed"
