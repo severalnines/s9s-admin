@@ -848,7 +848,7 @@ EOF
 
   
   echo "Unlocking shard server" >> $BACKUP_LOGFILE
-  log_job_message "Unlocking shard server" 1  
+  log_job_message "Unlocking shard server" 0
   if [ "$RS_VICTIM_LIST" != "NULL" ]; then
       for r in $RS_VICTIM_LIST
       do	  
