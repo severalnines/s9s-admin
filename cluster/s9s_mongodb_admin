@@ -673,7 +673,7 @@ EOF
 
   CNT_CFG=$(get_count_type "configsvr")
   CNT_MONGOS=$(get_count_type "mongos")
-  
+  REPLICASET_BACKUP=0
   if [ $CNT_CFG -eq 0 ]; then
       REPLICASET_BACKUP=1
   fi
