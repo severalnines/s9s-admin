@@ -665,6 +665,7 @@ function backup_cluster
   if [ ! -f $MONGODB_BASEDIR/bin/mongo ]; then
       log_job_message "Could not find $MONGODB_BASEDIR/bin/mongo on the controller, please install the mongo client utilities" 1
       log_job "FAILED" "Backup Failed" 1
+      exit 1
   fi
 
   echo "starting mongodb shard backup" > $BACKUP_LOGFILE
