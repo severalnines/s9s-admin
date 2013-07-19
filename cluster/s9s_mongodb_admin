@@ -197,7 +197,7 @@ function remove_lockfile
     do
 	case "$i" in
             -h)
-		HOSTNAME="$2"; shift;
+		XHOSTNAME="$2"; shift;
 		shift;;
 	    -t)
 		TYPE="$2"; shift;
@@ -246,15 +246,15 @@ function remove_lockfile
       exit 1
   fi
   
-  echo "Are you sure you want to remove the lockfile $DBPATH/mongod.lock? Enter YES to remove it."
-  read ANSWER
+#  echo "Are you sure you want to remove the lockfile $DBPATH/mongod.lock? Enter YES to remove it."
+#  read ANSWER
 
-  if [ "$ANSWER" = "YES" ]; then
+ # if [ "$ANSWER" = "YES" ]; then
       remote_cmd $HOSTNAME "rm -f $DBPATH/mongod.lock"
-  else
-      echo "$ANSWER was pressed ($ANSWER != YES ), not removing file"
-      exit 0
-  fi    
+#  else
+ #     echo "$ANSWER was pressed ($ANSWER != YES ), not removing file"
+  #    exit 0
+  #fi    
 }
 
 
