@@ -148,27 +148,40 @@ function load_opts
     local CLUSTER_ID=$1
     echo "load opts $CLUSTER_ID"
     OS=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='OS' AND cid=$CLUSTER_ID"`
+    CONFIGDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='CONFIGDIR' AND cid=$CLUSTER_ID"`
+    MYSQL_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MYSQL_PORT' AND cid=$CLUSTER_ID"`
+    GALERA_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='GALERA_PORT' AND cid=$CLUSTER_ID"`
+    MYSQL_BASEDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MYSQL_BASEDIR' AND cid=$CLUSTER_ID"`
+    MYSQL_SCRIPTDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SCRIPTDIR' AND cid=$CLUSTER_ID"`
     SSH_IDENTITY=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_IDENTITY' AND cid=$CLUSTER_ID"`
+    SSH_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_PORT' AND cid=$CLUSTER_ID"`
     SSH_USER=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_USER' AND cid=$CLUSTER_ID"`
-    SSH_OPTS2=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_OPTS' AND cid=$CLUSTER_ID"`
+    SSH_OPTSX=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_OPTS' AND cid=$CLUSTER_ID"`
     SUDO=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SUDO' AND cid=$CLUSTER_ID"`
-    BACKUPDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='BACKUPDIR' AND cid=$CLUSTER_ID"`
+    VENDOR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='VENDOR' AND cid=$CLUSTER_ID"`
+    
     OS_USER_HOME=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='OS_USER_HOME' AND cid=$CLUSTER_ID"`
-    SSH_OPTS="$SSH_OPTS2 -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10"
+
+    SSH_OPTS="-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10"
     if [ "$SSH_IDENTITY" = "" ]; then
 	SSH_IDENTITY="-oIdentityFile=${OS_USER_HOME}/.ssh/id_rsa"
     else
-        SSH_IDENTITY="-oIdentityFile=$SSH_IDENTITY"
+	SSH_IDENTITY="-oIdentityFile=$SSH_IDENTITY"
     fi
-    SSH_OPTS="$SSH_OPTS2 -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY"
-    SSH_OPTS3="-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY"
+    SSH_OPTS="-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY"
+    SSH_OPTS2="-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY"
     if [ "$SSH_USER" != "root" ]; then
-	SSH_OPTS="$SSH_OPTS2 -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY"
-        SSH_OPTS3="-qt -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY"
+	SSH_OPTS=" -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY"
 	if [ "$SUDO" = "" ] || [ "$SUDO" = "NULL" ];  then
            SUDO=sudo
         fi
     fi
+    if [ "$SSH_PORT" = "" ] || [ "$SSH_PORT" = "NULL" ];  then
+        SSH_PORT="22"
+    fi
+    SSH_OPTS="$SSH_OPTSX -p$SSH_PORT $SSH_OPTS"    
+    SSH_OPTS2="-P$SSH_PORT $SSH_OPTS"    
+
     if [ "$BACKUPDIR" = "" ]; then
         BACKUPDIR="$HOME/backups/"
     fi
@@ -547,8 +560,8 @@ function start_cluster
       for r in $SERVER_LIST
       do
 	  HNAME=`echo $r | awk -F ',' '{print $1};'`
-	  NODEID=`echo $r | awk -F ',' '{print $2};'`
-	  start_node $HNAME $NODEID
+	  CONFIG_NODEID=`echo $r | awk -F ',' '{print $2};'`
+	  start_node $HNAME $CONFIG_NODEID
       done
   fi
   TYPE="mongos"
@@ -561,8 +574,8 @@ function start_cluster
 	  start_node $HNAME $NODEID
       done
   fi
-
-
+  set_nodestate $CONFIG_NODEID 8
+  
 }
 
 function set_backup_status
@@ -684,16 +697,18 @@ EOF
 	  RS_HNAME=`echo $r | awk -F ',' '{print $1};'`
 	  RS_NODEID=`echo $r | awk -F ',' '{print $2};'`
 	  RS_PORT=`echo $r | awk -F ',' '{print $3};'`
-          echo "Locking shard server $RS_HNAME"
+	  if [ "$VENDOR" != "tokutek" ]; then
+              echo "Locking shard server $RS_HNAME"
 	  #stop_node $RS_HNAME $RS_NODEID	 
-	    echo "LC_ALL=C /usr/bin/mongo $RS_HNAME:$RS_PORT"
+	      echo "LC_ALL=C /usr/bin/mongo $RS_HNAME:$RS_PORT"
               LC_ALL=C /usr/bin/mongo $RS_HNAME:$RS_PORT /tmp/lock.js >> $BACKUP_LOGFILE  2>&1
               if [ $? -ne 0 ];  then
-                  echo "Failed to lock shard server" >> $BACKUP_LOGFILE
-                  log_job_message "Failed to lock shard  $RS_HNAME:$RS_PORT" 1
-                  set_backup_status 'failed' 1
-                  exit 1
-              fi
+		  echo "Failed to lock shard server" >> $BACKUP_LOGFILE
+		  log_job_message "Failed to lock shard  $RS_HNAME:$RS_PORT" 1
+		  set_backup_status 'failed' 1
+		  exit 1
+	      fi
+          fi
       done
   else
       echo "No rs servers"
@@ -759,28 +774,30 @@ EOF
   
   sleep 10
 
-  echo "Unlocking shard server" >> $BACKUP_LOGFILE
-  
-  if [ "$RS_VICTIM_LIST" != "NULL" ]; then
-      for r in $RS_VICTIM_LIST
-      do	  
+  if [ "$VENDOR" != "tokutek" ]; then
+      echo "Unlocking shard server" >> $BACKUP_LOGFILE
+      
+      if [ "$RS_VICTIM_LIST" != "NULL" ]; then
+	  for r in $RS_VICTIM_LIST
+	  do	  
 	  RS_HNAME=`echo $r | awk -F ',' '{print $1};'`
 	  RS_NODEID=`echo $r | awk -F ',' '{print $2};'`
 	  RS_PORT=`echo $r | awk -F ',' '{print $3};'`
-    	   echo "Unlocking shard server $RS_HNAME"
+    	  echo "Unlocking shard server $RS_HNAME"
           #stop_node $RS_HNAME $RS_NODEID
-              LC_ALL=C /usr/bin/mongo $RS_HNAME:$RS_PORT /tmp/unlock.js >> $BACKUP_LOGFILE  2>&1
-              if [ $? -ne 0 ];  then
-                  echo "Failed to unlock shard server" >> $BACKUP_LOGFILE
-                  log_job_message "Failed to unlock shard  $RS_HNAME:$PORT" 1
-                  set_backup_status 'failed' 1
-                  exit 1
-              fi
+          LC_ALL=C /usr/bin/mongo $RS_HNAME:$RS_PORT /tmp/unlock.js >> $BACKUP_LOGFILE  2>&1
+          if [ $? -ne 0 ];  then
+              echo "Failed to unlock shard server" >> $BACKUP_LOGFILE
+              log_job_message "Failed to unlock shard  $RS_HNAME:$PORT" 1
+              set_backup_status 'failed' 1
+              exit 1
+          fi
 	 # start_node $RS_HNAME $RS_NODEID	 
-      done
-  else
-      set_backup_status 'failed' 1
-      exit 1
+	  done
+      else
+	  set_backup_status 'failed' 1
+	  exit 1
+      fi
   fi
   echo "Starting config server" >> $BACKUP_LOGFILE
   
