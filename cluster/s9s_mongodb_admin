@@ -643,8 +643,16 @@ function backup_cluster
   fi
   echo $BACKUPDIR
   
+  if [ ! -f $MONGODB_BASEDIR/bin/mongo ]; then
+      log_job_message "Could not find $MONGODB_BASEDIR/bin/mongo on the controller, please install the mongo client utilities" 1
+      log_job "FAILED" "Backup Failed" 1
+  fi
 
   echo "starting mongodb shard backup" > $BACKUP_LOGFILE
+  sleep 5
+  log_job_message "Startinng backup" 0
+  log_job "RUNNING" "Backup started" 0
+  
 
   cat << 'EOF' > /tmp/startBalancer.js
    db=db.getMongo().getDB("config"); 
@@ -667,7 +675,8 @@ EOF
   CNT_UP=$(get_count_up)
   CNT_ALL=$(get_count_all)
   if [ $CNT_UP -ne $CNT_ALL ]; then
-      echo "All servers are not started - refusing to start backup."
+      log_job_message "All servers are not started - refusing to start backup." 1
+      log_job "FAILED" "Backup Failed" 1
       exit 1
   fi
 
@@ -676,6 +685,10 @@ EOF
   REPLICASET_BACKUP=0
   if [ $CNT_CFG -eq 0 ]; then
       REPLICASET_BACKUP=1
+      log_job_message "Backing up a replica set" 0
+  else
+      REPLICASET_BACKUP=0
+      log_job_message "Backing up a shard cluster" 0
   fi
 
   BACKUP_ID=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select ifnull(max(backupid)+1,1) from mongodb_backup"`
@@ -688,7 +701,8 @@ EOF
   
   $MYSQL_BIN --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"
   if [ $? -ne 0 ]; then
-      echo "Failed to create backup record"
+      log_job_message  "Failed to create backup record" 1
+      log_job "FAILED" "Backup Failed" 1
       exit 1
   fi
 
@@ -696,6 +710,7 @@ EOF
   ##  STOP CONFIG SVR
   if [ $REPLICASET_BACKUP -eq 0 ]; then      
       TYPE="configsvr"
+      log_job_message "Stopping config server" 0
       SERVER_LIST=$(get_servers $TYPE)
       if [ "$SERVER_LIST" != "NULL" ]; then
 	  for r in $SERVER_LIST
@@ -707,7 +722,7 @@ EOF
 	  done
       else
 	  set_backup_status 'failed' 1
-	  log_job_message "No cfg servers found" 0
+	  log_job_message "No cfg servers found" 1
 	  log_job "FAILED" "Backup Failed" 1
 	  exit 1
       fi
@@ -722,7 +737,8 @@ EOF
 	  RS_NODEID=`echo $r | awk -F ',' '{print $2};'`
 	  RS_PORT=`echo $r | awk -F ',' '{print $3};'`
           echo "Locking shard server $RS_HNAME"
-	  #stop_node $RS_HNAME $RS_NODEID	 
+	  #stop_node $RS_HNAME $RS_NODEID	
+	  log_job_message "Locking shard server $RS_NAME" 0 
 	  echo "LC_ALL=C  $MONGODB_BASEDIR/bin/mongo $RS_HNAME:$RS_PORT"
           LC_ALL=C $MONGODB_BASEDIR/bin/mongo $RS_HNAME:$RS_PORT /tmp/lock.js >> $BACKUP_LOGFILE  2>&1
           if [ $? -ne 0 ];  then
@@ -733,7 +749,7 @@ EOF
 	  fi	  
       done
   else
-      echo "No rs servers"
+      log_job_message "No rs servers" 1
       set_backup_status 'failed' 1
       log_job "FAILED" "Backup Failed" 1
       exit 1
@@ -778,7 +794,7 @@ EOF
 	  RS_DB_PATH=`echo $r | awk -F ',' '{print $5};'`
 	  remote_cmd $RS_HNAME "mkdir -p $BACKUPDIR/$RS_NAME"
 	  mkdir -p $BACKUPDIR/$RS_NAME
-	  echo "Backing up shard server $RS_HNAME"
+	  log_job_message "Backing up shard server $RS_HNAME" 1
 	  if [ "$VENDOR" = "tokutek" ]; then
 	      LC_ALL=C  $MONGODB_BASEDIR/bin/mongodump  -h $RS_HNAME:$RS_PORT -o $BACKUPDIR/$RS_NAME  >> $BACKUP_LOGFILE  2>&1  &
 	  else
@@ -812,14 +828,14 @@ EOF
 
   
   echo "Unlocking shard server" >> $BACKUP_LOGFILE
-  
+  log_job_message "Unlocking shard server" 1  
   if [ "$RS_VICTIM_LIST" != "NULL" ]; then
       for r in $RS_VICTIM_LIST
       do	  
 	  RS_HNAME=`echo $r | awk -F ',' '{print $1};'`
 	  RS_NODEID=`echo $r | awk -F ',' '{print $2};'`
 	  RS_PORT=`echo $r | awk -F ',' '{print $3};'`
-    	  echo "Unlocking shard server $RS_HNAME"
+    	  log_job_message "Unlocking shard server $RS_HNAME" 0
           #stop_node $RS_HNAME $RS_NODEID
           LC_ALL=C  $MONGODB_BASEDIR/bin/mongo $RS_HNAME:$RS_PORT /tmp/unlock.js >> $BACKUP_LOGFILE  2>&1
           if [ $? -ne 0 ];  then
