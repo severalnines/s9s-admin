@@ -230,19 +230,19 @@ function remove_lockfile
       exit 1
   fi
 
-  if [ -z "$HOSTNAME" ]; then
+  if [ -z "$XHOSTNAME" ]; then
       echo "s9s_mongodb_admin --remove-lockfile -i <cluster id> -h <hostname> -t <configsvr|shardsvr>"
       exit 1
   fi
   
   load_opts $CLUSTER_ID
 
-  QUERY="select dbpath from mongodb_server m, hosts h,mongodb_nodetype_map n  where h.id=m.serverid and m.cid=1 and (h.hostname='$HOSTNAME' or h.ip='$HOSTNAME') and m.node_type=n.id and n.name='$TYPE'"
+  QUERY="select dbpath from mongodb_server m, hosts h,mongodb_nodetype_map n  where h.id=m.serverid and m.cid=1 and (h.hostname='$XHOSTNAME' or h.ip='$XHOSTNAME') and m.node_type=n.id and n.name='$TYPE'"
   
   DBPATH=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"`
 
   if [ -z "$DBPATH" ]; then
-      echo "No 'dbpath' found for $HOSTNAME, type $TYPE"
+      echo "No 'dbpath' found for $XHOSTNAME, type $TYPE"
       exit 1
   fi
   
@@ -250,7 +250,7 @@ function remove_lockfile
 #  read ANSWER
 
  # if [ "$ANSWER" = "YES" ]; then
-      remote_cmd $HOSTNAME "rm -f $DBPATH/mongod.lock"
+      remote_cmd $XHOSTNAME "rm -f $DBPATH/mongod.lock"
 #  else
  #     echo "$ANSWER was pressed ($ANSWER != YES ), not removing file"
   #    exit 0
