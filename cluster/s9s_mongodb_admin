@@ -152,6 +152,7 @@ function load_opts
     MYSQL_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MYSQL_PORT' AND cid=$CLUSTER_ID"`
     GALERA_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='GALERA_PORT' AND cid=$CLUSTER_ID"`
     MYSQL_BASEDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MYSQL_BASEDIR' AND cid=$CLUSTER_ID"`
+    MONGODB_BASEDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MONGODB_BASEDIR' AND cid=$CLUSTER_ID"`
     MYSQL_SCRIPTDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SCRIPTDIR' AND cid=$CLUSTER_ID"`
     SSH_IDENTITY=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_IDENTITY' AND cid=$CLUSTER_ID"`
     SSH_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_PORT' AND cid=$CLUSTER_ID"`
@@ -697,18 +698,18 @@ EOF
 	  RS_HNAME=`echo $r | awk -F ',' '{print $1};'`
 	  RS_NODEID=`echo $r | awk -F ',' '{print $2};'`
 	  RS_PORT=`echo $r | awk -F ',' '{print $3};'`
-	  if [ "$VENDOR" != "tokutek" ]; then
+#	  if [ "$VENDOR" != "tokutek" ]; then
               echo "Locking shard server $RS_HNAME"
 	  #stop_node $RS_HNAME $RS_NODEID	 
-	      echo "LC_ALL=C /usr/bin/mongo $RS_HNAME:$RS_PORT"
-              LC_ALL=C /usr/bin/mongo $RS_HNAME:$RS_PORT /tmp/lock.js >> $BACKUP_LOGFILE  2>&1
+	      echo "LC_ALL=C  $MONGODB_BASEDIR/bin/mongo $RS_HNAME:$RS_PORT"
+              LC_ALL=C $MONGODB_BASEDIR/bin/mongo $RS_HNAME:$RS_PORT /tmp/lock.js >> $BACKUP_LOGFILE  2>&1
               if [ $? -ne 0 ];  then
 		  echo "Failed to lock shard server" >> $BACKUP_LOGFILE
 		  log_job_message "Failed to lock shard  $RS_HNAME:$RS_PORT" 1
 		  set_backup_status 'failed' 1
 		  exit 1
 	      fi
-          fi
+ #         fi
       done
   else
       echo "No rs servers"
@@ -729,7 +730,7 @@ EOF
 	  CFG_PORT=`echo $r | awk -F ',' '{print $3};'`
 	  log_job_message "Backing up config server $CFG_HNAME:$CFG_PORT" 0
 	  mkdir -p $BACKUPDIR/config/
-	  LC_ALL=C mongodump --journal --db config -h $CFG_HNAME:$CFG_PORT -o $BACKUPDIR  >> $BACKUP_LOGFILE  2>&1
+	  LC_ALL=C  $MONGODB_BASEDIR/bin/mongodump --journal --db config -h $CFG_HNAME:$CFG_PORT -o $BACKUPDIR  >> $BACKUP_LOGFILE  2>&1
 	  break
       done
 #  else
@@ -749,7 +750,7 @@ EOF
 	  remote_cmd $RS_HNAME "mkdir -p $BACKUPDIR/$RS_NAME"
 	  mkdir -p $BACKUPDIR/$RS_NAME
 	  echo "Backing up shard server $RS_HNAME"
-	  LC_ALL=C mongodump --journal  -h $RS_HNAME:$RS_PORT -o $BACKUPDIR/$RS_NAME  >> $BACKUP_LOGFILE  2>&1  &
+	  LC_ALL=C  $MONGODB_BASEDIR/bin/mongodump --journal  -h $RS_HNAME:$RS_PORT -o $BACKUPDIR/$RS_NAME  >> $BACKUP_LOGFILE  2>&1  &
       done
   else
       set_backup_status 'failed' 1
@@ -774,7 +775,7 @@ EOF
   
   sleep 10
 
-  if [ "$VENDOR" != "tokutek" ]; then
+#  if [ "$VENDOR" != "tokutek" ]; then
       echo "Unlocking shard server" >> $BACKUP_LOGFILE
       
       if [ "$RS_VICTIM_LIST" != "NULL" ]; then
@@ -785,7 +786,7 @@ EOF
 	  RS_PORT=`echo $r | awk -F ',' '{print $3};'`
     	  echo "Unlocking shard server $RS_HNAME"
           #stop_node $RS_HNAME $RS_NODEID
-          LC_ALL=C /usr/bin/mongo $RS_HNAME:$RS_PORT /tmp/unlock.js >> $BACKUP_LOGFILE  2>&1
+          LC_ALL=C  $MONGODB_BASEDIR/bin/mongo $RS_HNAME:$RS_PORT /tmp/unlock.js >> $BACKUP_LOGFILE  2>&1
           if [ $? -ne 0 ];  then
               echo "Failed to unlock shard server" >> $BACKUP_LOGFILE
               log_job_message "Failed to unlock shard  $RS_HNAME:$PORT" 1
@@ -798,7 +799,7 @@ EOF
 	  set_backup_status 'failed' 1
 	  exit 1
       fi
-  fi
+ # fi
   echo "Starting config server" >> $BACKUP_LOGFILE
   
   ##  START CONFIG SVR
@@ -821,7 +822,7 @@ EOF
 	  PORT=`echo $r | awk -F ',' '{print $3};'`
 	  while [ $retry -lt $START_BALANCER_TIMEOUT ]; 
 	  do
-	      LC_ALL=C /usr/bin/mongo $HNAME:$PORT /tmp/startBalancer.js >> $BACKUP_LOGFILE  2>&1 
+	      LC_ALL=C  $MONGODB_BASEDIR/bin/mongo $HNAME:$PORT /tmp/startBalancer.js >> $BACKUP_LOGFILE  2>&1 
 	      if [ $? -ne 0 ];  then
 		  echo "Failed to start balancer" >> $BACKUP_LOGFILE
 		  log_job_message "Failed to start balancer (1) - could not connect to mongos  $HNAME:$PORT" 1
@@ -829,7 +830,7 @@ EOF
 		  exit 1
 	      fi
 	      sleep 1
-	      BAL_STATE=`/usr/bin/mongo $HNAME:$PORT --quiet --eval "sh.getBalancerState()"`
+	      BAL_STATE=`$MONGODB_BASEDIR/bin/mongo $HNAME:$PORT --quiet --eval "sh.getBalancerState()"`
 	      if [ $? -ne 0 ];  then
 		  echo "Failed to start balancer" >> $BACKUP_LOGFILE
 		  log_job_message "Failed to start balancer (2) - could not connect to mongos  $HNAME:$PORT" 1
