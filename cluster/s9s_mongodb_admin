@@ -814,7 +814,7 @@ EOF
 	  RS_DB_PATH=`echo $r | awk -F ',' '{print $5};'`
 	  remote_cmd $RS_HNAME "mkdir -p $BACKUPDIR/$RS_NAME"
 	  mkdir -p $BACKUPDIR/$RS_NAME
-	  log_job_message "Backing up shard server $RS_HNAME" 1
+	  log_job_message "Backing up shard server $RS_HNAME" 0
 	  if [ "$VENDOR" = "tokutek" ]; then
 	      LC_ALL=C  $MONGODB_BASEDIR/bin/mongodump  -h $RS_HNAME:$RS_PORT -o $BACKUPDIR/$RS_NAME  >> $BACKUP_LOGFILE  2>&1  &
 	  else
