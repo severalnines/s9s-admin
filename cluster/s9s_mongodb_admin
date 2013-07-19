@@ -46,19 +46,34 @@ function log_job_message
 {    
     MSG=$1
     EXIT_CODE=$2
-    if [ -z "$EXIT_CODE" ]; then
-	EXIT_CODE=1
-    fi
     QUERY="INSERT INTO cmon_job_message(cid, jobid,message,exit_code,report_ts) VALUES($CLUSTER_ID,$JOBID,\"$MSG\",$EXIT_CODE,now())"
+    echo $QUERY >> /tmp/queries
     if [ $JOBID -ne 0 ]; then 
 	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
     else
-	if [ $EXIT_CODE -ne 0 ]; then
-	    echo "Failed: $MSG"
+	if [ $EXIT_CODE -eq 0 ]; then
+   	   echo "$MSG"
 	else
-	    echo "$MSG"
+   	   echo "Failed: $MSG"
 	fi
-	
+    fi
+}
+
+function create_job
+{    
+    MSG=$1
+    STATUS=$2
+    EXIT_CODE=$3
+    QUERY="INSERT INTO cmon_job(cid, jobid, jobspec,status,status_txt,exit_code,report_ts) VALUES($CLUSTER_ID,$JOBID,'internal','$STATUS',\"$MSG\",$EXIT_CODE,now())"
+    echo $QUERY >> /tmp/queries
+    if [ $JOBID -ne 0 ]; then 
+	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
+    else
+	if [ $EXIT_CODE -eq 0 ]; then
+   	   echo "$MSG"
+	else
+   	   echo "Failed: $MSG"
+	fi
     fi
 }
 
@@ -72,7 +87,6 @@ function log_job
 	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
     fi
 }
-
 
 function remote_copy()
 {
@@ -124,24 +138,29 @@ function remote_cmd()
    retry=0
    while [ $retry -lt $MAX_RETRIES ]; 
    do
-      x=`ssh $SSH_OPTS $SSH_USER@$desthost "$SUDO $xcommand " 2>&1  >> $HOME/s9s_deploy.log`
+      x=`ssh -q $SSH_OPTS $SSH_USER@$desthost "$SUDO $xcommand " > $HOME/s9s_cmd.log 2>&1`
       if [ $? -eq 0 ]; then
         printf "\033[32m[ok]\033[0m\n"
+	log_job_message "Executed on $desthost : $xcommand" 0
         return 0
       fi
       retry=`expr $retry + 1`
       printf "\033[31m[failed: retrying ${retry}/${MAX_RETRIES}]\033[0m\n"
-      ssh $SSH_OPTS $SSH_USER@$desthost " sync " 2>&1  >> $HOME/s9s_deploy.log
+      ssh -q $SSH_OPTS $SSH_USER@$desthost " sync " 2>&1  >> $HOME/s9s_deploy.log
       sleep 1
    done
    
+   log_job_message "Command failed: $xcommand" 1
+   log_job 'FAILED' 's9s_clone --create failed' 1
    printf "\033[31m[failed]\033[0m\n"
    echo $x
    echo 'The following command failed:'
-   echo "ssh $SSH_OPTS $SSH_USER@$desthost \" $xcommand \""
+   echo "ssh -q $SSH_OPTS $SSH_USER@$desthost \" $SUDO  $xcommand \""
+   cat $HOME/s9s_cmd.log
    echo 'Try running the command on the line above again, contact http://support.severalnines.com/ticket/new, attach the output from deploy.sh and the error from running the command to the Support issue.'
    exit 1
 }
+
 
 function load_opts 
 {
