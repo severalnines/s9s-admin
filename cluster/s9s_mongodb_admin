@@ -862,12 +862,14 @@ EOF
 	      echo "Failed to unlock shard server" >> $BACKUP_LOGFILE
 	      log_job_message "Failed to unlock shard  $RS_HNAME:$PORT" 1
 	      set_backup_status 'failed' 1
+	      log_job "FAILED" "Backup Failed" 1
 	      exit 1
           fi
 	 # start_node $RS_HNAME $RS_NODEID	 
       done
   else
       set_backup_status 'failed' 1
+      log_job "FAILED" "Backup Failed" 1
       exit 1
   fi
 
@@ -902,6 +904,7 @@ EOF
 		      echo "Failed to start balancer" >> $BACKUP_LOGFILE
 		      log_job_message "Failed to start balancer (1) - could not connect to mongos  $HNAME:$PORT" 1
 		      set_backup_status 'failed' 1
+		      log_job "FAILED" "Backup Failed" 1
 		      exit 1
 		  fi
 		  sleep 1
@@ -910,6 +913,7 @@ EOF
 		      echo "Failed to start balancer" >> $BACKUP_LOGFILE
 		      log_job_message "Failed to start balancer (2) - could not connect to mongos  $HNAME:$PORT" 1
 		      set_backup_status 'failed' 1
+		      log_job "FAILED" "Backup Failed" 1
 		      exit 1
 		  fi
 		  if [ "$BAL_STATE" = "true" ]; then
@@ -926,6 +930,7 @@ EOF
 	  if [ $OK -eq 0 ]; then
 	      log_job_message "Failed to start balancer" 1
 	      set_backup_status 'failed' 1
+	      log_job "FAILED" "Backup Failed" 1
 	      exit 1
 	  fi
       fi
@@ -933,8 +938,10 @@ EOF
 
   if [ $FAIL -eq 0 ]; then
      set_backup_status 'completed' 0
+     log_job "FINISHED" "Backup Successful" 0
   else
      set_backup_status 'failed' 1 
+     log_job "FAILED" "Backup Failed" 1
   fi
   exit 0
 }
