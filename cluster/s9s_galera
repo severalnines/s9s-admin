@@ -890,6 +890,7 @@ function install_garbd
 	    if [ "$OS" = "redhat" ]; then
 		remote_cmd $XHOSTNAME "rpm -Uhv --force $TMPDIR/$XFILE"
 	    else
+		remote_cmd $XHOSTNAME "dpkg -P galera"
 		remote_cmd $XHOSTNAME "dpkg -i $TMPDIR/$XFILE"
 	    fi
 	    ;;
