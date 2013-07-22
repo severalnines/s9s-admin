@@ -891,6 +891,7 @@ function install_garbd
 		remote_cmd $XHOSTNAME "rpm -Uhv --force $TMPDIR/$XFILE"
 	    else
 		remote_cmd $XHOSTNAME "dpkg -P galera"
+		remote_cmd $XHOSTNAME "apt-get install -y libssl0.9.8"
 		remote_cmd $XHOSTNAME "dpkg -i $TMPDIR/$XFILE"
 	    fi
 	    ;;
