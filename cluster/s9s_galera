@@ -867,7 +867,7 @@ function install_garbd
 		    QUERY="select concat(path, filename) from cmon_uploads a , cmon_sw_package b where a.packageid=b.packageid and a.cid=b.cid and a.cid=1 and b.selected=1 and (filename like 'galera%.deb')"
 		fi
 		
-		XFILENAME=`$MYSQL_BIN -B -N $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$DONOR_HOSTNAME --port=$CMON_DB_PORT --database=$CMON_DB_DB  -e "$QUERY"`
+		XFILENAME=`$MYSQL_BIN -B -N $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$CMON_DB_HOST --port=$CMON_DB_PORT --database=$CMON_DB_DB  -e "$QUERY"`
 		if [ ! -f $XFILENAME ]; then
 		    log_job_message "Could not find $XFILENAME - You must have a selected deployment package, or specify with -f <package name>" 1
 		    log_job 'FAILED' 'install garbd failed' 1
