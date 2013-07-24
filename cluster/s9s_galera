@@ -579,7 +579,7 @@ EOF
 	do
 	    HNAME=$S
 	    remote_cmd_nofail $HNAME "mkdir -p $S9S_TMPDIR"
-	    remote_cmd $HNAME "chown $SSH_USER:$SSH_USER $S9S_TMPDIR"
+	    remote_cmd $HNAME "chown -R $SSH_USER:$SSH_USER $S9S_TMPDIR"
 	    remote_copy $S9S_TMPDIR/wsrep_notify_cc ${HNAME} ${S9S_TMPDIR}/wsrep_notify_cc
 	    remote_cmd $HNAME "mv -f ${S9S_TMPDIR}/wsrep_notify_cc /usr/bin"
 	    remote_cmd $HNAME "chown mysql:mysql /usr/bin//wsrep_notify_cc"
@@ -848,6 +848,7 @@ function install_garbd
 		    log_job 'FAILED' 'install garbd failed' 1
 		    exit 1
 		fi
+		remote_cmd $XHOSTNAME "chown -R $SSH_USER:$SSH_USER $S9S_TMPDIR"
 		remote_copy $S9S_TMPDIR/RPM-GPG-KEY-percona ${XHOSTNAME} ${S9S_TMPDIR}/RPM-GPG-KEY-percona
 		remote_cmd $XHOSTNAME "gpg --import ${S9S_TMPDIR}/RPM-GPG-KEY-percona"
 		remote_cmd $XHOSTNAME "/bin/sh -c 'gpg -a --export CD2EFD2A | apt-key add -'"
@@ -886,6 +887,7 @@ function install_garbd
 		log_job 'FAILED' 'install garbd failed' 1
 		exit 1
 	    fi	    
+	    remote_cmd $XHOSTNAME "chown -R $SSH_USER:$SSH_USER $S9S_TMPDIR"
 	    remote_copy $XFILENAME $XHOSTNAME $TMPDIR	    
 	    XFILE=`basename $XFILENAME`
 	    if [ "$OS" = "redhat" ]; then
@@ -933,6 +935,7 @@ EOF
 		    RHEL=$(cat /etc/redhat-release | egrep "[0-9]" -o | head -1)
 		    OS2=$(awk '{print $1}' /etc/redhat-release | tr '[:upper:]' '[:lower:]')
 		fi
+		remote_cmd $XHOSTNAME "chown -R $SSH_USER:$SSH_USER $S9S_TMPDIR"
 		remote_copy ${S9S_TMPDIR}/MariaDB.${OS2}${RHEL} $XHOSTNAME ${S9S_TMPDIR}/MariaDB.${OS2}${RHEL}.tmp
 		remote_cmd $XHOSTNAME "mv -f ${S9S_TMPDIR}/MariaDB.${OS2}${RHEL}.tmp /etc/yum.repos.d/MariaDB.repo"
                 remote_cmd $XHOSTNAME "yum -y install galera"
