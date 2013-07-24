@@ -612,10 +612,14 @@ function install_mysql
 	    fi
 	    ;;
 	internal_pkg | codership | percona_nonet)	    
+	    if [ -z "$PKG_NAME" ]; then
+		## default to MYSQL_INITIAL_DEPLOY if not set
+		PKG_NAME="MYSQL_INITIAL_DEPLOY"
+	    fi
 	    QUERY="SELECT packageid FROM ${CMON_DB}.cmon_sw_package WHERE name='$PKG_NAME' AND cid=$CID"
 	    PID=`$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY"`	
 	    if [ -z "$PID" ]; then
-		log_job_message "Invalid $PKG_NAME" 1
+		log_job_message "Invalid package name $PKG_NAME" 1
 		log_job 'FAILED' 'job failed' 1
 		exit 1
 	    fi
