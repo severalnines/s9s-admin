@@ -15,6 +15,7 @@ CMON_USER=cmon
 CMON_PASSWORD=$mysql_password
 CMON_DB_HOST=$mysql_hostname
 CMON_DB_DB=cmon
+CMON_DB_PORT=$mysql_port
 MYSQL_BIN=$mysql_basedir/bin//mysql
 MYSQL_BIN2=$mysql_bindir/mysql
 BACKUP_LOGFILE=/tmp/s9s_backup.log

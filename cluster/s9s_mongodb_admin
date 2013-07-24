@@ -12,6 +12,7 @@ else
 fi
 CID=$cluster_id
 CMON_USER=cmon
+CMON_DB_PORT=$mysql_port
 CMON_PASSWORD=$mysql_password
 CMON_DB_HOST=$mysql_hostname
 CMON_DB_DB=cmon

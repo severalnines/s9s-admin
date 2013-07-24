@@ -11,6 +11,7 @@ else
     source /etc/cmon.cnf
 fi
 CID=$cluster_id
+CMON_DB_PORT=$mysql_port
 CLUSTER_TYPE=$type
 CMON_USER=cmon
 CMON_PASSWORD=$mysql_password
