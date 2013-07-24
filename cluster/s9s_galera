@@ -692,6 +692,7 @@ function stop_node_int
 		break
 	    fi
 	    remote_cmd_nofail $xHNAME "killall -${KILLSIG} mysqld mysqld_safe"
+	    remote_cmd_nofail $xHNAME "killall -9 nc xtrabackup innobackupex"
 	done
     fi
 

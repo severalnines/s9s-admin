@@ -538,9 +538,10 @@ function install_mysql
 	remote_cmd_nofail $XHOSTNAME "LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive dpkg --configure -a"
 	remote_cmd_nofail $XHOSTNAME "apt-get -y update"
 	remote_cmd_nofail $XHOSTNAME "apt-get -y install libssl0.9.8  wget rsync psmisc netcat-openbsd"
+	remote_cmd $XHOSTNAME "apt-get -y install libaio1"
         remote_cmd_nofail $XHOSTNAME "rm -rf $CONFIGDIR/my.cnf"
         remote_cmd_nofail $XHOSTNAME "rm -rf /etc/mysql/*"
-	remote_cmd_nofail $XHOSTNAME "apt-get -y install libdbd-mysql-perl"
+	remote_cmd $XHOSTNAME "apt-get -y install libdbd-mysql-perl"
     fi
     log_job 'RUNNING' 's9s_sw_update is running' 0
     remote_cmd_nofail $XHOSTNAME "rm -rf /etc/my.cnf"
