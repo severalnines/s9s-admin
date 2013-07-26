@@ -462,6 +462,18 @@ function get_rs_victims
     echo "$RS_SERVER_LIST"
 }
 
+function get_rs_primary
+{
+    XRS_NAME=$1
+    local QUERY="select group_concat(concat(hostname, ',', nodeid, ',', port, ',', rs_name, ',', dbpath) SEPARATOR ' ') from (select m.hostname, m.nodeid, m.port, m.rs_name, m.dbpath from mongodb_server m,mongodb_nodetype_map n WHERE m.cid=$CLUSTER_ID and m.node_type=n.id and n.name='shardsvr' and m.status=1 and rs_name='$XRS_NAME') t"  
+    local RS_SERVER_LIST=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=127.0.0.1 --port=$CMON_DB_PORT -N -Bse "$QUERY"`   
+    if [ $? -ne 0 ]; then
+	echo "getting server list failed"
+	exit 1
+    fi
+    echo "$RS_SERVER_LIST"
+}
+
 function get_configsvr
 {
     local QUERY="select group_concat(concat(m.hostname, ',', m.nodeid,',', m.port) SEPARATOR ' ') from mongodb_server m,mongodb_nodetype_map n WHERE m.cid=$CLUSTER_ID  and m.node_type=n.id and n.name='configsvr' and m.status=1 LIMIT 1"  
@@ -947,18 +959,124 @@ EOF
   exit 0
 }
 
-case $1 in
+## ADD ARBITER
+function add_arbiter
+{        
+    args=`getopt i:N:P:j:d: $*`
+    set -- $args
+    for i
+    do
+	case "$i" in
+	    -i)
+		CLUSTER_ID="$2"; shift;
+		shift;;
+	    -j)
+		JOBID="$2"; shift;
+		shift;;
+	    -N)
+		RS_NAME="$2"; shift;
+		shift;;
+	    -h)
+		ARBIT_HOSTNAME="$2"; shift;
+		shift;;
+	    -P)
+		ARBIT_PORT="$2"; shift;
+		shift;;
+	    -d)
+		ARBIT_DATADIR="$2"; shift;
+		shift;;
+            --)
+		shift; break;;
+	esac
+    done    
+
+
+  if [ -z "$CLUSTER_ID" ]; then
+      echo "s9s_mongodb_admin --add-arbiter -i <cluster id>"
+      exit 1
+  fi
+
+  if [ -z "$RS_NAME" ]; then
+      echo "s9s_mongodb_admin --add-arbiter -N <replica set name to add the arbiter to>"
+      exit 1
+  fi
+
+  if [ -z "$ARBIT_HOSTNAME" ]; then
+      echo "s9s_mongodb_admin --add-arbiter -h <arbiter hostname>"
+      exit 1
+  fi
+
+  if [ -z "$ARBIT_PORT" ]; then
+      echo "s9s_mongodb_admin --add-arbiter -P <arbiter port>"
+      exit 1
+  fi
+
+  if [ -z "$ARBIT_DATADIR" ]; then
+      echo "s9s_mongodb_admin --add-arbiter -d <arbiter datadir>"
+      exit 1
+  fi
+
+
+  echo $CLUSTER_ID
+  load_opts $CLUSTER_ID
+
+  ARBIT_DATADIR=$ARBIT_DATADIR/$ARBIT_PORT
+  
+  cat << 'EOF' > /tmp/addArbiter.js
+   rs.addArb("ARBIT_HOSTNAME:ARBIT_PORT")
+EOF
+
+
+  TYPE="shardsvr"
+  RS_VICTIM_LIST=$(get_rs_primary $RS_NAME)
+  if [ "$RS_VICTIM_LIST" != "NULL" ]; then
+      for r in $RS_VICTIM_LIST
+      do	 
+	  RS_HNAME=`echo $r | awk -F ',' '{print $1};'`
+	  RS_NODEID=`echo $r | awk -F ',' '{print $2};'`
+	  RS_PORT=`echo $r | awk -F ',' '{print $3};'`
+      done
+  else
+      log_job_message "No PRIMARY found in replica set $RS_NAME" 1      
+      exit 1
+  fi
+
+  remote_cmd $ARBIT_HOSTNAME "mkdir -p $ARBIT_DATADIR"
+  remote_cmd $ARBIT_HOSTNAME "$MONGODB_BASEDIR/bin/mongod --port $ARBIT_PORT --dbpath $ARBIT_DATADIR --replSet $RS_NAME"
+  
+  sed  -i.bak "s#ARBIT_HOSTNAME#$ARBIT_HOSTNAME#g" > /tmp/addArbiter.js
+  sed  -i.bak "s#ARBIT_PORT#$ARBIT_PORT#g" > /tmp/addArbiter.js
+  
+  $MONGODB_BASEDIR/bin/mongo $RS_HNAME:$RS_PORT /tmp/addArbiter.js
+
+  if [ $? -eq 0 ]; then
+      echo "created arbiter on $ARBIT_HOSTNAME"
+  else
+      echo "failed to create arbiter on $ARBIT_HOSTNAME"
+      exit 1
+  fi      
+  
+  exit 0
+}
+
+
+ARG=$1
+shift
+case $ARG in
     --remove-lockfile)
-	remove_lockfile $2 $3 $4 $5 $6 $7
+	remove_lockfile $*
     ;;
     --stop-cluster)
-	stop_cluster $2 $3 $4 $5 $6 $7
+	stop_cluster $*
     ;;
     --start-cluster)
-	start_cluster $2 $3 $4 $5 $6 $7
+	start_cluster $*
     ;;
     --backup)
-	backup_cluster $2 $3 $4 $5 $6 $7
+	backup_cluster $*
+    ;;
+    --add-arbiter)
+	add_arbiter $*
     ;;
     *)
     echo "Usage:"
