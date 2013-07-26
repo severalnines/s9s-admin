@@ -599,6 +599,18 @@ function check_node_up
     echo "DOWN"
 }
 
+function check_node_up2
+{
+    local xHNAME=$1
+    local xCOND=$2
+    PID=$(remote_cmd_getreply $xHNAME "pgrep \"${xCOND}\"")
+    if [ -n "$PID" ]; then
+	echo "UP"
+	return
+    fi
+    echo "DOWN"
+}
+
 function get_cluster_state
 {
     local QUERY="SELECT status FROM cluster_state WHERE id=$CLUSTER_ID"
@@ -1284,7 +1296,7 @@ EOF
       log_job_message "No PRIMARY found in replica set $RS_NAME" 1      
       exit 1
   fi
-
+  
   remote_cmd $ARBIT_HOSTNAME "mkdir -p $ARBIT_DATADIR"
   remote_cmd $ARBIT_HOSTNAME "mkdir -p /var/log/mongodb"
   remote_cmd3 $ARBIT_HOSTNAME "$MONGODB_BASEDIR/bin/mongod --port $ARBIT_PORT --dbpath $ARBIT_DATADIR --replSet $RS_NAME  --logpath /var/log/mongodb/arbiter_${ARBIT_PORT}.log --smallfiles"
@@ -1292,15 +1304,46 @@ EOF
   sed  -i.bak "s#ARBIT_HOSTNAME#${ARBIT_HOSTNAME}#g"  /tmp/addArbiter.js
   sed  -i.bak "s#ARBIT_PORT#${ARBIT_PORT}#g"  /tmp/addArbiter.js
   
-
+    max_retries=60
+    retry=0
+    while [ $retry -lt $max_retries  ];
+    do
+	STATE=$(check_node_up2 $xHNAME "$MONGODB_BASEDIR/bin/mongod --port $ARBIT_PORT --dbpath $ARBIT_DATADIR --replSet $RS_NAME  --logpath /var/log/mongodb/arbiter_${ARBIT_PORT}.log --smallfiles")
+	if [ "$STATE" = "UP" ]; then
+	    break
+	fi
+	retry=`expr $retry + 1`
+	sleep 1
+    done
+  
   ${MONGODB_BASEDIR}/bin/mongo ${RS_HNAME}:${RS_PORT} /tmp/addArbiter.js
+  
 
-  if [ $? -eq 0 ]; then
-      echo "created arbiter on $ARBIT_HOSTNAME"
-  else
+  if [ $? -ne 0 ]; then
       echo "failed to create arbiter on $ARBIT_HOSTNAME"
       exit 1
   fi      
+    
+  max_retries=60
+  retry=0
+  while [ $retry -lt $max_retries  ];
+  do
+      mystate=$(mongo  $ARBIT_HOSTNAME:$ARBIT_PORT --quiet  --eval "printjson(rs.status().myState)")
+      if [ $mystate -eq 7 ]; then
+	  break
+      fi      
+      sleep 1
+      retry=`expr $retry + 1`
+  done
+
+
+  if [ $mystate -ne 7 ]; then
+      echo "failed to create arbiter on $ARBIT_HOSTNAME"
+      exit 1
+  fi
+  
+
+
   
   if [ -z "$mongoarbiter_server_addresses" ]; then 
       echo "mongoarbiter_server_addresses=${ARBIT_HOSTNAME}:${ARBIT_PORT}" >> /etc/cmon.cnf
