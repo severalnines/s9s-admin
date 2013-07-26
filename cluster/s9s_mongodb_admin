@@ -1453,7 +1453,7 @@ EOF
       exit 1
   fi
     
-  TYPE="(shardsvr,arbiter)"
+  TYPE="shardsvr,arbiter"
   SERVER_LIST=$(get_servers $TYPE)
   if [ "$SERVER_LIST" != "NULL" ]; then
       for r in $SERVER_LIST
