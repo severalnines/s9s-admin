@@ -1546,6 +1546,8 @@ EOF
 
   if [ -n "$SERVERS" ] && [ "$SERVERS" != "NULL" ]; then
       sed -i.bak "s#mongoarbiter_server_addresses=.*#mongoarbiter_server_addresses=${SERVERS}#g" /etc/cmon.cnf
+  else
+      sed -i.bak '/mongoarbiter_server_addresses/d'  /etc/cmon.cnf
   fi
   exit 0
 }
