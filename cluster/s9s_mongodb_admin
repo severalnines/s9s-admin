@@ -1322,49 +1322,55 @@ EOF
   
     max_retries=60
     retry=0
+    echo "Waiting for arbitrator to become reachable"
     while [ $retry -lt $max_retries  ];
     do
-	STATE=$(check_node_up2 $ARBIT_HOSTNAME "$CMDLINE")
-	if [ "$STATE" = "UP" ]; then
+	mystate=`${MONGODB_BASEDIR}/bin/mongo  $ARBIT_HOSTNAME:$ARBIT_PORT --quiet  --eval "printjson(db.serverStatus().ok)" 2>&1`
+	echo $mystate
+	if [ "$mystate" = "1" ]; then
 	    break
-	fi
-	retry=`expr $retry + 1`
+	fi   
+	echo -n "."
 	sleep 1
+	retry=`expr $retry + 1`
     done
-  
-  ${MONGODB_BASEDIR}/bin/mongo ${RS_HNAME}:${RS_PORT} /tmp/addArbiter.js
-  
-
-  if [ $? -ne 0 ]; then
-      echo "failed to create arbiter on $ARBIT_HOSTNAME"
-      exit 1
-  fi      
+    echo ""
+    echo "Creating arbiter"
+    ${MONGODB_BASEDIR}/bin/mongo ${RS_HNAME}:${RS_PORT} --quiet  /tmp/addArbiter.js
     
-  max_retries=60
-  retry=0
-  while [ $retry -lt $max_retries  ];
-  do
-      mystate=$(mongo  $ARBIT_HOSTNAME:$ARBIT_PORT --quiet  --eval "printjson(rs.status().myState)")
-      if [ "$mystate" = "7" ]; then
-	  break
-      fi      
-      sleep 1
-      retry=`expr $retry + 1`
-  done
-  
 
-  if [ $mystate -ne 7 ]; then
-      echo "failed to create arbiter on $ARBIT_HOSTNAME"
-      exit 1
-  fi
-  
+    if [ $? -ne 0 ]; then
+	echo "failed to create arbiter on $ARBIT_HOSTNAME"
+	exit 1
+    fi      
+    
+    max_retries=60
+    retry=0
+    echo "Waiting for arbiter to join"
+    while [ $retry -lt $max_retries  ];
+    do
+	mystate=`${MONGODB_BASEDIR}/bin//mongo  $ARBIT_HOSTNAME:$ARBIT_PORT --quiet  --eval "printjson(rs.status().myState)" 2>&1`
+	if [ "$mystate" = "7" ]; then
+	    break
+	fi   
+	echo -n "."
+	sleep 1
+	retry=`expr $retry + 1`
+    done
+    echo ""
+    
+    if [ $mystate -ne 7 ]; then
+	echo "failed to create arbiter on $ARBIT_HOSTNAME"
+	exit 1
+    fi
+    
+    
 
-
-  
-  if [ -z "$mongoarbiter_server_addresses" ]; then 
-      echo "mongoarbiter_server_addresses=${ARBIT_HOSTNAME}:${ARBIT_PORT}" >> /etc/cmon.cnf
-  else
-      x=`cat /etc/cmon.cnf |grep ${ARBIT_HOSTNAME}:${ARBIT_PORT}`
+    
+    if [ -z "$mongoarbiter_server_addresses" ]; then 
+	echo "mongoarbiter_server_addresses=${ARBIT_HOSTNAME}:${ARBIT_PORT}" >> /etc/cmon.cnf
+    else
+	x=`cat /etc/cmon.cnf |grep ${ARBIT_HOSTNAME}:${ARBIT_PORT}`
       if [ -z "$x" ]; then
 	  sed  -i.bak "s#mongoarbiter_server_addresses=.*#mongoarbiter_server_addresses=${mongoarbiter_server_addresses},$ARBIT_HOSTNAME:$ARBIT_PORT#g"  /etc/cmon.cnf
       fi
