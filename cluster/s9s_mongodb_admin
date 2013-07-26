@@ -1308,7 +1308,7 @@ EOF
     retry=0
     while [ $retry -lt $max_retries  ];
     do
-	STATE=$(check_node_up2 $xHNAME "$MONGODB_BASEDIR/bin/mongod --port $ARBIT_PORT --dbpath $ARBIT_DATADIR --replSet $RS_NAME  --logpath /var/log/mongodb/arbiter_${ARBIT_PORT}.log --smallfiles")
+	STATE=$(check_node_up2 $ARBIT_HOSTNAME "$MONGODB_BASEDIR/bin/mongod --port $ARBIT_PORT --dbpath $ARBIT_DATADIR --replSet $RS_NAME  --logpath /var/log/mongodb/arbiter_${ARBIT_PORT}.log --smallfiles")
 	if [ "$STATE" = "UP" ]; then
 	    break
 	fi
