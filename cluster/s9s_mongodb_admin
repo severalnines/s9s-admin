@@ -1494,7 +1494,23 @@ EOF
       exit 1
   fi
   
-  
+  QUERY="SELECT GROUP_CONCAT(concat(hostname,':',port) ORDER BY serverid) FROM mongodb_server WHERE cid=$CLUSTER_ID and node_type=0"
+  SERVERS=`$MYSQL_BIN $MYSQL_OPTS -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"`    
+  if [ $? -ne 0 ]; then
+      log_job_message "Failed to get mongodb_server list" 1
+      exit 1
+  fi
+  sed -i.bak "s#mongodb_server_addresses=.*#mongodb_server_addresses=${SERVERS}#g" /etc/cmon.cnf
+  QUERY="SELECT GROUP_CONCAT(concat(hostname,':',port) ORDER BY serverid) FROM mongodb_server WHERE cid=$CLUSTER_ID and node_type=3"
+  SERVERS=`$MYSQL_BIN $MYSQL_OPTS -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"`    
+  if [ $? -ne 0 ]; then
+      log_job_message "Failed to get mongodb_server list" 1
+      exit 1
+  fi
+
+  if [ -n "$SERVERS"] -a [ "$SERVERS" != "NULL" ]; then
+      sed -i.bak "s#mongoarbiter_server_addresses=.*#mongoarbiter_server_addresses=${SERVERS}#g" /etc/cmon.cnf
+  fi
   exit 0
 }
 
