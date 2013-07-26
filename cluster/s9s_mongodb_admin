@@ -603,7 +603,7 @@ function check_node_up2
 {
     local xHNAME=$1
     local xCOND=$2
-    PID=$(remote_cmd_getreply $xHNAME "pgrep \"${xCOND}\"")
+    PID=$(remote_cmd_getreply $xHNAME "pgrep -f \"${xCOND}\"")
     if [ -n "$PID" ]; then
 	echo "UP"
 	return
