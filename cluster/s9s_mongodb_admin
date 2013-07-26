@@ -1490,13 +1490,25 @@ EOF
  fi
 
  sleep 10
+  TYPE="shardsvr"
+  RS_VICTIM_LIST=$(get_rs_primary $RS_NAME)
+  if [ "$RS_VICTIM_LIST" != "NULL" ]; then
+      for r in $RS_VICTIM_LIST
+      do	 
+	  RS_HNAME=`echo $r | awk -F ',' '{print $1};'`
+	  RS_NODEID=`echo $r | awk -F ',' '{print $2};'`
+	  RS_PORT=`echo $r | awk -F ',' '{print $3};'`
+      done
+  else
+      log_job_message "No PRIMARY found in replica set $RS_NAME" 1      
+      exit 1
+  fi
 
   sed  -i.bak "s#ARBIT_HOSTNAME#${XHOSTNAME}#g"  /tmp/remove.js
   sed  -i.bak "s#ARBIT_PORT#${XPORT}#g"  /tmp/remove.js
   
   ${MONGODB_BASEDIR}/bin/mongo ${RS_HNAME}:${RS_PORT} /tmp/remove.js
   
-
   if [ $? -ne 0 ]; then
       echo "failed to remove $XHOSTNAME:$XPORT"
       exit 1
