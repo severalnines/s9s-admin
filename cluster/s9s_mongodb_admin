@@ -1065,6 +1065,7 @@ EOF
   sed  -i.bak "s#ARBIT_HOSTNAME#${ARBIT_HOSTNAME}#g"  /tmp/addArbiter.js
   sed  -i.bak "s#ARBIT_PORT#${ARBIT_PORT}#g"  /tmp/addArbiter.js
   
+
   ${MONGODB_BASEDIR}/bin/mongo ${RS_HNAME}:${RS_PORT} /tmp/addArbiter.js
 
   if [ $? -eq 0 ]; then
@@ -1073,6 +1074,12 @@ EOF
       echo "failed to create arbiter on $ARBIT_HOSTNAME"
       exit 1
   fi      
+  
+  if [ -z "$mongoarbiter_server_addresses" ]; then 
+      echo "mongoarbiter_server_addresses=${ARBIT_HOSTNAME}:${ARBIT_PORT}" >> /etc/cmon.cnf
+  else
+      sed  -i.bak "s#mongoarbiter_server_addresses=.*#mongoarbiter_server_addresses=${mongoarbiter_server_addresses},$ARBIT_HOSTNAME:$ARBIT_PORT#g"  /etc/cmon.cnf
+  fi
   
   exit 0
 }
