@@ -1474,7 +1474,7 @@ EOF
 	  HNAME=`echo $r | awk -F ',' '{print $1};'`
 	  NODEID=`echo $r | awk -F ',' '{print $2};'`
 	  PORT=`echo $r | awk -F ',' '{print $3};'`
-	  if [ "$HNAME" = "$XHNAME" ] -a [ "$PORT" = "$XPORT" ]; then
+	  if [ "$HNAME" = "$XHOSTNAME" ] -a [ "$PORT" = "$XPORT" ]; then
 	      stop_node $HNAME $NODEID
 	      FOUND=1
 	  fi
@@ -1485,7 +1485,7 @@ EOF
 
 
  if [ $FOUND -eq 0 ]; then
-     echo "$XHANME:$XPORT was not found in mongodb_server, cannot remove."
+     echo "$XHOSTNAME:$XPORT was not found in mongodb_server, cannot remove."
      exit 1
  fi
 
