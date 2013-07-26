@@ -1290,7 +1290,7 @@ function add_arbiter
   ARBIT_DATADIR=$ARBIT_DATADIR/$ARBIT_PORT
   
   cat << 'EOF' > /tmp/addArbiter.js
-   rs.addArb("ARBIT_HOSTNAME:ARBIT_PORT")
+   rs.add('ARBIT_HOSTNAME:ARBIT_PORT',true)
 
 EOF
 
@@ -1598,7 +1598,7 @@ case $ARG in
 	;;
     *)
     echo "Usage:"
-    echo "bash ./s9s_mongodb_admin <--remove-lockfile|start-cluster|stop-cluster|--backup|--remove-member> <options follows>"
+    echo "bash ./s9s_mongodb_admin <--remove-lockfile|start-cluster|stop-cluster|--backup|--remove-member|--add-arbiter> <options follows>"
     exit 1
     ;;
 esac
