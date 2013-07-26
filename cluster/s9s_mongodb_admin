@@ -1522,7 +1522,7 @@ EOF
   fi      
 
 
-  QUERY="DELETE FROM mongodb_server WHERE cid=$CLUSTER_ID AND hostname=$XHOSTNAME AND port=$XPORT AND nodeid=$NODEID"
+  QUERY="DELETE FROM mongodb_server WHERE cid=$CLUSTER_ID AND hostname='$XHOSTNAME' AND port=$XPORT AND nodeid=$NODEID"
   $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
   if [ $? -ne 0 ]; then
       echo "Failed: $QUERY"
