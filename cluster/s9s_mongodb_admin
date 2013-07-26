@@ -962,7 +962,7 @@ EOF
 ## ADD ARBITER
 function add_arbiter
 {        
-    args=`getopt i:N:P:j:d: $*`
+    args=`getopt i:N:P:j:d:h: $*`
     set -- $args
     for i
     do
