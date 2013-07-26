@@ -1467,17 +1467,27 @@ EOF
     
   TYPE="'shardsvr','arbiter'"
   SERVER_LIST=$(get_servers2 $TYPE)
+  FOUND=0
   if [ "$SERVER_LIST" != "NULL" ]; then
       for r in $SERVER_LIST
       do
 	  HNAME=`echo $r | awk -F ',' '{print $1};'`
 	  NODEID=`echo $r | awk -F ',' '{print $2};'`
 	  PORT=`echo $r | awk -F ',' '{print $3};'`
-	  if [ "$HNAME" = "$XNAME" ] -a [ "$PORT" = "$XPORT" ]; then
+	  if [ "$HNAME" = "$XHNAME" ] -a [ "$PORT" = "$XPORT" ]; then
 	      stop_node $HNAME $NODEID
+	      FOUND=1
 	  fi
       done
+  else
+      exit 1
   fi  
+
+
+ if [ $FOUND -eq 0 ]; then
+     echo "$XHANME:$XPORT was not found in mongodb_server, cannot remove."
+     exit 1
+ fi
 
 
   sed  -i.bak "s#ARBIT_HOSTNAME#${XHOSTNAME}#g"  /tmp/remove.js
