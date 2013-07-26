@@ -1353,7 +1353,12 @@ EOF
 
   QUERY="INSERT INTO mongodb_server(cid, serverid , hostname, port, report_ts, status, arbiter, hidden, votes, slave_delay, username, password, node_type, rs_name, dbpath,logpath, shardsvr)"
   QUERY="$QUERY VALUES ($CLUSTER_ID, $SERVERID, '$ARBIT_HOSTNAME', $ARBIT_PORT, now(), 6, 1, 0,1,0,'','',3,'$RS_NAME', '$ARBIT_DATADIR', '/var/log/mongodb/arbiter_${ARBIT_PORT}.log', 0)"
-  
+  $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
+  if [ $? -ne 0 ]; then
+      echo "Failed: $QUERY"
+      echo "You must restart cmon contoller: service cmon restart"
+      exit 1
+  fi
   
   
   exit 0
