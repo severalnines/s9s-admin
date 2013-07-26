@@ -1329,13 +1329,13 @@ EOF
   while [ $retry -lt $max_retries  ];
   do
       mystate=$(mongo  $ARBIT_HOSTNAME:$ARBIT_PORT --quiet  --eval "printjson(rs.status().myState)")
-      if [ $mystate -eq 7 ]; then
+      if [ "$mystate" = "7" ]; then
 	  break
       fi      
       sleep 1
       retry=`expr $retry + 1`
   done
-
+  
 
   if [ $mystate -ne 7 ]; then
       echo "failed to create arbiter on $ARBIT_HOSTNAME"
