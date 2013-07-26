@@ -197,6 +197,20 @@ function load_opts
     SUDO=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SUDO' AND cid=$CLUSTER_ID"`
     VENDOR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='VENDOR' AND cid=$CLUSTER_ID"`
     
+    MONGODB_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MONGODB_PORT' AND cid=$CLUSTER_ID"`
+    MONGOS_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MONGOS_PORT' AND cid=$CLUSTER_ID"`
+    MONGODB_DATADIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select dbpath from  mongodb_server where node_type=0 and cid=$CLUSTER_ID limit 1"`
+    MONGODB_PIDFILEDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select pidfilepath from  mongodb_server where node_type=0 and cid=$CLUSTER_ID limit 1"`
+    MONGODB_PIDFILEDIR=`dirname $MONGODB_PIDFILEDIR`
+    MONGODB_LOGDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select logpath from  mongodb_server where node_type=0 and cid=$CLUSTER_ID limit 1"`
+    MONGODB_LOGDIR=`dirname $MONGODB_LOGDIR`
+    MONGODB_BASEDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MONGODB_BASEDIR' AND cid=$CLUSTER_ID"`
+    MONGODB_CONFIGDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MONGODB_CONFIGDIR' AND cid=$CLUSTER_ID"`
+    MONGODB_CNF=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select data  from cmon.cluster_configuration_templates where cid=1 limit 1"`
+    
+    mkdir -p $S9S_TMPDIR
+    echo $MONGODB_CNF |  sed 's#\\n#\n\r#g' > $S9S_TMPDIR/mongodb.conf
+
     OS_USER_HOME=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='OS_USER_HOME' AND cid=$CLUSTER_ID"`
 
     SSH_OPTS="-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10"
@@ -291,6 +305,213 @@ function remove_lockfile
  #     echo "$ANSWER was pressed ($ANSWER != YES ), not removing file"
   #    exit 0
   #fi    
+}
+
+
+function add_shard
+{
+    RESTART_CMON=1
+    args=`getopt i:a:b:c:N:m:j: $*`
+    set -- $args
+    for i
+    do
+	case "$i" in
+	        -i)
+CLUSTER_ID="$2"; shift;
+shift;;
+    -j)
+    JOBID="$2"; shift;
+    shift;;
+        -a)
+	SERVER1="$2"; shift;
+	shift;;
+	    -b)
+SERVER2="$2"; shift;
+shift;;
+    -c)
+    SERVER3="$2"; shift;
+    shift;;
+        -N)
+	RSNAME="$2"; shift;
+	shift;;
+            --)
+	    shift; break;;
+	    esac
+    done    
+
+  if [ -z "$CLUSTER_ID" ]; then
+      echo "s9s_mongodb_admin --add-shard -i <cluster id>"
+      exit 1
+  fi
+
+  if [ -z "$SERVER1" ]; then
+      echo "s9s_mongodb_admin --add-shard -a <replica set member address>"
+      exit 1
+  fi
+  if [ -z "$SERVER2" ]; then
+      echo "s9s_mongodb_admin --add-shard -b <replica set member address>"
+      exit 1
+  fi
+  if [ -z "$SERVER3" ]; then
+      echo "s9s_mongodb_admin --add-shard -c <replica set member address>"
+      exit 1
+  fi
+  if [ -z "$RSNAME" ]; then
+      echo "s9s_mongodb_admin --add-shard -N <replica set name>"
+      exit 1
+  fi
+  MONGOS_SERVER=$(get_mongos_server)
+  if [ -z "$MONGOS_SERVER" ]; then
+      echo "s9s_mongodb_admin --add-shard : no running mongos server found"
+      exit 1
+  fi
+
+  RS_MEMBERS="$SERVER1 $SERVER2 $SERVER3"
+
+  echo $CLUSTER_ID
+  load_opts $CLUSTER_ID
+  
+  for R in $RS_MEMBERS $MONGOS_SERVER
+  do
+      remote_cmd $R "echo 'ssh test'"
+      remote_cmd_nofail $R "mkdir -p $S9S_TMPDIR"
+  done
+  
+  for R in $RS_MEMBERS
+  do
+      install_mongodb $R
+  done
+  
+  start_rs
+  create_rs
+  create_shard
+
+  
+
+  QUERY="SELECT GROUP_CONCAT(concat(hostname,':',port) ORDER BY serverid) FROM mongodb_server WHERE cid=$CLUSTER_ID and node_type=0"
+  SERVERS=`$MYSQL_BIN $MYSQL_OPTS -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"`    
+  if [ $? -ne 0 ]; then
+      log_job_message "Failed to get mysql_server list" 1
+      exit 1
+  fi
+  SERVERS="$SERVERS,$SERVER1:$MONGODB_PORT,$SERVER2:$MONGODB_PORT,$SERVER3:$MONGODB_PORT"
+  sed -i.bak "s#mongodb_server_addresses=.*#mongodb_server_addresses=${SERVERS}#g" /etc/cmon.cnf
+  
+  if [ $RESTART_CMON -eq 1 ]; then
+      service cmon restart
+  fi
+
+
+}
+
+function install_mongodb
+{
+    local xhost=$1
+    case $OS in
+	redhat)
+	    echo "not supported yet"
+	    exit 1
+            remote_copy 10gen.repo $xhost $S9S_TMPDIR/ 
+	    remote_cmd $xhost "mv $S9S_TMPDIR/10gen.repo /etc/yum.repos.d/"
+	    remote_cmd_nofail $xhost "killall -9 cmon mongod"
+	    remote_cmd_nofail $xhost "rm -rf /etc/mongodb.conf"
+	    remote_cmd_nofail $xhost "rm -rf /var/lib/mongodb"
+	    remote_cmd_nofail $xhost "rm -rf /var/log/mongodb"
+	    remote_cmd_nofail $xhost "rm -rf /etc/init.d/mongod"
+	    remote_cmd_nofail $xhost "yum -y remove mongo-10gen mongo-10gen-server"
+	    remote_cmd_nofail $xhost "yum -y install mongo-10gen mongo-10gen-server"
+	    remote_cmd $xhost  "chown 755 /etc/init.d/mongod"
+	    remote_cmd $xhost  "/sbin/chkconfig --add mongod"
+	    ;;
+	debian)
+	    remote_cmd $xhost "apt-key adv --keyserver keyserver.ubuntu.com --recv 7F0CEB10"
+	    remote_cmd_nofail $xhost "killall -9 cmon mongod"
+	    remote_cmd_nofail $xhost "rm -rf /etc/mongodb.conf"
+	    remote_cmd_nofail $xhost "rm -rf /var/lib/mongodb"
+	    remote_cmd_nofail $xhost "rm -rf /var/log/mongodb"
+	    remote_cmd_nofail $xhost "touch /etc/init.d/mongodb"
+            remote_cmd_nofail $xhost "LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive apt-get -y remove mongo*"
+	    remote_cmd_nofail $xhost "LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive apt-get -y remove mongodb-10gen"
+	    remote_cmd_nofail $xhost "rm -rf /etc/init.d/mongo*"
+	    remote_cmd_nofail $xhost "sed -i.bak '/10gen/d'  /etc/apt/sources.list"
+	    remote_cmd $xhost "/bin/sh -c 'echo \"deb http://downloads-distro.mongodb.org/repo/ubuntu-upstart dist 10gen\" >> /etc/apt/sources.list'"
+	    remote_cmd $xhost "apt-get -q -y update"
+	    remote_cmd $xhost "LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::='--force-confnew' -y -q install mongodb-10gen"
+	    ;;
+	*)
+	    echo "OS is unknonwn / not supported" 
+    esac
+    
+    remote_cmd_nofail ${xhost} "killall -9 mongod mongos cmon"
+    echo "Creating mongodb datadirs in ${mongodb_datadir} if not already exists ..."
+    remote_cmd ${xhost} "mkdir -p ${MONGODB_DATADIR}"
+    remote_cmd ${xhost} "mkdir -p ${MONGODB_DATADIR}/config"
+    remote_cmd ${xhost} "mkdir -p ${MONGODB_LOGDIR}"
+    remote_cmd ${xhost} "mkdir -p ${MONGODB_PIDFILEDIR}"
+    remote_cmd_nofail $xhost "/usr/sbin/groupadd mongodb"
+    remote_cmd_nofail $xhost "/usr/sbin/useradd mongodb -g mongodb"
+    remote_cmd $xhost "chown mongodb:mongodb -R $MONGODB_DATADIR"
+    remote_cmd $xhost "chown mongodb:mongodb -R $MONGODB_LOGDIR"
+    remote_cmd $xhost "chown mongodb:mongodb -R ${MONGODB_PIDFILEDIR}"
+}
+
+function start_rs
+{
+    sed -i.bak "s/smallfiles = false//g" $S9S_TMPDIR/mongodb.conf
+    sed -i.bak "s/replSet = .*/replSet = $RSNAME/g" $S9S_TMPDIR/mongodb.conf
+    sed -i.bak "s/\r//g" $S9S_TMPDIR/mongodb.conf
+    RS_MEMBERS="$SERVER1 $SERVER2 $SERVER3"   
+    for xhost in ${RS_MEMBERS}
+    do
+	echo "Copying configuation"
+	remote_copy $S9S_TMPDIR/mongodb.conf ${xhost} $S9S_TMPDIR/mongodb.${MONGODB_PORT}.conf
+	remote_cmd ${xhost} "mv -f $S9S_TMPDIR/mongodb.${MONGODB_PORT}.conf $MONGODB_CONFIGDIR"
+echo "Starting mongodb shard server, this may take a while"
+remote_cmd3 $xhost "LC_ALL=C $MONGODB_BASEDIR/bin//mongod -f ${MONGODB_CONFIGDIR}/mongodb.${MONGODB_PORT}.conf  --logpath /var/log//mongodb_${MONGODB_PORT}.log --pidfilepath /var/run/mongodb/mongodb_${MONGODB_PORT}.pid --shardsvr"
+remote_cmd $xhost "sync"
+    done
+}
+
+
+function create_rs
+{
+    local xhost=$SERVER1
+    
+    cat << 'EOF' > $S9S_TMPDIR/init.js
+    rs.initiate({_id: 'RSNAME', members: [
+        {_id: 0, host: 'SERVER1:MONGOPORT'},
+        {_id: 1, host: 'SERVER2:MONGOPORT'},
+        {_id: 2, host: 'SERVER3:MONGOPORT'}]
+});
+EOF
+    sed -i.bak "s#RSNAME#$RSNAME#g" $S9S_TMPDIR/init.js
+    sed -i.bak "s#SERVER1#$SERVER1#g" $S9S_TMPDIR/init.js
+    sed -i.bak "s#SERVER2#$SERVER2#g" $S9S_TMPDIR/init.js
+    sed -i.bak "s#SERVER3#$SERVER3#g" $S9S_TMPDIR/init.js
+    sed -i.bak "s#MONGOPORT#$MONGODB_PORT#g" $S9S_TMPDIR/init.js
+    remote_copy $S9S_TMPDIR/init.js  ${xhost} $S9S_TMPDIR/init.js
+    remote_cmd ${xhost} "sync"
+    remote_cmd $xhost "$MONGODB_BASEDIR/bin/mongo  127.0.0.1:${MONGODB_PORT}/test --quiet $S9S_TMPDIR/init.js"
+    echo "creating replica set"
+    sleep 60
+}
+
+
+function create_shard
+{
+    local xhost=$MONGOS_SERVER
+    cat << EOF > $S9S_TMPDIR/init_shard.js
+    sh.addShard( 'RSNAME/SERVER:MONGOPORT' ) 
+EOF
+    
+    sed -i.bak "s#RSNAME#$RSNAME#g" $S9S_TMPDIR/init_shard.js
+    sed -i.bak "s#SERVER#$SERVER1#g" $S9S_TMPDIR/init_shard.js
+    sed -i.bak "s#MONGOPORT#$MONGODB_PORT#g" $S9S_TMPDIR/init_shard.js
+    remote_copy $S9S_TMPDIR/init_shard.js  ${xhost} $S9S_TMPDIR
+    remote_cmd ${xhost} "sync"
+    remote_cmd $xhost "$MONGODB_BASEDIR/bin/mongo  127.0.0.1:${MONGOS_PORT} --quiet $S9S_TMPDIR/init_shard.js"
+    echo "creating shard"
+    sleep 10
 }
 
 
@@ -1033,8 +1254,12 @@ function add_arbiter
   fi
 
 
+
   echo $CLUSTER_ID
   load_opts $CLUSTER_ID
+
+  SERVERID=$(check_host_exists $CLUSTER_ID $ARBIT_HOSTNAME)
+
 
   ARBIT_DATADIR=$ARBIT_DATADIR/$ARBIT_PORT
   
@@ -1080,10 +1305,37 @@ EOF
   else
       sed  -i.bak "s#mongoarbiter_server_addresses=.*#mongoarbiter_server_addresses=${mongoarbiter_server_addresses},$ARBIT_HOSTNAME:$ARBIT_PORT#g"  /etc/cmon.cnf
   fi
+
+  QUERY="INSERT INTO mongodb_server(cid, serverid , hostname, port, report_ts, status, arbiter, hidden, votes, slave_delay, username, password, node_type, rs_name, dbpath,logpath, shardsvr)"
+  QUERY="$QUERY VALUES ($CLUSTER_ID, $SERVERID, '$ARBIT_HOSTNAME', $ARBIT_PORT, now(), 6, 1, 0,1,0,'','',3,'$RS_NAME', '$ARBIT_DATADIR', '/var/log/mongodb/arbiter_${ARBIT_PORT}.log', 0)"
+  
+  
   
   exit 0
 }
 
+function check_host_exists
+{
+    local TARGET_CID=$1
+    local TARGET_HOSTNAME=$2
+    local QUERY="select id from cmon.hosts where (hostname='$TARGET_HOSTNAME' OR ip='$TARGET_HOSTNAME') AND cid=${SOURCE_CLUSTER_ID}"
+    HID=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"`
+    if [ $? -ne 0 ]; then
+        log_job_message "$QUERY  - failed!" 1
+        exit 1
+    fi
+
+    if [ -z "$HID" ]; then
+        log_job_message "Server $TARGET_HOSTNAME does not exists - you must add it in the UI first" 1
+        exit 1
+    fi
+
+    if [ "$HID" = "NULL" ]; then
+        log_job_message "Server $TARGET_HOSTNAME does not exists - you must add it in the UI first" 1
+        exit 1
+    fi
+    echo $HID    
+}
 
 ARG=$1
 shift
