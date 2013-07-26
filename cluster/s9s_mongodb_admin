@@ -120,6 +120,22 @@ function remote_cmd_nofail()
 }
 
 
+function remote_cmd3()
+{
+   desthost=$1
+   xcommand=$2
+   printf "%-4s: Executing '%s' " "$desthost" "$xcommand"
+   ssh $SSH_OPTS $SSH_OPTS_EXTRA $SSH_USER@$desthost "$SUDO $xcommand " &
+   if [ $? -eq 0 ]; then
+      printf "\033[32m[ok]\033[0m\n"
+      log_job_message "$desthost: Executed $xcommand" 0
+      return 0
+   else
+      printf "\033[31m[failed]\033[0m\n"
+      log_job_message "FAILED: ${desthost}@${xcommand}" 1
+      exit 1
+   fi
+}
 
 function remote_cmd_getreply()
 {
@@ -1042,7 +1058,7 @@ EOF
   fi
 
   remote_cmd $ARBIT_HOSTNAME "mkdir -p $ARBIT_DATADIR"
-  remote_cmd $ARBIT_HOSTNAME "$MONGODB_BASEDIR/bin/mongod --port $ARBIT_PORT --dbpath $ARBIT_DATADIR --replSet $RS_NAME"
+  remote_cmd3 $ARBIT_HOSTNAME "$MONGODB_BASEDIR/bin/mongod --port $ARBIT_PORT --dbpath $ARBIT_DATADIR --replSet $RS_NAME --smallfiles"
   
   sed  -i.bak "s#ARBIT_HOSTNAME#$ARBIT_HOSTNAME#g" > /tmp/addArbiter.js
   sed  -i.bak "s#ARBIT_PORT#$ARBIT_PORT#g" > /tmp/addArbiter.js
