@@ -832,8 +832,143 @@ EOF
 	    log_job_message  "Not a supported vendor" 1
 	    log_job 'FAILED' 'job failed' 1
 	    exit 1;	           	     
-    esac
+    esac    
+}
 
+function install_mongodb
+{
+    args=`getopt p:i:P:t:d:j:h:f:V:n: $*`
+    set -- $args
+    for i
+    do
+	case "$i" in
+            -p)
+		CMON_PASSWORD="$2"; shift;
+		shift;;
+            -i)
+		CLUSTER_ID="$2"; shift;
+		shift;;
+            -h)
+		XHOSTNAME="$2"; shift;
+		shift;;
+            -j)
+		JOBID="$2"; shift;
+		shift;;
+            --)
+		shift; break;;
+	esac
+    done    
+    
+    if [ -z "$XHOSTNAME" ]; then
+	log_job_message 'Syntax: s9s_sw_update --install-mysql -i <clusterid> -n <package_name> -h <hostname>' 1
+	log_job 'FAILED' 'job failed' 1
+	exit 1
+    fi
+    if [ -z "$CID" ]; then
+	log_job_message 'Syntax: s9s_sw_update --install-mysql -i <clusterid> -n <package_name> -h <hostname>' 1
+	log_job 'FAILED' 'job failed' 1
+	exit 1
+    fi
+    
+    log_job_message "Installing .. " 0
+    sleep 5
+    log_job 'RUNNING' 's9s_sw_update is running' 0
+    load_opts $CLUSTER_ID
+    
+    if [ -z "$VENDOR" ]; then
+	VENDOR=$XVENDOR
+    fi
+
+    if [ -z "$VENDOR" ]; then
+	VENDOR="10gen"
+    fi
+    log_job_message "vendor = $VENDOR" 0
+
+    mkdir -p $S9S_TMPDIR
+    chown -R $SSH_USER:$SSH_USER $S9S_TMPDIR
+    if [ -z "$DATADIR" ]; then
+	log_job_message "datadir is not set in my.cnf - aborting" 1 
+	log_job 'FAILED' 'job failed' 1
+	exit 1
+    fi
+    log_job 'RUNNING' 's9s_sw_update is running' 0
+    remote_cmd_nofail $XHOSTNAME "cp /etc/init.d/mysql.bak /etc/init.d/mysql"	
+    if [ "$OS" = "redhat" ]; then
+	remote_cmd_nofail $XHOSTNAME "rm -rf /var/lib/mysql/RPM_UPGRADE_MARKER"
+	remote_cmd_nofail $XHOSTNAME "yum -y remove 10gen* mongo*"	
+	remote_cmd_nofail $XHOSTNAME "/usr/sbin/setenforce 0 "
+	remote_cmd_nofail $XHOSTNAME "echo '0' > /selinux/enforce "
+        remote_cmd_nofail $XHOSTNAME "sed -i.bak 's#SELINUX=enforcing#SELINUX=permissive#g' /etc/selinux/config"
+	remote_cmd_nofail $XHOSTNAME "yum -y install nc libaio"	
+    else
+	remote_cmd_nofail $XHOSTNAME "apt-get -y remove mongo* 10gen*"	
+    fi
+    log_job 'RUNNING' 's9s_sw_update is running' 0
+    remote_cmd_nofail $XHOSTNAME "rm -rf /etc/my.cnf"
+    remote_cmd_nofail $XHOSTNAME "rm -rf /usr/bin/wsre*"
+    remote_cmd_nofail $XHOSTNAME "rm -rf /etc/mysql/*"
+    remote_cmd_nofail $XHOSTNAME "rm -rf /var/lib/mysql"
+    remote_cmd_nofail $XHOSTNAME "rm -rf /var/run/mysqld"
+    remote_cmd_nofail $XHOSTNAME "rm -rf /etc/init.d/mysql"
+    remote_cmd_nofail $XHOSTNAME "rm -rf /etc/init.d/mysql.server"
+    
+    remote_cmd_nofail $XHOSTNAME "mkdir -p $S9S_TMPDIR"
+    remote_cmd_nofail $XHOSTNAME "chown  -R $SSH_USER:$SSH_USER $STAGING_DIR"
+
+    if [ -n "$DATADIR" ]; then
+	if [ "$DATADIR" != "/" ]; then
+	    remote_cmd_nofail $XHOSTNAME "rm -rf $DATADIR/*"	    
+	fi
+    else
+	log_job_message "datadir is not set in my.cnf - aborting" 1
+    fi
+
+    remote_cmd $XHOSTNAME "mkdir -p $DATADIR/"
+    
+    QUERY="GRANT INSERT,UPDATE,DELETE, SELECT ON $CMON_DB_DB.* TO 'cmon'@'$XHOSTNAME' IDENTIFIED BY '$CMON_PASSWORD'"    
+    $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log    
+    if [ $? -ne 0 ]; then 
+	log_job_message "FAILED: $QUERY" 1
+	log_job 'FAILED' 'job failed' 1
+	exit 1
+    fi	
+    QUERY="GRANT SUPER ON *.* TO 'cmon'@'$XHOSTNAME' IDENTIFIED BY '$CMON_PASSWORD'"    
+    $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log    
+    if [ $? -ne 0 ]; then 
+	log_job_message "FAILED: $QUERY" 1
+	log_job 'FAILED' 'job failed' 1
+	exit 1
+    fi	
+
+    
+    case $VENDOR in
+	10gen)
+	    if [ "$OS" = "redhat" ]; then
+		remote_cmd $XHOSTNAME "yum -y install Percona-XtraDB-Cluster-server Percona-XtraDB-Cluster-client xtrabackup"
+	    else
+		remote_cmd $XHOSTNAME "apt-key adv --keyserver keyserver.ubuntu.com --recv 7F0CEB10"
+		remote_cmd_nofail $XHOSTNAME "killall -9 cmon mongod"
+		remote_cmd_nofail $XHOSTNAME "rm -rf /etc/mongodb.conf"
+		remote_cmd_nofail $XHOSTNAME "rm -rf /var/lib/mongodb"
+		remote_cmd_nofail $XHOSTNAME "rm -rf /var/log/mongodb"
+		remote_cmd_nofail $XHOSTNAME "touch /etc/init.d/mongodb"
+		remote_cmd_nofail $XHOSTNAME "LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive apt-get -y remove mongo*"
+		remote_cmd_nofail $XHOSTNAME "LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive apt-get -y remove mongodb-10gen"
+		remote_cmd_nofail $XHOSTNAME "rm -rf /etc/init.d/mongo*"
+		remote_cmd_nofail $XHOSTNAME "sed -i.bak '/10gen/d'  /etc/apt/sources.list"
+		remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"deb http://downloads-distro.mongodb.org/repo/ubuntu-upstart dist 10gen\" >> /etc/apt/sources.list'"
+		remote_cmd $XHOSTNAME "apt-get -q -y update"
+		remote_cmd $XHOSTNAME "LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::='--force-confnew' -y -q install mongodb-10gen"
+		remote_cmd $XHOSTNAME "apt-get -y update"
+	    fi
+	    ;;
+	tokutek)	    
+	    ;;
+	*)
+	    log_job_message "Not a supported vendor" 1
+	    log_job 'FAILED' 'job failed' 1
+	    exit 1;	           	     
+    esac
     
 }
 
@@ -956,6 +1091,9 @@ case $ARG in
 	;;
     --install-mysql)
         install_mysql $*
+	;;
+    --install-mongodb)
+        install_mongodb $*
 	;;
     --update-mysql-yum)
         update_mysql_pkg_yum $*
