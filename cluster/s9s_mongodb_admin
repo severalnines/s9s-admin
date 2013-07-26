@@ -1489,6 +1489,7 @@ EOF
      exit 1
  fi
 
+ sleep 10
 
   sed  -i.bak "s#ARBIT_HOSTNAME#${XHOSTNAME}#g"  /tmp/remove.js
   sed  -i.bak "s#ARBIT_PORT#${XPORT}#g"  /tmp/remove.js
