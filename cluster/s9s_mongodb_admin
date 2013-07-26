@@ -1436,7 +1436,6 @@ function remove_member
   
   cat << 'EOF' > /tmp/remove.js
    rs.remove("ARBIT_HOSTNAME:ARBIT_PORT")
-
 EOF
 
 
