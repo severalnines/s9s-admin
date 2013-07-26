@@ -1363,7 +1363,7 @@ function check_host_exists
 {
     local TARGET_CID=$1
     local TARGET_HOSTNAME=$2
-    local QUERY="select id from cmon.hosts where (hostname='$TARGET_HOSTNAME' OR ip='$TARGET_HOSTNAME') AND cid=${SOURCE_CLUSTER_ID}"
+    local QUERY="select id from cmon.hosts where (hostname='$TARGET_HOSTNAME' OR ip='$TARGET_HOSTNAME') AND cid=${TARGET_CID}"
     HID=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"`
     if [ $? -ne 0 ]; then
         log_job_message "$QUERY  - failed!" 1
