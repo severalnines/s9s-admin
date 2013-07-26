@@ -653,6 +653,18 @@ function get_servers
     echo "$SERVER_LIST"
 }
 
+function get_servers2
+{
+    local TYPE=$1
+    local QUERY="select group_concat(concat(m.hostname, ',', m.nodeid, ',', m.port) SEPARATOR ' ') from mongodb_server m,mongodb_nodetype_map n WHERE m.cid=$CLUSTER_ID  and m.node_type=n.id and n.name in ($TYPE) and (m.status=1 or m.status=2 or m.status=7)"
+    local SERVER_LIST=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=127.0.0.1 --port=$CMON_DB_PORT -N -Bse "$QUERY"`   
+    if [ $? -ne 0 ]; then
+	echo "getting server list failed"
+	exit 1
+    fi
+    echo "$SERVER_LIST"
+}
+
 function get_servers_in_state
 {
     local TYPE=$1
@@ -1453,8 +1465,8 @@ EOF
       exit 1
   fi
     
-  TYPE="shardsvr,arbiter"
-  SERVER_LIST=$(get_servers $TYPE)
+  TYPE="'shardsvr','arbiter'"
+  SERVER_LIST=$(get_servers2 $TYPE)
   if [ "$SERVER_LIST" != "NULL" ]; then
       for r in $SERVER_LIST
       do
