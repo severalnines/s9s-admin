@@ -1526,21 +1526,22 @@ shift
 case $ARG in
     --remove-lockfile)
 	remove_lockfile $*
-    ;;
+	;;
     --stop-cluster)
 	stop_cluster $*
-    ;;
+	;;
     --start-cluster)
 	start_cluster $*
-    ;;
+	;;
     --backup)
 	backup_cluster $*
-    ;;
+	;;
     --add-arbiter)
 	add_arbiter $*
+	;;
     --remove-member)
 	remove_member $*
-    ;;
+	;;
     *)
     echo "Usage:"
     echo "bash ./s9s_mongodb_admin <--remove-lockfile|start-cluster|stop-cluster|--backup|--remove-member> <options follows>"
