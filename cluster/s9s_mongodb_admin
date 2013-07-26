@@ -1510,8 +1510,15 @@ EOF
   ${MONGODB_BASEDIR}/bin/mongo ${RS_HNAME}:${RS_PORT} /tmp/remove.js
   
   if [ $? -ne 0 ]; then
-      echo "failed to remove $XHOSTNAME:$XPORT"
-      exit 1
+      sleep 1
+      ${MONGODB_BASEDIR}/bin/mongo --quiet  ${RS_HNAME}:${RS_PORT} /tmp/remove.js
+      if [ $? -ne 0 ]; then
+	  ${MONGODB_BASEDIR}/bin/mongo --quiet  ${RS_HNAME}:${RS_PORT} --eval "rs.remove('$XHOSTNAME:$XPORT')"
+	  if [ $? -ne 0 ]; then
+	      echo "failed to remove $XHOSTNAME:$XPORT"
+	      exit 1
+	  fi
+      fi
   fi      
 
 
