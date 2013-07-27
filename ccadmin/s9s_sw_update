@@ -812,7 +812,7 @@ EOF
 		remote_cmd_nofail $XHOSTNAME "/usr/sbin/update-rc.d mysql stop 20 0 1 6 ."
 		wget --no-check-certificate --tries=5  -O $S9S_TMPDIR/wsrep_sst_xtrabackup https://launchpad.net/codership-mysql/5.5/5.5.28-23.7/+download/wsrep_sst_xtrabackup
 		remote_copy $S9S_TMPDIR/wsrep_sst_xtrabackup ${XHOSTNAME} ${S9S_TMPDIR}/wsrep_sst_xtrabackup
-		remote_cmd ${XHOSTNAME} "mv ${S9S_TMPDIR}/wsrep_sst_xtrabackup /usr/bin/"
+		remote_cmd ${XHOSTNAME} "mv ${S9S_TMPDIR}/wsrep_sst_xtrabackup /usr/local/mysql/bin/"
 		remote_cmd ${XHOSTNAME} "chmod +x /usr/local/mysql/bin/wsrep_sst_xtrabackup "
 		remote_cmd ${XHOSTNAME} "chown mysql:mysql /usr/local/mysql/bin/wsrep_sst_xtrabackup"		
 	    fi
