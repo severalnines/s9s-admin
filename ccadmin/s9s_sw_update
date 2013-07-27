@@ -758,7 +758,7 @@ EOF
 
 
     remote_cmd_nofail $XHOSTNAME "mkdir -p $S9S_TMPDIR"
-    remote_cmd_nofail $XHOSTNAME "chown  -R $SSH_USER:$SSH_USER $STAGING_DIR"
+    remote_cmd_nofail $XHOSTNAME "chown  -R $SSH_USER:$SSH_USER $S9S_TMPDIR"
     remote_cmd $XHOSTNAME "chown -R $SSH_USER:$SSH_USER $S9S_TMPDIR"
     remote_copy $S9S_TMPDIR/my.cnf $XHOSTNAME $S9S_TMPDIR
     remote_cmd $XHOSTNAME "mkdir -p $CONFIGDIR/"
@@ -778,7 +778,9 @@ EOF
 
 
     ### POST INSTALL
-
+    mkdir -p $S9S_TMPDIR
+    chown  -R $SSH_USER:$SSH_USER $S9S_TMPDIR
+    
     case $VENDOR in
 	percona)
 	    if [ "$OS" = "redhat" ]; then
@@ -798,11 +800,21 @@ EOF
 		remote_cmd $XHOSTNAME "chown 755 /etc/init.d/mysql"
 		remote_cmd $XHOSTNAME "/sbin/chkconfig --add mysql "
 		remote_cmd $XHOSTNAME "/sbin/chkconfig mysql off --level 2345"
+		wget --no-check-certificate --tries=5  -O $S9S_TMPDIR/wsrep_sst_xtrabackup https://launchpad.net/codership-mysql/5.5/5.5.28-23.7/+download/wsrep_sst_xtrabackup
+		remote_copy $S9S_TMPDIR/wsrep_sst_xtrabackup ${XHOSTNAME} ${S9S_TMPDIR}/wsrep_sst_xtrabackup
+		remote_cmd ${XHOSTNAME} "mv ${S9S_TMPDIR}/wsrep_sst_xtrabackup /usr/bin/"
+		remote_cmd ${XHOSTNAME} "chmod +x /usr/bin/wsrep_sst_xtrabackup "
+		remote_cmd ${XHOSTNAME} "chown mysql:mysql /usr/bin/wsrep_sst_xtrabackup"		
 	    else
 		remote_cmd $XHOSTNAME "cp /usr/local/mysql/support-files/mysql.server  /etc/init.d/mysql"
 		remote_cmd $XHOSTNAME "chown 755 /etc/init.d/mysql"
 		remote_cmd_nofail $XHOSTNAME "/usr/sbin/update-rc.d -f mysql remove"
 		remote_cmd_nofail $XHOSTNAME "/usr/sbin/update-rc.d mysql stop 20 0 1 6 ."
+		wget --no-check-certificate --tries=5  -O $S9S_TMPDIR/wsrep_sst_xtrabackup https://launchpad.net/codership-mysql/5.5/5.5.28-23.7/+download/wsrep_sst_xtrabackup
+		remote_copy $S9S_TMPDIR/wsrep_sst_xtrabackup ${XHOSTNAME} ${S9S_TMPDIR}/wsrep_sst_xtrabackup
+		remote_cmd ${XHOSTNAME} "mv ${S9S_TMPDIR}/wsrep_sst_xtrabackup /usr/bin/"
+		remote_cmd ${XHOSTNAME} "chmod +x /usr/local/mysql/bin/wsrep_sst_xtrabackup "
+		remote_cmd ${XHOSTNAME} "chown mysql:mysql /usr/local/mysql/bin/wsrep_sst_xtrabackup"		
 	    fi
 	    ;;
 	percona_nonet)
