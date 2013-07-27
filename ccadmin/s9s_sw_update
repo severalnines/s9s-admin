@@ -530,7 +530,6 @@ function install_mysql
 	remote_cmd_nofail $XHOSTNAME "echo '0' > /selinux/enforce "
         remote_cmd_nofail $XHOSTNAME "sed -i.bak 's#SELINUX=enforcing#SELINUX=permissive#g' /etc/selinux/config"
 	remote_cmd_nofail $XHOSTNAME "yum -y install nc libaio"	
-	remote_cmd_nofail $XHOSTNAME "yum -y install perl-DBD-MySQL.x86_64"	
     else
 	remote_cmd_nofail $XHOSTNAME "apt-get -y remove MySQL* mysql* Percona* percona* MariaDB* mariadb* MySQL-Cluster* MySQL-cluster* mysql-cluster* galera*"	
 	remote_cmd_nofail $XHOSTNAME "dpkg -P galera"	
@@ -591,6 +590,7 @@ function install_mysql
     case $VENDOR in
 	percona)
 	    if [ "$OS" = "redhat" ]; then
+		#remote_cmd_nofail $XHOSTNAME "yum -y install perl-DBD-MySQL.x86_64"	
 		remote_cmd $XHOSTNAME "rpm -Uhv --force http://www.percona.com/downloads/percona-release/percona-release-0.0-1.x86_64.rpm"
 		remote_cmd $XHOSTNAME "yum -y install Percona-XtraDB-Cluster-server Percona-XtraDB-Cluster-client xtrabackup"
 	    else
