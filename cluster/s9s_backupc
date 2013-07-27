@@ -973,7 +973,7 @@ function install
 	    
 	    remote_cmd $BACKUP_HOSTNAME "LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::='--force-confnew' -y -q install netcat"
 	    remote_cmd_nofail $BACKUP_HOSTNAME "LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::='--force-confnew' -y -q install netcat-openbsd"
-	    remote_cmd $BACKUP_HOSTNAME "cp  $CONFIGDIR/my.cnf.dpkg-old $CONFIGDIR/my.cnf"
+	    remote_cmd_nofail $BACKUP_HOSTNAME "cp  $CONFIGDIR/my.cnf.dpkg-old $CONFIGDIR/my.cnf"
 	    ;;
 	*)
 	    echo "Unrecognized OS, must be 'redhat' or 'debian' class"
