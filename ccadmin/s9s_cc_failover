@@ -334,7 +334,7 @@ function failover
     
     for h in $all_hostnames
     do
-	failover $h $NEW_ADDRESS
+	change_controller_address $h $NEW_ADDRESS
     done
     for h in $all_hostnames
     do
