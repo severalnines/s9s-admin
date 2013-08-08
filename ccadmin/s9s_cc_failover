@@ -354,7 +354,7 @@ function failover
     fi
     sed -i 's#enable_autorecovery=.*#enable_autorecovery=1#g' $CMONCNF
     service cmon restart
-    ssh_copy_id $SSH_USER@$OLD_ADDRESS
+    ssh-copy-id $SSH_USER@$OLD_ADDRESS
     remote_cmd_nofail $OLD_ADDRESS "sed -i 's#enable_autorecovery=.*#enable_autorecovery=0#g' $CMONCNF"    
     remote_cmd_nofail $OLD_ADDRESS "service cmon stop"    
     exit 0
