@@ -257,10 +257,6 @@ function change_controller_address
 {
     local h=$1
     local new_address=$2
-    CMONCNF=/etc/cmon.cnf
-    if [ $CLUSTER_ID -gt 1 ]; then
-          CMONCNF=/etc/cmon_${CLUSTER_ID}.cnf
-    fi
     remote_cmd $h "sed -i 's#mysql_hostname=.*#mysql_hostname=$new_address#g' $CMONCNF"
     remote_cmd $h "sed -i 's#controller_address=.*#controller_address=$new_address#g' $CMONCNF"    
 }
@@ -280,6 +276,9 @@ function failover
                 shift;;
             -n)
                 NEW_ADDRESS="$2"; shift;
+                shift;;
+            -o)
+                OLD_ADDRESS="$2"; shift;
                 shift;;
             -j)
                 JOBID="$2"; shift;
@@ -304,6 +303,11 @@ function failover
         echo "s9s_cc_failover -n <new cc address> is missing"
         exit 1
     fi
+
+    if [ -z "$OLD_ADDRESS" ]; then
+        echo "s9s_cc_failover -n <old cc address> is missing"
+        exit 1
+    fi
     
     
     if ! test -f $MYSQL_BIN; then
@@ -320,7 +324,7 @@ function failover
     QUERY="select group_concat(h.hostname SEPARATOR ' ') from hosts h WHERE h.cid=$CLUSTER_ID"
     all_hostnames=`$MYSQL_BIN -B -N --host=$CMON_DB_HOST --port=$CMON_DB_PORT --user=cmon --password=$CMON_PASSWORD --database=$CMON_DB_DB -e "$QUERY"`
 
-    
+    CMONCNF=/etc/cmon.cnf
 
     if [ -z "$all_hostnames" ]; then
        echo "No hostnames found."
@@ -336,10 +340,19 @@ function failover
     do
 	change_controller_address $h $NEW_ADDRESS
     done
+
     for h in $all_hostnames
     do
 	remote_cmd $h "/etc/init.d/cmon restart"
     done
+    CMONCNF=/etc/cmon.cnf
+    if [ $CLUSTER_ID -gt 1 ]; then
+          CMONCNF=/etc/cmon_${CLUSTER_ID}.cnf
+    fi
+    remote_cmd $NEW_ADDRESS "sed -i 's#enable_autorecovery=.*#enable_autorecovery=1#g' $CMONCNF"    
+    remote_cmd $NEW_ADDRESS "service cmon restart"    
+    remote_cmd $OLD_ADDRESS "sed -i 's#enable_autorecovery=.*#enable_autorecovery=0#g' $CMONCNF"    
+    remote_cmd $OLD_ADDRESS "service cmon stop"    
     exit 0
     
 }
