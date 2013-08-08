@@ -349,8 +349,11 @@ function failover
     if [ $CLUSTER_ID -gt 1 ]; then
           CMONCNF=/etc/cmon_${CLUSTER_ID}.cnf
     fi
-    remote_cmd $NEW_ADDRESS "sed -i 's#enable_autorecovery=.*#enable_autorecovery=1#g' $CMONCNF"    
-    remote_cmd $NEW_ADDRESS "service cmon restart"    
+    if [ `grep enable_autorecovery $CMONCNF` ]; then
+	echo "enable_autorecovery=1" >> $CMONCNF
+    fi
+    sed -i 's#enable_autorecovery=.*#enable_autorecovery=1#g' $CMONCNF
+    service cmon restart
     remote_cmd $OLD_ADDRESS "sed -i 's#enable_autorecovery=.*#enable_autorecovery=0#g' $CMONCNF"    
     remote_cmd $OLD_ADDRESS "service cmon stop"    
     exit 0
