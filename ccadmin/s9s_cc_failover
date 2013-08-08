@@ -258,11 +258,11 @@ function change_controller_address
     local h=$1
     local new_address=$2
     CMONCNF=/etc/cmon.cnf
-    if [ $CLUSTERID -gt 1 ]; then
-          CMONCNF=/etc/cmon_${CLUSTERID}.cnf
+    if [ $CLUSTER_ID -gt 1 ]; then
+          CMONCNF=/etc/cmon_${CLUSTER_ID}.cnf
     fi
-    remote_cmd $h "sed -i 's#mysql_hostname=.*#mysql_hostname=$new_address#g' CMONCNF"
-    remote_cmd $h "sed -i 's#controller_address=.*#controller_address=$new_address#g' CMONCNF"    
+    remote_cmd $h "sed -i 's#mysql_hostname=.*#mysql_hostname=$new_address#g' $CMONCNF"
+    remote_cmd $h "sed -i 's#controller_address=.*#controller_address=$new_address#g' $CMONCNF"    
 }
 
 function failover
