@@ -253,29 +253,20 @@ function change_password_mysql
 }
 
 
-function change_password_mysql_mycnf
+function change_controller_address
 {
     local h=$1
-    local new_password=$2    
-    MYCNF=$CONFIGDIR/my.cnf
-    remote_cmd $h "sed -i 's#wsrep_sst_auth=.*#wsrep_sst_auth=root:$new_password#g' $MYCNF"
-}
-
-
-function change_password_cmoncnf
-{
-    local h=$1
-    local new_password=$2    
-    if [ $CLUSTER_ID -eq 1 ]; then
-	remote_cmd $h "sed -i 's#mysql_password=.*#mysql_password=$new_password#g' /etc/cmon.cnf"
-    else
-	remote_cmd $h "sed -i 's#mysql_password=.*#mysql_password=$new_password#g' /etc/cmon_${CLUSTER_ID}.cnf"
+    local new_address=$2
+    CMONCNF=/etc/cmon.cnf
+    if [ $CLUSTERID -gt 1 ]; then
+          CMONCNF=/etc/cmon_${CLUSTERID}.cnf
     fi
+    remote_cmd $h "sed -i 's#mysql_hostname=.*#mysql_hostname=$new_address#g' CMONCNF"
+    remote_cmd $h "sed -i 's#controller_address=.*#controller_address=$new_address#g' CMONCNF"    
 }
 
-function change_cmon_password
+function failover
 {
-    LB_NODE_LIST=""
     args=`getopt p:s:P:h:i:N:n:j: $*`
     set -- $args
     for i
@@ -288,7 +279,7 @@ function change_cmon_password
                 CLUSTER_ID="$2"; shift;
                 shift;;
             -n)
-                NEW_PASSWORD="$2"; shift;
+                NEW_ADDRESS="$2"; shift;
                 shift;;
             -j)
                 JOBID="$2"; shift;
@@ -300,17 +291,17 @@ function change_cmon_password
 
     
     if [ -z "$CMON_PASSWORD" ]; then
-        echo "s9s_change_passwd --cmon  -p <current cmon password> is missing"
+        echo "s9s_cc_failover -p <current cmon password> is missing"
       exit 1
     fi
 
     if [ -z "$CLUSTER_ID" ]; then
-        echo "s9s_change_passwd --cmon  -i <cluster id> is missing"
+        echo "s9s_cc_failover -i <cluster id> is missing"
 	exit 1
     fi
 
-    if [ -z "$NEW_PASSWORD" ]; then
-        echo "s9s_change_passwd --cmon  -n <new_password> is missing"
+    if [ -z "$NEW_ADDRESS" ]; then
+        echo "s9s_cc_failover -n <new cc address> is missing"
         exit 1
     fi
     
@@ -323,36 +314,13 @@ function change_cmon_password
 	fi
 	MYSQL_BIN=$MYSQL_BIN2
     fi
-
+    
 
     load_opts $CLUSTER_ID
-    QUERY="select group_concat(h.hostname SEPARATOR ' ') from mysql_server m, hosts h WHERE m.id=h.id and h.cid=m.cid and h.ping_status>0 and connected=1 and m.cid=$CLUSTER_ID"
-    mysql_hostnames=`$MYSQL_BIN -B -N --host=$CMON_DB_HOST --port=$CMON_DB_PORT --user=cmon --password=$CMON_PASSWORD --database=$CMON_DB_DB -e "$QUERY"`
-
-    QUERY="select group_concat(h.hostname SEPARATOR ' ') from hosts h WHERE h.cid=$CLUSTER_ID AND h.ping_status>0"
+    QUERY="select group_concat(h.hostname SEPARATOR ' ') from hosts h WHERE h.cid=$CLUSTER_ID"
     all_hostnames=`$MYSQL_BIN -B -N --host=$CMON_DB_HOST --port=$CMON_DB_PORT --user=cmon --password=$CMON_PASSWORD --database=$CMON_DB_DB -e "$QUERY"`
 
-    QUERY="select count(id) from hosts h WHERE h.cid=$CLUSTER_ID AND h.ping_status>0"
-    c_cnt=`$MYSQL_BIN -B -N --host=$CMON_DB_HOST --port=$CMON_DB_PORT --user=cmon --password=$CMON_PASSWORD --database=$CMON_DB_DB -e "$QUERY"`
-    QUERY="select count(id) from hosts h WHERE h.cid=$CLUSTER_ID"
-    a_cnt=`$MYSQL_BIN -B -N --host=$CMON_DB_HOST --port=$CMON_DB_PORT --user=cmon --password=$CMON_PASSWORD --database=$CMON_DB_DB -e "$QUERY"`
     
-    if [ $a_cnt -ne $c_cnt ]; then
-	echo "Not all hosts are reachable. Aborting"
-	exit 1
-    fi
-    
-
-    if [ -z "$mysql_hostnames" ]; then
-       echo "No hostnames found."
-       exit 1
-    fi
-
-    if [ "$mysql_hostnames" = "NULL" ]; then
-       echo "No hostnames found."
-       exit 1
-    fi
-
 
     if [ -z "$all_hostnames" ]; then
        echo "No hostnames found."
@@ -364,144 +332,18 @@ function change_cmon_password
        exit 1
     fi
     
-    mysql_hostnames="$mysql_hostname $mysql_hostnames"
-    echo $mysql_hostnames
-
-    for h in $mysql_hostnames
-    do
-	change_password_mysql $h cmon $NEW_PASSWORD
-	case $CLUSTER_TYPE in
-	    galera)
-		change_password_mysql_mycnf $h $NEW_PASSWORD
-		;;
-	    *)
-		;;
-	esac
-    done
-    
-    echo $all_hostnames
     for h in $all_hostnames
     do
-	change_password_cmoncnf $h $NEW_PASSWORD	
+	failover $h $NEW_ADDRESS
     done
     for h in $all_hostnames
     do
 	remote_cmd $h "/etc/init.d/cmon restart"
     done
-    QUERY="UPDATE cmon_configuration SET value='$NEW_PASSWORD' WHERE param='CMON_PASSWORD' AND cid='$CLUSTER_ID'"
-    
-    `$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$NEW_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"`
-    if [ $? -ne 0 ]; then
-	echo "Failed to set CMON_PASSWORD in cmon_configuration table, you can go into Cluster Settings in the web interface and set it"
-	exit 1
-    fi
-    echo "Successfully changed 'cmon' password"
     exit 0
     
 }
 
 
 
-function change_root_password
-{
-    LB_NODE_LIST=""
-    args=`getopt p:s:P:h:i:N:n:j: $*`
-    set -- $args
-    for i
-    do
-        case "$i" in
-            -p)
-                CMON_PASSWORD="$2"; shift;
-                shift;;
-            -i)
-                CLUSTER_ID="$2"; shift;
-                shift;;
-            -n)
-                NEW_PASSWORD="$2"; shift;
-                shift;;
-            -j)
-                JOBID="$2"; shift;
-                shift;;
-            --)
-                shift; break;;
-                esac
-    done
-
-    
-    if [ -z "$CMON_PASSWORD" ]; then
-        echo "s9s_change_passwd --root  -p <current cmon password> is missing"
-      exit 1
-    fi
-
-    if [ -z "$CLUSTER_ID" ]; then
-        echo "s9s_change_passwd --root  -i <cluster id> is missing"
-	exit 1
-    fi
-
-    if [ -z "$NEW_PASSWORD" ]; then
-        echo "s9s_change_passwd --root  -n <new_root_password> is missing"
-        exit 1
-    fi
-    
-
-
-    load_opts $CLUSTER_ID
-    QUERY="select group_concat(h.hostname SEPARATOR ' ') from mysql_server m, hosts h WHERE m.id=h.id and h.cid=m.cid and h.ping_status>0 and connected=1 and m.cid=$CLUSTER_ID"
-    mysql_hostnames=`$MYSQL_BIN -B -N --host=$CMON_DB_HOST --port=$CMON_DB_PORT --user=cmon --password=$CMON_PASSWORD --database=$CMON_DB_DB -e "$QUERY"`
-
-    if [ -z "$mysql_hostnames" ]; then
-       echo "No hostnames found."
-       exit 1
-    fi
-
-    if [ "$mysql_hostnames" = "NULL" ]; then
-       echo "No hostnames found."
-       exit 1
-    fi
-    
-    mysql_hostnames="$mysql_hostname $mysql_hostnames"
-    echo $mysql_hostnames
-    
-    for h in $mysql_hostnames
-    do
-	change_password_mysql $h root $NEW_PASSWORD
-	
-    done
-    for h in $mysql_hostnames
-    do
-	remote_cmd $h "/etc/init.d/cmon restart"
-    done
-    QUERY="UPDATE cmon_configuration SET value='$NEW_PASSWORD' WHERE param='ROOT_PASSWORD' AND cid='$CLUSTER_ID'"
-    
-    `$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"`
-    if [ $? -ne 0 ]; then
-	echo "Failed to set ROOT_PASSWORD in cmon_configuration table, you can go into Cluster Settings in the web interface and set it"
-	exit 1
-    fi
-    echo "Successfully changed root password"
-    exit 0
-    
-}
-
-
-
-if [ ! -e $LOCKFILE ]; then
-    trap "rm -f $LOCKFILE; exit" INT TERM EXIT
-    touch $LOCKFILE    
-    case $1 in
-	--cmon)
-	    change_cmon_password  $2 $3 $4 $5 $6 $7 $8 $9
-	    ;;
-	--root)
-	    change_root_password  $2 $3 $4 $5 $6 $7 $8 $9
-	    ;;
-	*)
-	    echo "Usage: "
-	    echo "s9s_change_password  --[cmon|root] "
-	    exit 1
-	    ;;
-    esac
-    rm $LOCKFILE
-    trap - INT TERM EXIT
-fi
-
+failover $*
