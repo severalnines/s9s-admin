@@ -263,7 +263,7 @@ function change_controller_address
 
 function failover
 {
-    args=`getopt p:s:P:h:i:N:n:j: $*`
+    args=`getopt p:s:P:h:i:N:n:j:o: $*`
     set -- $args
     for i
     do
@@ -305,7 +305,7 @@ function failover
     fi
 
     if [ -z "$OLD_ADDRESS" ]; then
-        echo "s9s_cc_failover -n <old cc address> is missing"
+        echo "s9s_cc_failover -o <old cc address> is missing"
         exit 1
     fi
     
