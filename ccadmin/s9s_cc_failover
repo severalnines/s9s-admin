@@ -218,8 +218,10 @@ function load_opts
     SSH_OPTS="-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10"
     if [ "$SSH_IDENTITY" = "" ]; then
 	SSH_IDENTITY="-oIdentityFile=${OS_USER_HOME}/.ssh/id_rsa"
+	SSH_IDENTITY2="-i ${OS_USER_HOME}/.ssh/id_rsa"
     else
 	SSH_IDENTITY="-oIdentityFile=$SSH_IDENTITY"
+	SSH_IDENTITY2="-i $SSH_IDENTITY"
     fi
     SSH_OPTS="-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY"
     SSH_OPTS2="-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY"
@@ -338,25 +340,35 @@ function failover
     
     for h in $all_hostnames
     do
-	change_controller_address $h $NEW_ADDRESS
+	if [ "$h" = "$NEW_ADDRESS" ] || [ "$h" = "$OLD_ADDRESS" ] ; then
+	    echo "Ignoring $h - it is a controller"
+	else
+	    change_controller_address $h $NEW_ADDRESS
+	fi
     done
 
     for h in $all_hostnames
     do
-	remote_cmd_nofail $h "/etc/init.d/cmon restart"
+	if [ "$h" = "$NEW_ADDRESS" ] || [ "$h" = "$OLD_ADDRESS" ] ; then
+	    echo "Ignoring $h - it is a controller"
+	else
+	    remote_cmd_nofail $h "/etc/init.d/cmon restart"
+	fi
     done
     CMONCNF=/etc/cmon.cnf
+    CMONINITD=cmon
     if [ $CLUSTER_ID -gt 1 ]; then
           CMONCNF=/etc/cmon_${CLUSTER_ID}.cnf
+          CMONINITD=cmon_${CLUSTER_ID}
     fi
     if [ `grep enable_autorecovery $CMONCNF` ]; then
 	echo "enable_autorecovery=1" >> $CMONCNF
     fi
     sed -i 's#enable_autorecovery=.*#enable_autorecovery=1#g' $CMONCNF
-    service cmon restart
-    ssh-copy-id $SSH_USER@$OLD_ADDRESS
+    service $CMONINITD restart
+    ssh-copy-id $SSH_IDENTITY2 $SSH_USER@$OLD_ADDRESS
     remote_cmd_nofail $OLD_ADDRESS "sed -i 's#enable_autorecovery=.*#enable_autorecovery=0#g' $CMONCNF"    
-    remote_cmd_nofail $OLD_ADDRESS "service cmon stop"    
+    remote_cmd_nofail $OLD_ADDRESS "service $CMONINITD stop"    
     exit 0
     
 }
