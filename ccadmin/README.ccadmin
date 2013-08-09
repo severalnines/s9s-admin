@@ -2,4 +2,17 @@ ccadmin contains tools to :
 * change password (root and cmon password) on instances
 * update software packages with e.g a new release of Galera or CMON
 
+s9s_cc_failover:
+Sync controllers:
+ Example: Sync controller A with controller B (please not it is very difficult to roll back a sync)
+ ./s9s_cc_failover --sync-cc  -i 1 -o CONTROLLER_A -n CONTROLLER_B
+Failover controllers:
+ Example: Make controller B active. You must make sure that the controller A is stopped 
+          if it was unreachable during the switch.
+ ./s9s_cc_failover --failover  -i 1 -o CONTROLLER_A -n CONTROLLER_B
+    
+
+
+
+
 

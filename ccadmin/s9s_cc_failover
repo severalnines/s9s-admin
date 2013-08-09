@@ -181,7 +181,8 @@ function load_opts
     MYSQL_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MYSQL_PORT' AND cid=$CLUSTER_ID" 2>/dev/null`
     GALERA_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='GALERA_PORT' AND cid=$CLUSTER_ID" 2>/dev/null`
     MYSQL_BASEDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MYSQL_BASEDIR' AND cid=$CLUSTER_ID" 2>/dev/null`
-    STAGING_DIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='STAGING_DIR' AND cid=$CLUSTER_ID" 2>/dev/null`
+    TMPDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='STAGING_DIR' AND cid=$CLUSTER_ID"`
+    S9S_TMPDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='STAGING_DIR' AND cid=$CLUSTER_ID"`
     MYSQL_SCRIPTDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SCRIPTDIR' AND cid=$CLUSTER_ID" 2>/dev/null`
     SSH_IDENTITY=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_IDENTITY' AND cid=$CLUSTER_ID" 2>/dev/null`
     SSH_USER=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_USER' AND cid=$CLUSTER_ID" 2>/dev/null`
@@ -192,6 +193,10 @@ function load_opts
     OS_USER_HOME=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='OS_USER_HOME' AND cid=$CLUSTER_ID" 2>/dev/null`
     NETWORKLESS=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='NETWORKLESS' AND cid=$CLUSTER_ID" 2>/dev/null`
     DATADIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon.cluster_config where variable='datadir' and cid=1 order by id asc limit 1" 2>/dev/null`
+    if [ "$S9S_TMPDIR" = "" ] || [ "$TMPDIR" = "NULL" ];  then
+	S9S_TMPDIR="/tmp/"
+	TMPDIR="/tmp/"
+    fi
 
 
     if [ $? -ne 0 ]; then 
@@ -375,4 +380,108 @@ function failover
 
 
 
-failover $*
+
+function sync_cc
+{
+    args=`getopt p:s:P:h:i:N:n:j:o: $*`
+    set -- $args
+    for i
+    do
+        case "$i" in
+            -p)
+                CMON_PASSWORD="$2"; shift;
+                shift;;
+            -i)
+                CLUSTER_ID="$2"; shift;
+                shift;;
+            -n)
+                NEW_ADDRESS="$2"; shift;
+                shift;;
+            -o)
+                OLD_ADDRESS="$2"; shift;
+                shift;;
+            -j)
+                JOBID="$2"; shift;
+                shift;;
+            --)
+                shift; break;;
+                esac
+    done
+
+    
+    if [ -z "$CMON_PASSWORD" ]; then
+        echo "s9s_cc_failover -p <current cmon password> is missing"
+      exit 1
+    fi
+
+    if [ -z "$CLUSTER_ID" ]; then
+        echo "s9s_cc_failover -i <cluster id> is missing"
+	exit 1
+    fi
+
+    if [ -z "$NEW_ADDRESS" ]; then
+        echo "s9s_cc_failover -n <new cc address> is missing"
+        exit 1
+    fi
+
+    if [ -z "$OLD_ADDRESS" ]; then
+        echo "s9s_cc_failover -o <old cc address> is missing"
+        exit 1
+    fi
+    
+    
+    if ! test -f $MYSQL_BIN; then
+	if ! test -f $MYSQL_BIN2; then
+	    echo "Could not find mysql client binary"
+	    echo "Change MYSQL_BIN in beginning of the scipt"
+	    exit 1
+	fi
+	MYSQL_BIN=$MYSQL_BIN2
+    fi
+    
+
+    load_opts $CLUSTER_ID
+    
+    TABLES="backup_schedule  cmon_configuration ext_proc haproxy_server galera_garbd_proc keepalived mailserver user_event_categories user_events email_notification license"
+    
+    echo "Dumping data to $S9S_TMPDIR/data.sql"
+    mysqldump --no-create-info --single-transaction -ucmon -p$CMON_PASSWORD -h$OLD_ADDRESS -P$CMON_DB_PORT $CMON_DB_DB $TABLES > $S9S_TMPDIR/data.sql
+    if [ $? -ne 0 ]; then 
+	exit 1
+    fi
+    sed -i.bak 's#INSERT INTO#REPLACE INTO#g' $S9S_TMPDIR/data.sql
+    
+    cat $S9S_TMPDIR/data.sql | mysql -ucmon -p$CMON_PASSWORD -h$NEW_ADDRESS -P$CMON_DB_PORT $CMON_DB_DB 
+    if [ $? -ne 0 ]; then 
+	exit 1
+    fi
+    
+    exit 0
+    
+}
+
+
+
+
+#if [ ! -e $LOCKFILE ]; then
+#    trap "rm -f $LOCKFILE; exit" INT TERM EXIT
+#    touch $LOCKFILE    
+    ARG=$1
+    shift
+    case $ARG in
+	--failover)
+	    failover $*
+	    ;;
+	--sync-cc)
+	    sync_cc $*
+	    ;;
+	*)
+	    echo "Usage: "
+	    echo "s9s_cc_failover [--failover|sync-cc] "
+	    exit 1
+	    ;;
+    esac
+#    rm $LOCKFILE
+ #   trap - INT TERM EXIT
+#fi
+
