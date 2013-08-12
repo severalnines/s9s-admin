@@ -224,7 +224,7 @@ collectInfo()
 	query_cmon_version="SELECT DISTINCT cmon_version FROM cmon.hosts WHERE cid=$cluster_id"
 	query_cmon_install_method="SELECT value FROM cmon.cmon_configuration WHERE param='INSTALL_METHOD' AND cid=$cluster_id"
 	version_url="$DOWNLOAD_URL/version.txt"
-	CMON_VERSION=`$MYSQL_BIN -ucmon -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT -A -Bse "$query_cmon_version"`
+	CMON_VERSION_DB=`$MYSQL_BIN -ucmon -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT -A -Bse "$query_cmon_version"`
 	INSTALL_METHOD=`$MYSQL_BIN -ucmon -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT -A -Bse "$query_cmon_install_method"`
 	if [ "$cluster_type" == "mongodb" ]; then
 		LATEST_CMON_VERSION=`$CURL_BIN -s $version_url | grep CMON_MONGODB_LATEST_VERSION | sed "s/^CMON_MONGODB_LATEST_VERSION=//g"`
@@ -233,6 +233,26 @@ collectInfo()
 	fi
 	
 	[ -z $LATEST_CMON_VERSION ] && echo "** Unable to retrieve latest version. Please check your internet connection." && exit 1
+
+        i=0
+        for p in ${CMON_VERSION_DB};do
+                (( i++ ))
+        done
+
+        if [ $i != 1 ]; then
+                echo -n "** Unable to proceed due to multiple versions of CMON detected:"
+                for q in ${CMON_VERSION_DB}; do
+                        echo -n " $q"
+                done
+                echo ""
+		echo ""
+                echo "** Kindly perform manual upgrade on the node that running older version of CMON as described in this KB:"
+                echo "   http://support.severalnines.com/entries/21095371-CMON-1-2-3-released-upgrade-instructions"
+                exit 1
+        else
+                CMON_VERSION=$CMON_VERSION_DB
+        fi
+
 	echo "** Current CMON version: $CMON_VERSION"
 	trim_cmon_version=`echo $CMON_VERSION | sed "s/\.//g"`
 	echo "** Latest CMON version: $LATEST_CMON_VERSION"
