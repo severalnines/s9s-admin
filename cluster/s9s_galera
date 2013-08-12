@@ -803,24 +803,30 @@ function install_garbd
     fi
 
     if [ -z "$VENDOR" ]; then
-	echo "No vendor was specified"
+	log_job_message  "No vendor was specified" 1
 	echo "./s9s-galera --install-garbd -V [percona|mariadb|codership]"
+	log_job 'FAILED' 'install garbd failed' 1
 	exit 1
     fi
     if [ -n "$XGALERA_PORT" ]; then
 	GALERA_PORT="$XGALERA_PORT"
-    fi
-    
-    DONOR_HOSTNAME=`$MYSQL_BIN -B -N $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$DONOR_HOSTNAME --port=$CMON_DB_PORT --database=$CMON_DB_DB  -e "SELECT hostname FROM $CMON_DB_DB.mysql_server WHERE cid=${CLUSTER_ID} AND status=0 LIMIT 1"`
+    fi    
+
+    sleep 2
+    log_job 'RUNNING' 'installing garbd' 0
+
+    DONOR_HOSTNAME=`$MYSQL_BIN -B -N $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$CMON_DB_HOST --port=$CMON_DB_PORT --database=$CMON_DB_DB  -e "SELECT hostname FROM $CMON_DB_DB.mysql_server WHERE cid=${CLUSTER_ID} AND status=0 LIMIT 1"`
     if [ -z "$DONOR_HOSTNAME" ]; then
-	echo "Could not get a cluster address"
+	log_job_message "Could not get a cluster address" 1
+	log_job 'FAILED' 'install garbd failed' 1
 	exit 1
     fi
     
     QUERY="SHOW GLOBAL VARIABLES LIKE 'wsrep_cluster_name'"
     CLUSTER_NAME=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$DONOR_HOSTNAME --port=$CMON_DB_PORT -A -Bse "$QUERY"`
     if [ $? -ne 0 ]; then
-        echo "Failed to get wsrep_cluster_namer"
+        log_job_message "Failed to get wsrep_cluster_name" 1
+	log_job 'FAILED' 'install garbd failed' 1
         exit 1
     fi
     CLUSTER_NAME=`echo $CLUSTER_NAME | awk   '{print $2;}'`
