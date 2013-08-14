@@ -529,7 +529,7 @@ function install_mysql
 	remote_cmd_nofail $XHOSTNAME "/usr/sbin/setenforce 0 "
 	remote_cmd_nofail $XHOSTNAME "echo '0' > /selinux/enforce "
         remote_cmd_nofail $XHOSTNAME "sed -i.bak 's#SELINUX=enforcing#SELINUX=permissive#g' /etc/selinux/config"
-	remote_cmd_nofail $XHOSTNAME "yum -y install nc libaio"	
+	remote_cmd_nofail $XHOSTNAME "yum -y install nc libaio rsync wget"	
     else
 	remote_cmd_nofail $XHOSTNAME "apt-get -y remove MySQL* mysql* Percona* percona* MariaDB* mariadb* MySQL-Cluster* MySQL-cluster* mysql-cluster* galera*"	
 	remote_cmd_nofail $XHOSTNAME "dpkg -P galera"	
