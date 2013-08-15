@@ -344,6 +344,8 @@ getModDatabase()
 	cmon_sql_path=$install_dir_cmon/sql
 	[ "$os" == "redhat" ] && cmon_sql_path=/usr/share/cmon
 
+	[ ! -d $cmon_sql_path ] && echo "Error: Could not found the cmon_sql_path." && exit 1
+
 	#sum up: 1.1.24 = 1000+100+24 if 1.2.2 = 1000+200+2
 	#echo "$version - $latest_version"
 	a1=`echo $vers | awk -F. -v OFS=. '{print $1}'`
@@ -401,6 +403,7 @@ upgradeCmonDatabase()
 	cmon_sql_path=$install_dir_cmon/sql
 	[ "$os" == "redhat" ] && cmon_sql_path=/usr/share/cmon
 
+	[ ! -d $cmon_sql_path ] && echo "Error: Could not found the cmon_sql_path." && exit 1
 
 	if [[ ! -z "${file_array[@]}" ]]; then
 		for mod_file in "${file_array[@]}"
