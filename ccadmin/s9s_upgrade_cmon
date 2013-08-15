@@ -408,12 +408,19 @@ upgradeCmonDatabase()
 	if [[ ! -z "${file_array[@]}" ]]; then
 		for mod_file in "${file_array[@]}"
 		do
-			($MYSQL_BIN -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT $CMON_DB_DB < $cmon_sql_path/$mod_file) &
-			printf "%-70s" "Applying CMON mod database $mod_file" && spinner $! && printf "[\e[00;32m %s\e[00m ]\n" OK
+			if [ -e $cmon_sql_path/$mod_file ]; then
+				($MYSQL_BIN -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT $CMON_DB_DB < $cmon_sql_path/$mod_file) &
+				printf "%-70s" "Applying CMON mod database $mod_file" && spinner $! && printf "[\e[00;32m %s\e[00m ]\n" OK
+			else
+				echo "Error: Could not found $cmon_sql_path/$mod_file." && exit 1
+			fi
 		done
 	else
 		echo "** No need to apply cmon_db_mods"
 	fi
+	
+	[ ! -e $cmon_sql_path/cmon_db.sql ] && echo "Error: Could not found $cmon_sql_path/cmon_db.sql" && exit 1
+	[ ! -e $cmon_sql_path/cmon_data.sql ] && echo "Error: Could not found $cmon_sql_path/cmon_data.sql" && exit 1
 
 	($MYSQL_BIN -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT $CMON_DB_DB < $cmon_sql_path/cmon_db.sql) &
 	printf "%-70s" "Upgrading CMON schema structure" && spinner $! && printf "[\e[00;32m %s\e[00m ]\n" OK
