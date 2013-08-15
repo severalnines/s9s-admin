@@ -28,9 +28,9 @@ helpMenu()
         echo ""
         echo "Options:"
         echo "-l, --latest              : Upgrade ClusterControl to latest version (recommended)"
-        echo "-t, --topdir              : Custom path for CMON installation (default: /usr/local)"
+        echo "-t, --topdir              : Non-default path for CMON installation"
         echo "-b, --backup              : Perform ClusterControl backup (all|controller|agent)"
-        echo "-d, --backupdir           : Custom path for ClusterControl  backup directory (default: /tmp/s9s_backup)"
+        echo "-d, --backupdir           : Custom path for ClusterControl backup directory (default: /tmp/s9s_backup)"
         echo "-r, --restore             : Restore from ClusterControl backup (all|controller|agent)"
         echo "-h, --help                : Print help"
         echo ""
@@ -535,7 +535,7 @@ upgradeCcUi()
 	commandStatus 'Cleaning up ClusterControl packages' "rm -rf $repo_dir/cc-*"
 	commandStatus 'Cleaning up ClusterControl install package' "rm -rf $repo_dir/install"
 
-	echo "** Upgrade ClusterControl UI completed!"
+	echo "** Upgrade ClusterControl UI complete!"
 }
 
 upgradeCmon()
@@ -630,7 +630,7 @@ upgradeCmon()
         fi
 	commandStatus 'Restoring CMON config file' "cp -f $tmp_dir/cmon.cnf /etc/"
 	startCmon
-	echo "** Upgrade completed!"
+	echo "** Upgrade complete!"
 }
 
 downloadLatest(){
@@ -668,7 +668,7 @@ downloadLatest(){
 		printf "%-70s" "Downloading $cc_package to $repo_dir " && spinner $! && printf "[\e[00;32m %s\e[00m ]\n" OK
 	fi
 
-	echo "** Download completed!"
+	echo "** Download complete!"
 }
 
 restoreCmon()
@@ -722,7 +722,7 @@ restoreCmon()
 		[ -f $tmp_dir/sbin/cmon ] && commandStatus 'Restoring CMON sbin binary' "cp -pf $tmp_dir/sbin/cmon /usr/sbin/"
                 startCmon
 
-                echo "** Restore to version $OLD_CMON_VERSION completed!"
+                echo "** Restore to version $OLD_CMON_VERSION complete!"
         else
                 echo "** ClusterControl backup is incomplete or not exists."
                 exit 1
@@ -739,7 +739,7 @@ backupCmon()
 	echo "==================================="
 	
 	rm -rf $tmp_dir
-	commandStatus 'Creating backup directory' "mkdir -p $tmp_dir"
+	commandStatus "Creating backup directory: $tmp_dir" "mkdir -p $tmp_dir"
 	upgrade_details=$tmp_dir/upgrade_details.txt
 	echo "OLD_CMON_VERSION=$CMON_VERSION" >> $upgrade_details
 	echo "LATEST_CMON_VERSION=$LATEST_CMON_VERSION" >> $upgrade_details
@@ -773,7 +773,7 @@ backupCmon()
 	[ -f /usr/sbin/cmon ] && mkdir -p $tmp_dir/sbin && commandStatus 'Backup CMON sbin binary' "cp -pf /usr/sbin/cmon $tmp_dir/sbin/"
 
 	echo "BACKUP_STATUS=COMPLETED" >> $upgrade_details
-	echo "** Backup completed!"
+	echo "** Backup completed: $tmp_dir"
 }
 
 restoreAgent()
