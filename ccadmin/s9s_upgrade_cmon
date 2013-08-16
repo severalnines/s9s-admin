@@ -30,7 +30,7 @@ helpMenu()
         echo "-l, --latest              : Upgrade ClusterControl to latest version (recommended)"
         echo "-t, --topdir              : Non-default path for CMON installation"
         echo "-b, --backup              : Perform ClusterControl backup (all|controller|agent)"
-        echo "-d, --backupdir           : Custom path for ClusterControl backup directory (default: /tmp/s9s_backup)"
+        echo '-d, --backupdir           : Custom path for ClusterControl backup directory (default: /tmp/s9s_backup_{time})'
         echo "-r, --restore             : Restore from ClusterControl backup (all|controller|agent)"
         echo "-h, --help                : Print help"
         echo ""
@@ -66,9 +66,6 @@ fi
 
 arch=`uname -m`
 [ "$arch" == "i686" ] && echo "Architecture not supported. Kindly use OS with x86_64 architecture." && exit 1
-
-tmp_dir=/tmp/s9s_backup
-[ ! -z "$backup_dir" ] && tmp_dir=$backup_dir
 
 CMON_CONFIG=/etc/cmon.cnf
 if [ ! -e $CMON_CONFIG ] ; then
@@ -112,6 +109,10 @@ rel_dir=`dirname "$0"`
 root_dir=`cd $rel_dir;pwd`
 repo_dir_name=s9s_repo
 repo_dir=$root_dir/$repo_dir_name
+now=`date +%Y-%m-%d-%H_%M_%S`
+tmp_dir=/tmp/s9s_backup_${now}
+[ ! -z "$backup_dir" ] && tmp_dir=$backup_dir
+
 install_config_path=/etc
 
 [ ! -d $repo_dir ] && mkdir $repo_dir
@@ -124,14 +125,30 @@ fi
 [ "$mode" == "agent" ] && source $repo_dir/agent.config
 
 ## Function 
+adviseRestore()
+{
+	echo -n "Upgrade failed. "
+	if [ -e $tmp_dir/upgrade_details.txt ]; then
+		echo -n "Fortunately, there is a backup in $tmp_dir" && echo ""
+	else
+		echo -n "Unfortunately, the detected backup is incomplete. Kindly proceed with manual restoration." && echo "" && exit 1
+	fi
+	read -p "Do you want to restore to the original version? [Y/n]: " answer
+	if [ "$answer" == "N" ] || [ "$answer" == "n" ]; then
+		echo "Restoration aborted."
+		exit 1
+	else
+                restoreCmon $tmp_dir
+	fi
+}
 
 commandStatus()
 {
 	com=$2
 	label=$1
 	printf "%-70s" "$label"
-	$com
-	[ $? -ne 0 ] && printf "[\e[00;31m %s\e[00m ]\n" "$label" ERROR && exit 1
+	$com 2>&1 >> /dev/null
+	[ $? -ne 0 ] && printf "[\e[00;31m %s\e[00m ]\n" "$label" ERROR && adviseRestore && exit 1
 	printf "[\e[00;32m %s\e[00m ]\n" OK
 }
 
@@ -320,6 +337,7 @@ stopCmon()
 
 startCmon()
 {
+	[ ! -z "$1" ] && os=$1
 
 	if [ "$mode" == "controller" ]; then		
 		apache_svc=apache2
@@ -606,8 +624,8 @@ upgradeCmon()
                 mkdir -p $wwwroot/cmon/graphs
                 commandStatus "Creating CMON upload directory" "mkdir -p $wwwroot/cmon/upload"
                 mkdir -p $wwwroot/cmon/upload/schema
-                commandStatus "Copying package to upload directory" "cp $repo_dir/* $wwwroot/cmon/upload/"
-		commandStatus "Restoring other packages to upload directory" "cp -rf $tmp_dir/wwwroot/cmon/upload/* $wwwroot/cmon/upload/"
+                commandStatus "Copying new packages to upload directory" "cp $repo_dir/* $wwwroot/cmon/upload/"
+		commandStatus "Restoring older packages to upload directory" "cp -rf $tmp_dir/wwwroot/cmon/upload/* $wwwroot/cmon/upload/"
 
 		cmon_agent_file=$repo_dir/$rpm_agent &&	fname=$rpm_agent
 		[ "$os" == "debian" ] && cmon_agent_file=$repo_dir/$cmon_package && fname=$cmon_package
@@ -683,6 +701,13 @@ downloadLatest(){
 
 restoreCmon()
 {
+	if [ -z "$1" ]; then
+		[ -z $backup_dir ] && echo "** Please specify the backup path using -d or --backupdir option." && exit 1
+	else
+		backup_dir=$1
+	fi
+	upgrade_details=$backup_dir/upgrade_details.txt
+        [ ! -e $upgrade_details ] && echo "** Backup status not found at $upgrade_details" && exit 1
         [ "$mode" == "controller" ] && checkMysqlBin
 
 	echo ""
@@ -690,49 +715,55 @@ restoreCmon()
         echo "       Restore CMON $mode"
         echo "==================================="
 
-        upgrade_details=$tmp_dir/upgrade_details.txt
-        [ ! -e $upgrade_details ] && echo "** Backup status not found at $upgrade_details" exit 1
         source $upgrade_details
+	[ "$OLD_CMON_VERSION" != "$LATEST_CMON_VERSION" ] && echo "** From version $LATEST_CMON_VERSION -> $OLD_CMON_VERSION"
 
         if [ "$BACKUP_STATUS" == "COMPLETED" ]; then
                 stopCmon
                 if [ "$mode" == "controller" ]; then
 			$MYSQL_BIN -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT -e "DROP DATABASE IF EXISTS $CMON_DB_DB"
 			$MYSQL_BIN -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT -e "CREATE DATABASE $CMON_DB_DB"
-			($MYSQL_BIN -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT $CMON_DB_DB < $tmp_dir/cmon_dump.sql) &
+			($MYSQL_BIN -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT $CMON_DB_DB < $backup_dir/cmon_dump.sql) &
 			printf "%-70s" "Restoring CMON schema" && spinner $! && printf "[\e[00;32m %s\e[00m ]\n" OK
-                        commandStatus 'Restoring CMON cron' "cp -pfR $tmp_dir/cmon_crond /etc/cron.d/cmon"
+			if [ -e $backup_dir/dcps_dump.sql ]; then
+				CC_DB_DB=dcps
+				$MYSQL_BIN -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT -e "DROP DATABASE IF EXISTS $CC_DB_DB"
+				$MYSQL_BIN -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT -e "CREATE DATABASE $CC_DB_DB"
+				($MYSQL_BIN -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT $CC_DB_DB < $backup_dir/dcps_dump.sql) &
+	                        printf "%-70s" "Restoring ClusterControl UI schema" && spinner $! && printf "[\e[00;32m %s\e[00m ]\n" OK
+			fi
+                        commandStatus 'Restoring CMON cron' "cp -pfR $backup_dir/cmon_crond /etc/cron.d/cmon"
 			rm -Rf $wwwroot/install
 			rm -Rf $wwwroot/cc-*
 			rm -Rf $wwwroot/cmonapi
 			rm -Rf $wwwroot/clustercontrol
 			rm -Rf $wwwroot/cmon
-                        commandStatus 'Restoring CMON web app' "cp -pfR $tmp_dir/wwwroot/* $wwwroot/"
-			commandStatus 'Restoring CMON configuration files' "cp -pfR $tmp_dir/cmon_rrd.cnf /etc"
+                        commandStatus 'Restoring CMON web app' "cp -pfR $backup_dir/wwwroot/* $wwwroot/"
+			commandStatus 'Restoring CMON configuration files' "cp -pfR $backup_dir/cmon_rrd.cnf /etc"
 	                if [ "$os" == "redhat" ]; then
 				share_dir_cmon=/usr/share
 				rm -Rf $share_dir_cmon/cmon*
-		                commandStatus 'Restoring CMON share directory' "cp -pfR $tmp_dir/local/* $share_dir_cmon/"
+		                commandStatus 'Restoring CMON share directory' "cp -pfR $backup_dir/local/* $share_dir_cmon/"
 			fi
                 fi
 
 		if [ "$os" == "debian" ]; then
 			share_dir_cmon=`echo $install_dir_cmon | sed "s|cmon||g"`
 			rm -Rf $share_dir_cmon/cmon*
-			commandStatus 'Restoring CMON install directory' "cp -pfR $tmp_dir/local/* $share_dir_cmon/"
+			commandStatus 'Restoring CMON install directory' "cp -pfR $backup_dir/local/* $share_dir_cmon/"
 		fi
-                commandStatus 'Restoring CMON configuration files' "cp -pfR $tmp_dir/cmon.cnf /etc"
-                commandStatus 'Restoring CMON log file' "cp -pfR $tmp_dir/cmon.log $logfile"
-                commandStatus 'Restoring CMON init.d' "cp -pfR $tmp_dir/cmon_init /etc/init.d/cmon"
+                commandStatus 'Restoring CMON configuration files' "cp -pfR $backup_dir/cmon.cnf /etc"
+                commandStatus 'Restoring CMON log file' "cp -pfR $backup_dir/cmon.log $logfile"
+                commandStatus 'Restoring CMON init.d' "cp -pfR $backup_dir/cmon_init /etc/init.d/cmon"
 
                 [ "$os" == "debian" ] && MYSQL_ETC=/etc/mysql
-                [ -f $tmp_dir/my.cnf ] && commandStatus 'Restoring my.cnf'  "cp -pfR $tmp_dir/my.cnf $MYSQL_ETC/my.cnf"
+                [ -f $backup_dir/my.cnf ] && commandStatus 'Restoring my.cnf'  "cp -pfR $backup_dir/my.cnf $MYSQL_ETC/my.cnf"
 
-                commandStatus 'Restoring CMON and S9S binary' "cp -pfR $tmp_dir/bin/* /usr/bin/"
-		[ -f $tmp_dir/sbin/cmon ] && commandStatus 'Restoring CMON sbin binary' "cp -pf $tmp_dir/sbin/cmon /usr/sbin/"
-                startCmon
+                commandStatus 'Restoring CMON and S9S binary' "cp -pfR $backup_dir/bin/* /usr/bin/"
+		[ -f $backup_dir/sbin/cmon ] && commandStatus 'Restoring CMON sbin binary' "cp -pf $backup_dir/sbin/cmon /usr/sbin/"
+                startCmon $os
 
-                echo "** Restore to version $OLD_CMON_VERSION complete!"
+                echo "** Restoration to version $OLD_CMON_VERSION complete!"
         else
                 echo "** ClusterControl backup is incomplete or not exists."
                 exit 1
@@ -748,7 +779,8 @@ backupCmon()
 	echo "        Backup CMON $mode"
 	echo "==================================="
 	
-	rm -rf $tmp_dir
+	[ -e $tmp_dir ] && rm -rf $tmp_dir
+	
 	commandStatus "Creating backup directory: $tmp_dir" "mkdir -p $tmp_dir"
 	upgrade_details=$tmp_dir/upgrade_details.txt
 	echo "OLD_CMON_VERSION=$CMON_VERSION" >> $upgrade_details
@@ -760,7 +792,9 @@ backupCmon()
 		mkdir -p $tmp_dir/wwwroot
 	        commandStatus 'Backup CMON web app' "cp -pfR $wwwroot/cmon $tmp_dir/wwwroot"
 		if [ -e $wwwroot/clustercontrol ]; then
+			CC_DB_DB=dcps
 			commandStatus 'Backup ClusterControl web app' "cp -pfR $wwwroot/cc-* $wwwroot/cmona* $wwwroot/clustercontrol $tmp_dir/wwwroot"
+			commandStatus 'Backup ClusterControl schema' "$MYSQLDUMP_BIN -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT $CC_DB_DB -r $tmp_dir/dcps_dump.sql"
 			echo "NEW_UI=YES" >> $upgrade_details
 		else
 			echo "NEW_UI=NO" >> $upgrade_details
@@ -783,13 +817,13 @@ backupCmon()
 	[ -f /usr/sbin/cmon ] && mkdir -p $tmp_dir/sbin && commandStatus 'Backup CMON sbin binary' "cp -pf /usr/sbin/cmon $tmp_dir/sbin/"
 
 	echo "BACKUP_STATUS=COMPLETED" >> $upgrade_details
-	echo "** Backup completed: $tmp_dir"
+	echo "** Backup completed at $tmp_dir"
 }
 
 restoreAgent()
 {
 	collectInfo	
-	options='--restore=controller'
+	options="--restore=controller --backupdir=$backup_dir"
 
 	all_agent_hosts=`echo $mysql_server_addresses | tr ',' ' '`
 
@@ -904,19 +938,32 @@ performUpgrade()
 	fi
 }
 
-## Runtime
+verify_options (){
+	[ -z "$mysql_hostname" ] && echo "** Unable to load option 'mysql_hostname' in $CMON_CONFIG" && exit 1
+	[ -z "$mysql_port" ] && echo "** Unable to load option 'mysql_port' in $CMON_CONFIG" && exit 1
+	[ -z "$mysql_password" ] && echo "** Unable to load option 'mysql_password' in $CMON_CONFIG" && exit 1
+	[ -z "$type" ] && echo "** Unable to load option 'type' in $CMON_CONFIG" && exit 1
+	[ -z "$cluster_id" ] && echo "** Unable to load option 'cluster_id' in $CMON_CONFIG" && exit 1
+	[ -z "$mode" ] && echo "** Unable to load option 'mode' in $CMON_CONFIG" && exit 1
+	if [ "$mode" == "controller" ]; then
+        	[ -z "$os" ] && echo "** Unable to load option 'os' in $CMON_CONFIG" && exit 1
+	fi
 
-if [ "$mode" == "controller" ]; then
-	tmp_dir=/tmp/s9s_backup
-	[ ! -z "$backup_dir" ] && tmp_dir=$backup_dir
-	install_dir_cmon=/usr/local/cmon
-	[ "$os" == "redhat" ] && install_dir_cmon=/usr
-	[ ! -z "$top_dir" ] && install_dir_cmon=$top_dir
-fi
+}
 
-[ ! -f $install_dir_cmon/sbin/cmon ] && echo "Cannot find CMON binary at $install_dir_cmon/sbin/cmon. Make sure you specify correct CMON path. Use -t to specify custom CMON path." && exit 1
+verify_topdir()
+{
+	if [ "$mode" == "controller" ]; then
+		install_dir_cmon=/usr/local/cmon
+		[ ! -z "$top_dir" ] && install_dir_cmon=$top_dir
+		[ "$os" == "redhat" ] && install_dir_cmon=/usr
+	fi
 
+	[ ! -f $install_dir_cmon/sbin/cmon ] && echo "Cannot find CMON binary at $install_dir_cmon/sbin/cmon. Make sure you specify correct CMON path. Use -t to specify custom CMON path." && exit 1
+}
 if [ "$latest" == 1 ]; then
+	verify_topdir
+	verify_options
 	if [ "$mode" == "controller" ]; then
 		collectInfo
 	        if [ $? -eq 0 ]; then
@@ -931,6 +978,8 @@ if [ "$latest" == 1 ]; then
 	fi
 
 elif [ "$latest" != 1 ] && [ ! -z "$backup" ]; then
+	verify_topdir
+	verify_options
 	if [ "$backup" == "controller" ]; then
 		backupCmon
 	elif [ "$backup" == "agent" ]; then
