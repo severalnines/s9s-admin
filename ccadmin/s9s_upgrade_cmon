@@ -129,10 +129,15 @@ adviseRestore()
 {
 	echo -n "Upgrade failed. "
 	if [ -e $tmp_dir/upgrade_details.txt ]; then
-		echo -n "Fortunately, there is a backup in $tmp_dir" && echo ""
+		source $tmp_dir/upgrade_details.txt
+		if [ "$BACKUP_STATUS" == "COMPLETED" ]; then
+			echo -n "Found a working backup at $tmp_dir" && echo ""
+		else
+			echo -n "Unfortunately, the detected backup is incomplete. Kindly proceed with manual restoration." && echo "" && exit 1
+		fi
 	else
-		echo -n "Unfortunately, the detected backup is incomplete. Kindly proceed with manual restoration." && echo "" && exit 1
-	fi
+		echo -n "Working backup not found. Kindly proceed with manual restoration." && echo "" && exit 1
+	fi	
 	read -p "Do you want to restore to the original version? [Y/n]: " answer
 	if [ "$answer" == "N" ] || [ "$answer" == "n" ]; then
 		echo "Restoration aborted."
