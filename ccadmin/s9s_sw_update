@@ -553,7 +553,10 @@ function install_mysql
     
     remote_cmd_nofail $XHOSTNAME "mkdir -p $S9S_TMPDIR"
     remote_cmd_nofail $XHOSTNAME "chown  -R $SSH_USER:$SSH_USER $STAGING_DIR"
-#    remote_copy $S9S_TMPDIR/my.cnf $XHOSTNAME $S9S_TMPDIR
+     remote_copy /usr/bin/s9s_backup $XHOSTNAME $S9S_TMPDIR
+     remote_cmd $XHOSTNAME "mv $S9S_TMPDIR/s9s_backup /usr/bin"
+     remote_cmd_nofail $XHOSTNAME "chmod u+x /usr/bin/s9s_backup"
+     #remote_copy $S9S_TMPDIR/my.cnf $XHOSTNAME $S9S_TMPDIR
 #    remote_cmd $XHOSTNAME "mkdir -p $CONFIGDIR/"
 #    remote_cmd $XHOSTNAME "mv -f $S9S_TMPDIR/my.cnf $CONFIGDIR/"
 
