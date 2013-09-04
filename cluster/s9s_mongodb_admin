@@ -902,6 +902,15 @@ function set_backup_status
 
 }
 
+function set_backup_size
+{
+    local storagesize=$1
+    QUERY="UPDATE mongodb_backup SET size='$storagesize' WHERE backupid=$BACKUP_ID and cid=$CLUSTER_ID"
+    $MYSQL_BIN --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"
+}
+
+
+
 function backup_cluster
 {        
     args=`getopt i:b:j: $*`
@@ -988,12 +997,15 @@ EOF
   fi
 
   BACKUP_ID=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select ifnull(max(backupid)+1,1) from mongodb_backup"`
-  
+
+
+  curr_time=`date +%Y-%m-%d-%H-%M-%S`;  
+  BACKUPDIR=$BACKUPDIR/$curr_time  
 
   QUERY="UPDATE mongodb_backup SET status='failed', error=1 WHERE status='running'"
   $MYSQL_BIN --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"
  
-  QUERY="INSERT INTO mongodb_backup(backupid, cid, directory, error, status, report_ts, backup_type, backup_method, logfile) VALUES($BACKUP_ID, $CID, '$BACKUPDIR','','running',now(), 'full', 'mongodump','')"
+  QUERY="INSERT INTO mongodb_backup(backupid, cid, directory, error, status, report_ts, backup_type, backup_method, logfile, cc_storage, storage_host) VALUES($BACKUP_ID, $CID, '$BACKUPDIR','','running',now(), 'full', 'mongodump','', 1, '$HOSTNAME')"
   
   $MYSQL_BIN --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"
   if [ $? -ne 0 ]; then
@@ -1050,9 +1062,7 @@ EOF
       log_job "FAILED" "Backup Failed" 1
       exit 1
   fi
-  curr_time=`date +%Y-%m-%d-%H-%M-%S`;
-  
-  BACKUPDIR=$BACKUPDIR/$curr_time
+
   if [ $REPLICASET_BACKUP -eq 0 ]; then      
       
       TYPE="configsvr"
@@ -1120,6 +1130,9 @@ EOF
       log_job "FAILED" "Backup Failed" 1
   fi
   
+
+  storagesize=`du -b -s $BACKUPDIR | awk '{print $1;}'`
+  set_backup_size $storagesize
   sleep 10
 
   
