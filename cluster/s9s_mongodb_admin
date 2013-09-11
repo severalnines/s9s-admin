@@ -318,34 +318,34 @@ function add_shard
     for i
     do
 	case "$i" in
-	        -i)
-CLUSTER_ID="$2"; shift;
-shift;;
-    -j)
-    JOBID="$2"; shift;
-    shift;;
-        -a)
-	SERVER1="$2"; shift;
-	shift;;
+	    -i)
+		CLUSTER_ID="$2"; shift;
+		shift;;
+	    -j)
+		JOBID="$2"; shift;
+		shift;;
+            -a)
+		SERVER1="$2"; shift;
+		shift;;
 	    -b)
-SERVER2="$2"; shift;
-shift;;
-    -c)
-    SERVER3="$2"; shift;
-    shift;;
-        -N)
-	RSNAME="$2"; shift;
-	shift;;
+		SERVER2="$2"; shift;
+		shift;;
+	    -c)
+		SERVER3="$2"; shift;
+		shift;;
+            -N)
+		RSNAME="$2"; shift;
+		shift;;
             --)
-	    shift; break;;
-	    esac
+		shift; break;;
+	esac
     done    
 
   if [ -z "$CLUSTER_ID" ]; then
       echo "s9s_mongodb_admin --add-shard -i <cluster id>"
       exit 1
   fi
-
+  
   if [ -z "$SERVER1" ]; then
       echo "s9s_mongodb_admin --add-shard -a <replica set member address>"
       exit 1
@@ -409,39 +409,51 @@ shift;;
 function install_mongodb
 {
     local xhost=$1
-    case $OS in
-	redhat)
-	    echo "not supported yet"
-	    exit 1
-            remote_copy 10gen.repo $xhost $S9S_TMPDIR/ 
-	    remote_cmd $xhost "mv $S9S_TMPDIR/10gen.repo /etc/yum.repos.d/"
-	    remote_cmd_nofail $xhost "killall -9 cmon mongod"
-	    remote_cmd_nofail $xhost "rm -rf /etc/mongodb.conf"
-	    remote_cmd_nofail $xhost "rm -rf /var/lib/mongodb"
-	    remote_cmd_nofail $xhost "rm -rf /var/log/mongodb"
-	    remote_cmd_nofail $xhost "rm -rf /etc/init.d/mongod"
-	    remote_cmd_nofail $xhost "yum -y remove mongo-10gen mongo-10gen-server"
-	    remote_cmd_nofail $xhost "yum -y install mongo-10gen mongo-10gen-server"
-	    remote_cmd $xhost  "chown 755 /etc/init.d/mongod"
-	    remote_cmd $xhost  "/sbin/chkconfig --add mongod"
+    case $VENDOR in
+	tokutek)
 	    ;;
-	debian)
-	    remote_cmd $xhost "apt-key adv --keyserver keyserver.ubuntu.com --recv 7F0CEB10"
-	    remote_cmd_nofail $xhost "killall -9 cmon mongod"
-	    remote_cmd_nofail $xhost "rm -rf /etc/mongodb.conf"
-	    remote_cmd_nofail $xhost "rm -rf /var/lib/mongodb"
-	    remote_cmd_nofail $xhost "rm -rf /var/log/mongodb"
-	    remote_cmd_nofail $xhost "touch /etc/init.d/mongodb"
-            remote_cmd_nofail $xhost "LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive apt-get -y remove mongo*"
-	    remote_cmd_nofail $xhost "LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive apt-get -y remove mongodb-10gen"
-	    remote_cmd_nofail $xhost "rm -rf /etc/init.d/mongo*"
-	    remote_cmd_nofail $xhost "sed -i.bak '/10gen/d'  /etc/apt/sources.list"
-	    remote_cmd $xhost "/bin/sh -c 'echo \"deb http://downloads-distro.mongodb.org/repo/ubuntu-upstart dist 10gen\" >> /etc/apt/sources.list'"
-	    remote_cmd $xhost "apt-get -q -y update"
-	    remote_cmd $xhost "LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::='--force-confnew' -y -q install mongodb-10gen"
+	10gen)
+	    case $OS in
+		redhat)
+		    echo "not supported yet"
+		    exit 1
+		    remote_copy 10gen.repo $xhost $S9S_TMPDIR/ 
+		    remote_cmd $xhost "mv $S9S_TMPDIR/10gen.repo /etc/yum.repos.d/"
+		    remote_cmd_nofail $xhost "killall -9 cmon mongod"
+		    remote_cmd_nofail $xhost "rm -rf /etc/mongodb.conf"
+		    remote_cmd_nofail $xhost "rm -rf /var/lib/mongodb"
+		    remote_cmd_nofail $xhost "rm -rf /var/log/mongodb"
+		    remote_cmd_nofail $xhost "rm -rf /etc/init.d/mongod"
+		    remote_cmd_nofail $xhost "yum -y remove mongo-10gen mongo-10gen-server"
+		    remote_cmd_nofail $xhost "yum -y install mongo-10gen mongo-10gen-server"
+		    remote_cmd $xhost  "chown 755 /etc/init.d/mongod"
+		    remote_cmd $xhost  "/sbin/chkconfig --add mongod"
+		    ;;
+		debian)
+		    remote_cmd $xhost "apt-key adv --keyserver keyserver.ubuntu.com --recv 7F0CEB10"
+		    remote_cmd_nofail $xhost "killall -9 cmon mongod"
+		    remote_cmd_nofail $xhost "rm -rf /etc/mongodb.conf"
+		    remote_cmd_nofail $xhost "rm -rf /var/lib/mongodb"
+		    remote_cmd_nofail $xhost "rm -rf /var/log/mongodb"
+		    remote_cmd_nofail $xhost "touch /etc/init.d/mongodb"
+		    remote_cmd_nofail $xhost "LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive apt-get -y remove mongo*"
+		    remote_cmd_nofail $xhost "LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive apt-get -y remove mongodb-10gen"
+		    remote_cmd_nofail $xhost "rm -rf /etc/init.d/mongo*"
+		    remote_cmd_nofail $xhost "sed -i.bak '/10gen/d'  /etc/apt/sources.list"
+		    remote_cmd $xhost "/bin/sh -c 'echo \"deb http://downloads-distro.mongodb.org/repo/ubuntu-upstart dist 10gen\" >> /etc/apt/sources.list'"
+		    remote_cmd $xhost "apt-get -q -y update"
+		    remote_cmd $xhost "LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::='--force-confnew' -y -q install mongodb-10gen"
+		    ;;
+		*)
+		    echo "OS is unknonwn / not supported" 		  
+		    exit 1
+		    ;;
+	    esac
 	    ;;
 	*)
-	    echo "OS is unknonwn / not supported" 
+	    echo "Unknown vendor: $VENDOR"
+	    exit 1
+	    ;;
     esac
     
     remote_cmd_nofail ${xhost} "killall -9 mongod mongos cmon"
