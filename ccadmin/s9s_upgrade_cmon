@@ -5,13 +5,14 @@
 
 
 DEBUG=1
-TEMP=`getopt -o h,l,t:,b:,d:,r: --long help,latest,topdir:,backup:,backupdir:,restore: -n 's9s_upgrade_cmon' -- "$@"`
+TEMP=`getopt -o h,l,f,t:,b:,d:,r: --long help,latest,force,topdir:,backup:,backupdir:,restore: -n 's9s_upgrade_cmon' -- "$@"`
 eval set -- "$TEMP"
 
 while true ; do
 	case "$1" in
 		-h|--help) help="1" ; shift ;;
 		-l|--latest) latest="1" ; shift ;;
+		-f|--force) force="1" ; shift ;;
 		-t|--topdir) top_dir="$2" ; shift 2 ;;
 		-b|--backup) backup="$2" ; shift 2 ;;
 		-d|--backupdir) backup_dir="$2" ; shift 2 ;;
@@ -28,6 +29,7 @@ helpMenu()
         echo ""
         echo "Options:"
         echo "-l, --latest              : Upgrade ClusterControl to latest version (recommended)"
+	echo "-f, --force               : Force upgrade"
         echo "-t, --topdir              : Non-default path for CMON installation"
         echo "-b, --backup              : Perform ClusterControl backup (all|controller|agent)"
         echo '-d, --backupdir           : Custom path for ClusterControl backup directory (default: /tmp/s9s_backup_{time})'
@@ -61,6 +63,9 @@ elif [ ! -z "$top_dir" ] && [ -z "$backup" ] && [ -z "$restore" ] && [ -z "$late
         exit 1
 elif [ ! -z "$restore" ] && [ ! -z "$latest" ]; then
 	echo "Option restore cannot be used with option latest."
+        exit 1
+elif [ ! -z "$force" ] && [ -z "$latest" ]; then
+	echo "Option force need to be used with option latest."
         exit 1
 fi
 
@@ -152,7 +157,7 @@ commandStatus()
 	com=$2
 	label=$1
 	printf "%-70s" "$label"
-	$com 2>&1 >> /dev/null
+	$com 2>&1 >> s9s_upgrade_log
 	[ $? -ne 0 ] && printf "[\e[00;31m %s\e[00m ]\n" "$label" ERROR && adviseRestore && exit 1
 	printf "[\e[00;32m %s\e[00m ]\n" OK
 }
@@ -929,7 +934,9 @@ checkSudo ()
 
 performUpgrade()
 {
-	read -p "** New version found. Proceed with upgrading? (Y/n): " answer
+	echo ""
+	[ "$force" == 1 ] || echo "New version found."
+	read -p "** Proceed with upgrading? (Y/n): " answer
 	if [ "$answer" == "N" ] || [ "$answer" == "n" ]; then
 		echo "Upgrade cancelled."
 		exit 1
@@ -974,8 +981,12 @@ if [ "$latest" == 1 ]; then
 	        if [ $? -eq 0 ]; then
 			performUpgrade
 		else
-			echo "ClusterControl is already up-to-date"
-			exit 1
+			echo "ClusterControl is already up-to-date."
+			if [ "$force" == 1 ]; then
+				performUpgrade
+			else
+				exit 1
+			fi
 		fi
 	else
 		backupCmon
