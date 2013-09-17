@@ -3,7 +3,7 @@
 # More information is in the COPYING file in the top directory of this package.
 # Copyright (C) 2011 Severalnines
 
-VERSION=0.3
+VERSION=0.4
 
 TEMP=`getopt -o H:,p:,t:,P:,h,v --long host:,password:,type:,port:,help,version -n 's9s_cluster_status' -- "$@"`
 eval set -- "$TEMP"
@@ -73,13 +73,21 @@ check_mysqlbin(){
 		echo "mysqlbin=/path/to/mysql"
 	        exit 1
 	fi
+
+	test_query="SELECT * from cmon.hosts;"
+	$mysqlbin -h$cmon_db_host -ucmon -p$cmon_db_password -P$cmon_db_port -A -Bse "$test_query" > /dev/null
+	retval=$?
+	if [ $retval != 0 ]; then
+		echo "Failed to query cmon database. Please check MySQL cmon user privileges on $cmon_db_host." && exit 1
+	fi
+
 	return 0
 }
 
 if [ $query_type == "cluster" ]; then
 
 	# SQL query
-	query='SELECT status FROM cmon.cluster_state WHERE id=1'
+	query='SELECT status FROM cmon.cluster_state WHERE id=1;'
 	
 	check_mysqlbin
 	
@@ -125,19 +133,14 @@ UNION SELECT severity,cmon.hosts.hostname,alarm_name,message,cmon.simple_alarm.r
 FROM cmon.simple_alarm \
 LEFT JOIN cmon.hosts \
 ON cmon.simple_alarm.hostid=cmon.hosts.id \
-WHERE ignored=0'
+WHERE ignored=0;'
 
 	check_mysqlbin
 
 	if [ $? -eq 0 ]; then
 		# Comma delimited on query result
 		execute_query=`$mysqlbin -h$cmon_db_host -ucmon -p$cmon_db_password -P$cmon_db_port -A -Bse "$query" | sed "s/'/\'/;s/\t/,/g;s/^//;s/$//;s/\n//g"`
-		if [ ! "$execute_query" ]; then
-			echo "Failed to query cmon database. The following query failed : $query"
-			echo "Unknown: Alarm status is UNKNOWN"
-			stateid=3
-			exit $stateid
-		else
+		if [ "$execute_query" ]; then
 			# Count severity's number
 			INPUT=/tmp/query_result
 			OUTPUT=/tmp/output
@@ -145,16 +148,19 @@ WHERE ignored=0'
 			[ -f $OUTPUT ] && rm -Rf $OUTPUT
 			echo "$execute_query" > $INPUT
 
+			
 			OLDIFS=$IFS
 			IFS=,
 			critical=0; warning=0;
 			while read severity hostname alarm description timestamp
 			do
-				if [ $severity == "CRITICAL" ]; then
-					critical=$(($critical+1))
-				fi
-				if [ $severity == "WARNING" ]; then
-					warning=$(($warning+1))
+				if [ ! -z $severity ]; then
+					if [ $severity == "CRITICAL" ]; then
+						critical=$(($critical+1))
+					fi
+					if [ $severity == "WARNING" ]; then
+						warning=$(($warning+1))
+					fi
 				fi
 			# Turn output to array
 			full_status=($severity $hostname $alarm)
@@ -175,8 +181,17 @@ WHERE ignored=0'
 				echo "OK: No alarms"
 				stateid=0
 			fi
-			exit $stateid
+		else
+                        if [ $retval -eq 0 ]; then
+                                echo "OK: No alarms"
+                                stateid=0
+			else
+                                echo "Failed to query cmon database. The following query failed : $query"
+                                echo "Unknown: Alarm status is UNKNOWN"
+                                stateid=3
+			fi
 		fi
+		exit $stateid
 	fi
 
 else
