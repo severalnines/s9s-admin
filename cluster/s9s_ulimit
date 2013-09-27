@@ -72,6 +72,7 @@ CLUSTER_TYPE=$type
 MYSQL_OPTS="--connect-timeout=$CONNECT_TIMEOUT"
 OSUSER=`whoami`
 [ ! -z "$osuser" ] && os_user=$osuser
+[ -z "$ssh_port" ] && ssh_port=22
 
 if [ "$OSUSER" != "root" ]; then
     echo "must be executed as 'root' or with 'sudo'"
@@ -144,7 +145,6 @@ checkMysqlBin()
 	[ -z "$CMON_USER" ] && echo "CMON_USER was not set - aborting" && exit 1
 	[ -z "$CMON_DB_DB" ] && echo "CMON_DB_DB was not set - aborting" && exit 1
 	[ -z "$CMON_PASSWORD" ] && echo "CMON_PASSWORD was not set - aborting" && exit 1
-	[ -z "$CMON_PASSWORD" ] && echo "CMON_PASSWORD was not set - aborting" && exit 1
 
 	return 0
 }
@@ -173,10 +173,12 @@ verify_ulimit()
 add_ulimit_bashrc()
 {
 	flag_val=$1
-	echo "ulimit $flag_val $ulimit_value" >> $BASHRC_FILE
+	
 	if [ "$os_user" != "root" ]; then
 		BASHRC_ROOT_FILE=/root/.bashrc
 		echo "ulimit $flag_val $ulimit_value" >> $BASHRC_ROOT_FILE
+	else
+		echo "ulimit $flag_val $ulimit_value" >> $BASHRC_FILE
 	fi
 }
 
@@ -191,18 +193,20 @@ update_ulimit_bashrc()
 		"rss") flag='-m'; ;;
 		"stack") flag='-s'; ;;
 		"cpu") flag='-t'; ;;
-		"noproc") flag='-u'; ;;
+		"nproc") flag='-u'; ;;
 		(*) flag=''; ;;
 	esac;
 
 	if [ "$flag" != "" ]; then
-		val_rc=`cat $BASHRC_FILE | grep -v ^# | grep "ulimit $flag" 2> /dev/null`
-
-		if [ -z "$val_rc" ]; then
+		val_rc=`grep -v ^# $BASHRC_FILE | grep "ulimit $flag" 2> /dev/null`
+		if [ ! "$val_rc" ]; then
 			add_ulimit_bashrc $flag
 		else
 			line_rc=`grep -nv ^# $BASHRC_FILE | grep "ulimit $flag" | awk {'print $1'} | sed "s|:.*||g"`
-			sed -i "${line_rc}s|^|#|" $BASHRC_FILE
+			for line in $line_rc
+			do
+				sed -i "${line}s|^|#|" $BASHRC_FILE
+			done
 			add_ulimit_bashrc $flag
 		fi
 	fi
@@ -268,8 +272,12 @@ execute_ulimit() {
 checkSudo ()
 {
 	checkMysqlBin
-	query_ssh_identity="SELECT value FROM cmon.cmon_configuration WHERE param='SSH_IDENTITY' AND cid=$cluster_id"
-	SSH_IDENTITY=`$MYSQL_BIN -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT -A -Bse "$query_ssh_identity"`
+	query_ssh_identity="SELECT value FROM $CMON_DB_DB.cmon_configuration WHERE param='SSH_IDENTITY' AND cid=$cluster_id"
+	SSH_IDENTITY=`$MYSQL_BIN -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT -A -Bse "$query_ssh_identity"`	
+	query_all_agents="SELECT hostname FROM $CMON_DB_DB.hosts WHERE NOT hostname='$mysql_hostname'"
+        ALL_AGENTS=`$MYSQL_BIN -u$CMON_USER -p"$CMON_PASSWORD" -h$CMON_DB_HOST -P$CMON_DB_PORT -A -Bse "$query_all_agents"`
+
+	[ "$ALL_AGENTS" ] || (echo "Unable to retrieve agent hosts in cluster." && exit 1)
 
 	ssh_key="/home/$os_user/.ssh/id_rsa"
 	[ "$os_user" == "root" ] && ssh_key="/root/.ssh/id_rsa"
@@ -287,21 +295,15 @@ execute_ulimit_agent()
 	options=" -t $ulimit_type -n $ulimit_value"
 	[ ! -z $1 ] && options="$1"
 
-	all_agent_hosts=`echo $mysql_server_addresses | tr ',' ' '`
-
-	if [ "$type" == "mysqlcluster" ]; then
-		all_agents="$mysql_server_addresses $mgmnode_addresses $datanode_addresses"
-		all_agent_hosts=$(echo "${all_agents[@]}" | tr ',' ' ' | tr ' ' '\n' | sort -u | tr '\n' ' ')
-	fi
-
+	all_agent_hosts=$(echo "${ALL_AGENTS[@]}" | sort -u | tr '\n' ' ')
 
 	for h in $all_agent_hosts
 	do
-		ssh -t -q -i $ssh_key $os_user@$h "mkdir -p ~/cc/"
-		scp -q -i $ssh_key `basename $0` $os_user@$h:~/cc/
+		ssh -t -q -p $ssh_port -i $ssh_key $os_user@$h "mkdir -p ~/cc/"
+		scp -q -P $ssh_port -i $ssh_key `basename $0` $os_user@$h:~/cc/
 		echo "Hostname/IP: $h"
-		ssh -t -q -i $ssh_key $os_user@$h "$sudo cc/`basename $0` $options"
-		ssh -t -q -i $ssh_key $os_user@$h "rm -rf ~/cc"
+		ssh -t -p $ssh_port -q -i $ssh_key $os_user@$h "$sudo cc/`basename $0` $options"
+		ssh -t -p $ssh_port -q -i $ssh_key $os_user@$h "rm -rf ~/cc"
 	done
 
 }

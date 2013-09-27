@@ -99,7 +99,7 @@ if [ $query_type == "cluster" ]; then
 			stateid=3
 			exit $stateid
 		else
-			clustate=${execute_query^^}
+			clustate=$execute_query
 		fi
 	fi
 
