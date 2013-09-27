@@ -440,13 +440,10 @@ function add_shard
       remote_cmd_nofail $R "mkdir -p $S9S_TMPDIR"
   done
   
-#  for R in $RS_MEMBERS
- # do
- #     install_mongodb $R  $TGZ_FILE
- # done
-  #
-  
-
+  for R in $RS_MEMBERS
+  do
+      install_mongodb $R  $TGZ_FILE
+  done
   start_rs
   create_rs
   create_shard
