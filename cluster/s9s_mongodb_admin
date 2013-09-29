@@ -96,11 +96,14 @@ function remote_copy()
    destfile=$3
    printf "%-4s: Copying '%s' " "$desthost" "$srcfile"
    scp $SSH_OPTS2 $srcfile $SSH_USER@$desthost:$destfile >> $HOME/s9s_deploy.log  2>/dev/null
+   echo "scp $SSH_OPTS2 $srcfile $SSH_USER@$desthost:$destfile >> $HOME/s9s_deploy.log  2>/dev/null"
    if [ $? -eq 0 ]; then
       log_job_message "copying file $srcfile --> $desthost:$destfile" 0
       printf "\033[32m[ok]\033[0m\n"
       return 0
    else
+       echo "FAILED: scp $SSH_OPTS2 $srcfile $SSH_USER@$desthost:$destfile >> $HOME/s9s_deploy.log  2>/dev/null"
+       echo ""
       log_job_message "copying file $srcfile --> $desthost:$destfile" 1
       log_job 'FAILED' 's9s_haproxy failed' 1
       printf "\033[31m[failed]\033[0m\n"
@@ -232,13 +235,60 @@ function load_opts
     if [ "$SSH_PORT" = "" ] || [ "$SSH_PORT" = "NULL" ];  then
         SSH_PORT="22"
     fi
+
     SSH_OPTS="$SSH_OPTSX -p$SSH_PORT $SSH_OPTS"    
-    SSH_OPTS2="-P$SSH_PORT $SSH_OPTS"    
+    SSH_OPTS2="-P$SSH_PORT $SSH_OPTS2 -q"     
 
     if [ "$BACKUPDIR" = "" ]; then
         BACKUPDIR="$HOME/backups/"
     fi
 
+}
+
+
+function wait_for_ok
+{
+   desthost=$1
+   port=$2
+   timeout=$3
+   retry=0
+   echo "Trying to connect to mongo for $timeout seconds to check it starts up"
+   while [ $retry -lt $timeout ];
+   do
+      echo -n "."
+      ok=`$MONGODB_BASEDIR/bin/mongo $desthost:$port --quiet --eval "printjson(db.serverStatus().ok)" 2>&1`
+      if [ "$ok" = "1" ];  then
+         echo ""
+         echo "Node started"
+         return 0
+      fi
+      sleep 1
+      retry=`expr $retry + 1`
+   done
+   echo "Node failed to start in $timeout seconds."
+   exit 1
+}
+function wait_for_ok_rs
+{
+   desthost=$1
+   port=$2
+   timeout=$3
+   retry=0   
+   echo "Trying to connect to mongo for $timeout seconds to check it is done creating replica set"
+   while [ $retry -lt $timeout ];
+   do
+      ok=`$MONGODB_BASEDIR/bin/mongo $desthost:$port --quiet --eval "printjson(rs.status().members)"  |grep stateStr | grep -e 'PRIMARY\|SECONDARY'  |wc -l 2>&1`
+      echo  "Check ${retry}/${timeout} : $ok PRIMARY/SECONDARY(s) initialized out of ${RS_SIZE}"
+      if [ "$ok" = "${RS_SIZE}" ];  then
+          echo ""
+          echo "PRIMARY and SECONDARY(s) detected ok!"
+          return 0
+      fi
+      sleep 1
+      retry=`expr $retry + 1`
+   done
+   echo "Failed to detect PRIMARY and SECONDARY(s) in $timeout seconds."
+   exit 1
 }
 
 function remove_lockfile
@@ -313,7 +363,7 @@ function remove_lockfile
 function add_shard
 {
     RESTART_CMON=1
-    args=`getopt i:a:b:c:N:m:j: $*`
+    args=`getopt i:a:b:c:N:m:j:f: $*`
     set -- $args
     for i
     do
@@ -335,6 +385,9 @@ function add_shard
 		shift;;
             -N)
 		RSNAME="$2"; shift;
+		shift;;
+            -f)
+		TGZ_FILE="$2"; shift;
 		shift;;
             --)
 		shift; break;;
@@ -362,6 +415,7 @@ function add_shard
       echo "s9s_mongodb_admin --add-shard -N <replica set name>"
       exit 1
   fi
+
   MONGOS_SERVER=$(get_mongos_server)
   if [ -z "$MONGOS_SERVER" ]; then
       echo "s9s_mongodb_admin --add-shard : no running mongos server found"
@@ -373,6 +427,13 @@ function add_shard
   echo $CLUSTER_ID
   load_opts $CLUSTER_ID
   
+  if [ $VENDOR = 'tokutek' ]; then 
+      if [ -z "$TGZ_FILE" ]; then
+	  echo "s9s_mongodb_admin --add-shard -f <path to tokumx .tgz file>"
+	  exit 1
+      fi
+  fi
+
   for R in $RS_MEMBERS $MONGOS_SERVER
   do
       remote_cmd $R "echo 'ssh test'"
@@ -381,9 +442,8 @@ function add_shard
   
   for R in $RS_MEMBERS
   do
-      install_mongodb $R
+      install_mongodb $R  $TGZ_FILE
   done
-  
   start_rs
   create_rs
   create_shard
@@ -409,8 +469,20 @@ function add_shard
 function install_mongodb
 {
     local xhost=$1
+
+    remote_cmd_nofail $xhost "killall -9 cmon mongod"
+    remote_cmd_nofail $xhost "rm -rf /etc/mongodb.conf"
+    remote_cmd_nofail $xhost "rm -rf /var/lib/mongodb"
+    remote_cmd_nofail $xhost "rm -rf /var/log/mongodb"
+    remote_cmd_nofail $xhost "rm -rf /etc/init.d/mongod"
     case $VENDOR in
 	tokutek)
+	    TGZ_FILE=$2
+	    remote_copy $TGZ_FILE $xhost $S9S_TMPDIR/ 
+	    remote_cmd $xhost  "tar xfz $S9S_TMPDIR/`basename $TGZ_FILE` -C /usr/local"
+	    remote_cmd $xhost  "rm -rf /usr/local/tokumx"
+	    remote_cmd $xhost  "ln -s --force /usr/local/`basename $TGZ_FILE .tgz`  /usr/local/tokumx" 
+	    remote_cmd $xhost  "test -f /usr/local/tokumx/bin/mongod" 
 	    ;;
 	10gen)
 	    case $OS in
@@ -419,11 +491,6 @@ function install_mongodb
 		    exit 1
 		    remote_copy 10gen.repo $xhost $S9S_TMPDIR/ 
 		    remote_cmd $xhost "mv $S9S_TMPDIR/10gen.repo /etc/yum.repos.d/"
-		    remote_cmd_nofail $xhost "killall -9 cmon mongod"
-		    remote_cmd_nofail $xhost "rm -rf /etc/mongodb.conf"
-		    remote_cmd_nofail $xhost "rm -rf /var/lib/mongodb"
-		    remote_cmd_nofail $xhost "rm -rf /var/log/mongodb"
-		    remote_cmd_nofail $xhost "rm -rf /etc/init.d/mongod"
 		    remote_cmd_nofail $xhost "yum -y remove mongo-10gen mongo-10gen-server"
 		    remote_cmd_nofail $xhost "yum -y install mongo-10gen mongo-10gen-server"
 		    remote_cmd $xhost  "chown 755 /etc/init.d/mongod"
@@ -431,10 +498,6 @@ function install_mongodb
 		    ;;
 		debian)
 		    remote_cmd $xhost "apt-key adv --keyserver keyserver.ubuntu.com --recv 7F0CEB10"
-		    remote_cmd_nofail $xhost "killall -9 cmon mongod"
-		    remote_cmd_nofail $xhost "rm -rf /etc/mongodb.conf"
-		    remote_cmd_nofail $xhost "rm -rf /var/lib/mongodb"
-		    remote_cmd_nofail $xhost "rm -rf /var/log/mongodb"
 		    remote_cmd_nofail $xhost "touch /etc/init.d/mongodb"
 		    remote_cmd_nofail $xhost "LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive apt-get -y remove mongo*"
 		    remote_cmd_nofail $xhost "LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive apt-get -y remove mongodb-10gen"
@@ -480,15 +543,18 @@ function start_rs
 	echo "Copying configuation"
 	remote_copy $S9S_TMPDIR/mongodb.conf ${xhost} $S9S_TMPDIR/mongodb.${MONGODB_PORT}.conf
 	remote_cmd ${xhost} "mv -f $S9S_TMPDIR/mongodb.${MONGODB_PORT}.conf $MONGODB_CONFIGDIR"
-echo "Starting mongodb shard server, this may take a while"
-remote_cmd3 $xhost "LC_ALL=C $MONGODB_BASEDIR/bin//mongod -f ${MONGODB_CONFIGDIR}/mongodb.${MONGODB_PORT}.conf  --logpath /var/log//mongodb_${MONGODB_PORT}.log --pidfilepath /var/run/mongodb/mongodb_${MONGODB_PORT}.pid --shardsvr"
-remote_cmd $xhost "sync"
+	remote_cmd ${xhost} "killall -9 mongod"
+	echo "Starting mongodb shard server, this may take a while"
+	remote_cmd3 $xhost "LC_ALL=C $MONGODB_BASEDIR/bin//mongod -f ${MONGODB_CONFIGDIR}/mongodb.${MONGODB_PORT}.conf  --logpath /var/log//mongodb_${MONGODB_PORT}.log --pidfilepath /var/run/mongodb/mongodb_${MONGODB_PORT}.pid --shardsvr"
+	remote_cmd $xhost "sync"
+        wait_for_ok $xhost ${MONGODB_PORT} 300
     done
 }
 
 
 function create_rs
 {
+    RS_SIZE=3
     local xhost=$SERVER1
     
     cat << 'EOF' > $S9S_TMPDIR/init.js
@@ -507,7 +573,7 @@ EOF
     remote_cmd ${xhost} "sync"
     remote_cmd $xhost "$MONGODB_BASEDIR/bin/mongo  127.0.0.1:${MONGODB_PORT}/test --quiet $S9S_TMPDIR/init.js"
     echo "creating replica set"
-    sleep 60
+    wait_for_ok_rs $xhost ${MONGODB_PORT} 300
 }
 
 
@@ -758,6 +824,19 @@ function get_configsvr
 	exit 1
     fi
     echo "$CFG_SERVER_LIST"
+}
+
+
+
+function get_mongos_server
+{
+    local QUERY="select m.hostname from mongodb_server m,mongodb_nodetype_map n WHERE m.cid=$CLUSTER_ID  and m.node_type=n.id and n.name='mongos' and m.status=1 LIMIT 1"  
+    local MONGOS_SERVER=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=127.0.0.1 --port=$CMON_DB_PORT -N -Bse "$QUERY"`   
+    if [ $? -ne 0 ]; then
+	echo "getting server list failed"
+	exit 1
+    fi
+    echo "$MONGOS_SERVER"
 }
 
 
@@ -1631,6 +1710,9 @@ case $ARG in
 	;;
     --remove-member)
 	remove_member $*
+	;;
+    --add-shard)
+	add_shard $*
 	;;
     *)
     echo "Usage:"
