@@ -12,6 +12,7 @@ SLEEPTIME=10
 TIMEOUT=10800
 TOTAL_TIME=0
 searchexpr="innobackupex: Error: "
+searchexpr2="innobackupex: completed OK!"
 #give xtrabackup a chance to start
 nc -d -l $NETCAT_PORT > $BACKUPFILE &
 ret=$?
@@ -40,7 +41,13 @@ do
             echo "BACKUP FAILED: $err " >> $BACKUP_LOGFILE
 	    kill -9 $pid 2>/dev/null
             exit 1
-      fi
+	fi
+	err=`grep "$searchexpr2" $BACKUP_LOGFILE`
+	if [ -n "$err" ]; then
+	    ssh $SSH_OPTS $SSH_USER@$BACKUP_HOSTNAME "$SUDO kill -15 $x"
+	    kill -9 $pid 2>/dev/null
+	    exit 0
+	fi
     else
 	kill -9 $pid 2>/dev/null
 	exit 0
