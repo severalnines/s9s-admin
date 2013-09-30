@@ -341,8 +341,13 @@ function start_backup
 		LSN=0
 	    fi
 	fi
-	if [ $ret -ne 0 ]; then
+
+	searchexpr2="innobackupex: completed OK!"
+	err=`grep "$searchexpr2" $BACKUP_LOGFILE`
+	ret=0
+	if [ -z "$err" ]; then
 	    log_job_message "Backup failed, innobackupex failed" 1
+	    ret=1
 	fi
         wait $pid  || let "FAIL=1"
 	scp -q $SCP_OPTS  $SSH_USER@$BACKUP_HOSTNAME:$BACKUP_LOGFILE  $BACKUP_LOGFILE	
