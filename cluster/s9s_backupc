@@ -30,6 +30,15 @@ ACTION=$1
 
 OSUSER=$USER
 #INNOBACKUP_OPTS=" --lock-wait-threshold=40 --lock-wait-query-type=all --lock-wait-timeout=180 --kill-long-queries-timeout=20 --kill-long-query-type=all"
+function write_email
+{
+  SUBJECT=$1
+  MSG=$2
+  cat $BACKUP_LOGFILE | sed  -e "s/'/\\\'/g" -e 's/"/\\"/g' > /tmp/s9s_backup_log_escaped
+  MSG="$MSG \n `cat /tmp/s9s_backup_log_escaped`" 
+  QUERY="INSERT INTO simple_email(cid,subject,message) VALUES($CLUSTER_ID, \"$SUBJECT\", \"$MSG\")"
+  $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
+}
 
 function log_job_message
 {    
@@ -352,10 +361,12 @@ function start_backup
 	    STATUS='failed'
 	    SIZE=0
 	    FILENAME=''
+            write_email "Backup failed" "s9s_backupc failed, s9s_backupc_wd failed"
 	    log_job_message "Backup failed, s9s_backupc_wd failed" 1
 	    log_job 'FAILED' 'backup failed' 1
 	else
 	    STATUS='completed'
+	    ret=0
 	    SIZE=`stat --printf='%s' $BACKUPDIR/$FILENAME`
 	    SUM=`md5sum $BACKUPDIR/$FILENAME | awk '{print $1;}'`
 	    if [ $? -ne 0 ]; then
@@ -363,6 +374,7 @@ function start_backup
 		FILENAME=''
 		ret=1
 		STATUS='failed'
+		write_email "Backup failed" "s9s_backupc failed, getting md5sum of backup failed."
 		log_job_message "Backup failed, getting md5sum of backup failed" 1
 		log_job 'FAILED' 'backup failed' 1
 	    fi
@@ -370,6 +382,7 @@ function start_backup
                 SIZE=0
                 FILENAME=''
 		STATUS='failed'
+		write_email "Backup failed" "s9s_backupc failed,  getting size of backup failed."
 		log_job_message "Backup failed, getting size of backup failed" 1
 		log_job 'FAILED' 'backup failed' 1
                 ret=1
@@ -378,6 +391,7 @@ function start_backup
                 SIZE=0
                 FILENAME=''
 		STATUS='failed'
+		write_email "Backup failed" "s9s_backupc failed, size of backup is < 1024B, which indicated the backup failed."
 		log_job_message "Backup failed, size of backup is < 1024B, which indicated the backup failed." 1
 		log_job 'FAILED' 'backup failed' 1
                 ret=1
@@ -395,12 +409,16 @@ function start_backup
 	    echo "Failed to upate backup record"
 	    exit 1
 	fi
-	log_job_message "Backup finished - check Backups for status" 0
-	log_job 'FINISHED' 'Command OK' 0
+	if [ $ret -eq 0 ]; then
+ 	   write_email "Backup finished" "s9s_backupc finished ok - check Backups for status."
+   	   log_job_message "Backup finished - check Backups for status" 0
+  	   log_job 'FINISHED' 'Command OK' 0
+	fi
 	rm $LOCKFILE
 	trap - INT TERM EXIT
 	exit 0
     else
+ 	write_email "Backup failed" "s9s_backupc failed - Lock file $LOCKFILE exists which indicates another backup may be running?" 
 	log_job_message "Lock file $LOCKFILE exists which indicates another backup may be running?" 1
 	log_job 'FAILED' 'backup failed' 1
     fi	

@@ -158,7 +158,7 @@ function remote_cmd()
    retry=0
    while [ $retry -lt $MAX_RETRIES ]; 
    do
-      x=`ssh -q $SSH_OPTS $SSH_USER@$desthost "$SUDO $xcommand " > $HOME/s9s_cmd.log 2>&1`
+      x=`ssh -q $SSH_OPTS $SSH_USER@$desthost "$SUDO $xcommand " >> $HOME/s9s_deploy.log 2>&1`
       if [ $? -eq 0 ]; then
         printf "\033[32m[ok]\033[0m\n"
 	log_job_message "Executed on $desthost : $xcommand" 0
