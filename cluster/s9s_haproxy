@@ -676,10 +676,10 @@ function load_opts
 function install_mysqlchk
 {
     local h=$1
-    if [ "$h" = "$LB_HOSTNAME" ]; then
-        echo "ERROR: Trying to install HaProxy on a database host is prohibited."
-           exit 1
-    fi
+    #if [ "$h" = "$LB_HOSTNAME" ]; then
+    #    echo "ERROR: Trying to install HaProxy on a database host is prohibited."
+    #    exit 1
+    #fi
     remote_cmd $h "mkdir -p $S9S_TMPDIR"
     remote_cmd $h "chown -R $SSH_USER:$SSH_USER $S9S_TMPDIR"
     remote_cmd_nofail $h  "sed  -i  '/mysqlchk        9200\/tcp/d' /etc/services"

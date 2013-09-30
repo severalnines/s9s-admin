@@ -832,6 +832,14 @@ function install_mysql_pkg
 	remote_cmd $XHOSTNAME "mkdir -p $STAGING_DIR"
 	remote_cmd $XHOSTNAME "chown  -R $SSH_USER:$SSH_USER $STAGING_DIR"
 	
+	if [ $OS = "debian" ]; then
+	    remote_cmd $XHOSTNAME "apt-get -y install libssl0.9.8 libssl1.0.0  wget rsync psmisc netcat-openbsd"
+	    remote_cmd_nofail $XHOSTNAME "ln --force -s /lib/x86_64-linux-gnu/libssl.so.1.0.0 /lib/x86_64-linux-gnu/libssl.so.10"
+	    remote_cmd_nofail $XHOSTNAME "ln --force -s /lib/x86_64-linux-gnu/libcrypto.so.1.0.0 /lib/x86_64-linux-gnu/libcrypto.so.10"
+	    remote_cmd_nofail $XHOSTNAME "ln --force -s /usr/lib/x86_64-linux-gnu/libssl.so.1.0.0 /usr/lib/x86_64-linux-gnu/libssl.so.10"
+	    remote_cmd_nofail $XHOSTNAME "ln --force -s /usr/lib/x86_64-linux-gnu/libcrypto.so.1.0.0 /usr/lib/x86_64-linux-gnu/libcrypto.so.10"
+	fi
+
 	for f in $FILELIST 
 	do
 	    path=`echo $f | awk -F, '{print $1;}'`
@@ -1201,7 +1209,7 @@ case $ARG in
     ;;
     *)
 	echo "Usage:"
-	echo "bash ./s9s_sw_updater <--update-cmon-pkg|--update-mysql-pkg|--install-mysql> more options will follow"
+	echo "bash ./s9s_sw_update <--update-cmon-pkg|--update-mysql-pkg|--install-mysql|--install-mysql-pkg> more options will follow"
 	exit 1
 	;;
 esac
