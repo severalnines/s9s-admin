@@ -658,7 +658,6 @@ function start_rs
 	remote_cmd_nofail ${xhost} "killall -9 mongod"
 	echo "Starting mongodb shard server, this may take a while"
 	remote_cmd3 $xhost "LC_ALL=C $MONGODB_BASEDIR/bin//mongod -f ${MONGODB_CONFIGDIR}/mongodb.${MONGODB_PORT}.conf  --logpath /var/log//mongodb_${MONGODB_PORT}.log --pidfilepath /var/run/mongodb/mongodb_${MONGODB_PORT}.pid --shardsvr"
-	remote_cmd $xhost "sync"
         wait_for_ok $xhost ${MONGODB_PORT} 300
     done
 }
