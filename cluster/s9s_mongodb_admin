@@ -424,7 +424,12 @@ function add_shard
   fi
   if [ -z "$SERVER3" ]; then
       RS_SIZE=2
+  else
+      RS_SIZE=3
   fi
+  
+  echo "$RS_SIZE replica set members"
+  
   if [ -z "$RSNAME" ]; then
       echo "s9s_mongodb_admin --add-shard -N <replica set name>"
       exit 1
@@ -661,7 +666,6 @@ function start_rs
 
 function create_rs
 {
-    RS_SIZE=3
     local xhost=$SERVER1
     if [ $RS_SIZE -eq 3 ]; then
 	cat << 'EOF' > $S9S_TMPDIR/init.js
