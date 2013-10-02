@@ -214,13 +214,13 @@ function load_opts
 #    MONGODB_CNF=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select data  from cmon.cluster_configuration_templates where cid=${CLUSTER_ID} limit 1"`
     MONGODB_CNF=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select data  from cmon.cluster_configuration where cid=${CLUSTER_ID} AND filename='mongodb.27018.conf' limit 1"`
     
-    if [ -z "$MONGODB_PORT" ];
+    if [ -z "$MONGODB_PORT" ]; then
        MONGODB_PORT=27018
     fi
-    if [ -z "$MONGOS_PORT" ];
+    if [ -z "$MONGOS_PORT" ]; then
        MONGOS_PORT=27017
     fi
-    if [ -z "$MONGOCFG_PORT" ];
+    if [ -z "$MONGOCFG_PORT" ]; then
        MONGOCFG_PORT=27019
     fi
     
