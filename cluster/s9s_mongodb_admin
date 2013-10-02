@@ -223,6 +223,10 @@ function load_opts
     if [ -z "$MONGOCFG_PORT" ]; then
        MONGOCFG_PORT=27019
     fi
+
+    if [ -z "$MONGODB_CONFIGDIR" ]; then
+       MONGODB_CONFIGDIR="/etc/"
+    fi
     
     mkdir -p $S9S_TMPDIR
     echo $MONGODB_CNF |  sed 's#\\n#\n\r#g' > $S9S_TMPDIR/mongodb.conf
