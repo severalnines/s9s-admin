@@ -4,7 +4,7 @@
 # MODIFY THE BELOW TO SUIT YOU ENV:
 
 
-if [ ! -e /etc/cmon.cnf ] ; then
+if [ ! -e /etc/cmon.cnf ]  ; then
     echo "Could not find /etc/cmon.cnf"
     exit 1
 else
@@ -467,6 +467,92 @@ function add_shard
 
 }
 
+function upgrade_mongodb
+{
+    RESTART_CMON=1
+    args=`getopt h:i:a:b:c:N:m:j:f: $*`
+    set -- $args
+    for i
+    do
+	case "$i" in
+	    -i)
+		CLUSTER_ID="$2"; shift;
+		shift;;
+	    -j)
+		JOBID="$2"; shift;
+		shift;;
+            -h)
+		XHOST="$2"; shift;
+		shift;;
+            -f)
+		TGZ_FILE="$2"; shift;
+		shift;;
+            --)
+		shift; break;;
+	esac
+    done    
+    
+    if [ -z "$CLUSTER_ID" ]; then
+	echo "s9s_mongodb_admin --upgrade-mongodb -i <cluster id>"
+	exit 1
+    fi
+    load_opts $CLUSTER_ID
+
+    if [ -z $XHOST ]; then	
+	SERVER_LIST=$(get_all_servers)
+	if [ "$SERVER_LIST" = "NULL" ]; then
+	    echo "Could not get servers";
+	    exit 1
+	fi
+    else
+	SERVER_LIST=$XHOST
+    fi
+    for r in $SERVER_LIST
+    do
+	xhost=`echo $r | awk -F ',' '{print $1};'`
+	echo "Upgrading $xhost"
+	case $VENDOR in
+	    tokutek)	    
+		if [ -z "$TGZ_FILE" ]; then
+		    echo "s9s_mongodb_admin --upgrade-mongodb -f <path to tokumx..tgz"
+		    exit 1
+		fi
+		if [ ! -f $TGZ_FILE ]; then
+		    echo "Could not find : $TGZ_FILE"
+		    echo "s9s_mongodb_admin --upgrade-mongodb -f <path to tokumx..tgz"
+		    exit 1
+		fi	    
+		remote_copy $TGZ_FILE $xhost $S9S_TMPDIR/ 
+		remote_cmd $xhost  "tar xfz $S9S_TMPDIR/`basename $TGZ_FILE` -C /usr/local"
+		remote_cmd $xhost  "rm -rf /usr/local/tokumx"
+		remote_cmd $xhost  "ln -s --force /usr/local/`basename $TGZ_FILE .tgz`  /usr/local/tokumx" 
+		remote_cmd $xhost  "test -f /usr/local/tokumx/bin/mongod" 
+		remote_cmd_nofail $xhost "rm -rf $S9S_TMPDIR/`basename $TGZ_FILE`"
+		;;
+	    10gen)
+		case $OS in
+		    redhat)
+			remote_cmd $xhost "yum -y install mongo-10gen mongo-10gen-server"
+			;;
+		    debian)
+	   		remote_cmd $xhost "apt-get -q -y update"
+			remote_cmd $xhost "LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::='--force-confnew' -y -q install mongodb-10gen"
+			;;
+		    *)
+			echo "unknown OS"
+			exit 1
+			;;
+		esac
+		;;
+	    *)
+		echo "unknown vendor" 
+		exit 1
+		;;
+	esac
+    done
+}
+
+
 function install_mongodb
 {
     local xhost=$1
@@ -724,6 +810,18 @@ function get_servers
 {
     local TYPE=$1
     local QUERY="select group_concat(concat(m.hostname, ',', m.nodeid, ',', m.port) SEPARATOR ' ') from mongodb_server m,mongodb_nodetype_map n WHERE m.cid=$CLUSTER_ID  and m.node_type=n.id and n.name in ('$TYPE') and (m.status=1 or m.status=2 or m.status=7)"
+    local SERVER_LIST=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=127.0.0.1 --port=$CMON_DB_PORT -N -Bse "$QUERY"`   
+    if [ $? -ne 0 ]; then
+	echo "getting server list failed"
+	exit 1
+    fi
+    echo "$SERVER_LIST"
+}
+
+
+function get_all_servers
+{
+    local QUERY="select group_concat(concat(m.hostname, ',', m.nodeid, ',', m.port) SEPARATOR ' ') from mongodb_server m WHERE m.cid=$CLUSTER_ID"
     local SERVER_LIST=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=127.0.0.1 --port=$CMON_DB_PORT -N -Bse "$QUERY"`   
     if [ $? -ne 0 ]; then
 	echo "getting server list failed"
@@ -1715,9 +1813,12 @@ case $ARG in
     --add-shard)
 	add_shard $*
 	;;
+    --upgrade-mongodb)
+	upgrade_mongodb $*
+	;;
     *)
     echo "Usage:"
-    echo "bash ./s9s_mongodb_admin <--remove-lockfile|start-cluster|stop-cluster|--backup|--remove-member|--add-arbiter> <options follows>"
+    echo "bash ./s9s_mongodb_admin <--remove-lockfile|start-cluster|stop-cluster|--backup|--remove-member|--add-arbiter|upgrade-mongodb> <options follows>"
     exit 1
     ;;
 esac

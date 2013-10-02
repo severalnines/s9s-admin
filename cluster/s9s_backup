@@ -15,7 +15,6 @@ CMON_USER=cmon
 CMON_PASSWORD=$mysql_password
 CMON_DB_HOST=$mysql_hostname
 CMON_DB_DB=cmon
-CMON_DB_PORT=$mysql_port
 MYSQL_BIN=$mysql_basedir/bin//mysql
 MYSQL_BIN2=$mysql_bindir/mysql
 BACKUP_LOGFILE=/tmp/s9s_backup.log
@@ -28,14 +27,21 @@ jobid=0
 ACTION=$1
 
 OSUSER=$USER
-
-#INNOBACKUP_OPTS=" --lock-wait-threshold=40 --lock-wait-query-type=all --lock-wait-timeout=180 --kill-long-queries-timeout=20 --kill-long-query-type=all"
-
 if [ "$OSUSER" != "root" ]; then
     echo "must be executed as 'root' or with 'sudo'"
     exit 1
 fi
 
+
+function write_email
+{
+  SUBJECT=$1
+  MSG=$2
+  cat $BACKUP_LOGFILE | sed  -e "s/'/\\\'/g" -e 's/"/\\"/g' > /tmp/s9s_backup_log_escaped
+  MSG="$MSG \n `cat /tmp/s9s_backup_log_escaped`" 
+  QUERY="INSERT INTO simple_email(cid,subject,message) VALUES($CLUSTER_ID, \"$SUBJECT\", \"$MSG\")"
+  $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
+}
 
 function log_job_message
 {    
@@ -306,7 +312,7 @@ function start_backup
         fi
         pid="$!"
 	if [ "$TYPE" = "full" ]; then   
-	    $XTRABACKUP_BIN $GALERA_INFO  --defaults-file=$MYCNF --host=127.0.0.1 --user=$CMON_USER --password=$CMON_PASSWORD $THROTTLE $INNOBACKUP_OPTS --stream=tar ./  2>$BACKUP_LOGFILE | gzip - > $BACKUPDIR/$FILENAME 
+	    $XTRABACKUP_BIN $GALERA_INFO  --defaults-file=$MYCNF --host=127.0.0.1 --user=$CMON_USER --password=$CMON_PASSWORD $THROTTLE  --stream=tar ./  2>$BACKUP_LOGFILE | gzip - > $BACKUPDIR/$FILENAME 
 	    ret=$?
 	    LSN=`cat $BACKUP_LOGFILE | grep 'xtrabackup: The latest check point (for incremental):' | awk -F ':' '{print $3;}'`
 	    if [ -z "$LSN" ]; then
@@ -314,7 +320,7 @@ function start_backup
 		ret=1
 	    fi
 	else
-	    $XTRABACKUP_BIN $GALERA_INFO  --defaults-file=$MYCNF --host=127.0.0.1 --user=$CMON_USER --password=$CMON_PASSWORD $THROTTLE $INNOBACKUP_OPTS --incremental --incremental-lsn=$LSN  --stream=xbstream ./ 2>$BACKUP_LOGFILE  | gzip - > $BACKUPDIR/$FILENAME 
+	    $XTRABACKUP_BIN $GALERA_INFO  --defaults-file=$MYCNF --host=127.0.0.1 --user=$CMON_USER --password=$CMON_PASSWORD $THROTTLE --incremental --incremental-lsn=$LSN  --stream=xbstream ./ 2>$BACKUP_LOGFILE  | gzip - > $BACKUPDIR/$FILENAME 
 	    ret=$?
 	    LSN=`cat $BACKUP_LOGFILE | grep 'xtrabackup: The latest check point (for incremental):' | awk -F ':' '{print $3;}'`
 	    if [ -z "$LSN" ]; then
@@ -328,23 +334,27 @@ function start_backup
 	    STATUS='failed'
 	    SIZE=0
 	    FILENAME=''
+            write_email "Backup failed" "s9s_backup failed - check log on ${HOSTNAME}:$BACKUP_LOGFILE."
 	    log_job_message "Backup failed, innobackupex failed" 1
 	    log_job 'FAILED' 'backup failed' 1
 	else
 	    STATUS='completed'
+            ret=0
 	    SIZE=`stat --printf='%s' $BACKUPDIR/$FILENAME`
 	    SUM=`md5sum $BACKUPDIR/$FILENAME | awk '{print $1;}'`
 	    if [ $? -ne 0 ]; then
 		SIZE=0
 		FILENAME=''
 		ret=1
-		log_job_message "Backup failed, gtting md5sum of backup failed" 1
+                write_email "Backup failed" "s9s_backup failed - getting md5sum of backup failed"
+		log_job_message "Backup failed, getting md5sum of backup failed" 1
 		log_job 'FAILED' 'backup failed' 1
 	    fi
             if [ $SIZE -eq 0 ]; then
                 SIZE=0
                 FILENAME=''
-		log_job_message "Backup failed, gtting size of backup failed" 1
+                write_email "Backup failed" "s9s_backup failed - getting size of backup failed"
+		log_job_message "Backup failed, getting size of backup failed" 1
 		log_job 'FAILED' 'backup failed' 1
                 ret=1
             fi
@@ -362,8 +372,11 @@ function start_backup
 	    rm -rf /tmp/xtrabackup_pid
 	    exit 1
 	fi
-	log_job_message "Backup finished - check Backups for status" 0
-	log_job 'FINISHED' 'Command OK' 0
+        if [ $ret -eq 0 ]; then
+           write_email "Backup finished" "s9s_backup finished ok - check Backups for status"
+	   log_job_message "Backup finished - check Backups for status" 0
+   	   log_job 'FINISHED' 'Command OK' 0
+        fi
 	rm $LOCKFILE
 	rm -rf /tmp/xtrabackup_pid
 	trap - INT TERM EXIT
