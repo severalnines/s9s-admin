@@ -423,8 +423,7 @@ function add_shard
       exit 1
   fi
   if [ -z "$SERVER3" ]; then
-      echo "s9s_mongodb_admin --add-shard -c <replica set member address>"
-      exit 1
+      RS_SIZE=2
   fi
   if [ -z "$RSNAME" ]; then
       echo "s9s_mongodb_admin --add-shard -N <replica set name>"
@@ -472,7 +471,12 @@ function add_shard
       log_job_message "Failed to get mysql_server list" 1
       exit 1
   fi
-  SERVERS="$SERVERS,$SERVER1:$MONGODB_PORT,$SERVER2:$MONGODB_PORT,$SERVER3:$MONGODB_PORT"
+  if [ $RS_SIZE -eq 3 ]; then
+     SERVERS="$SERVERS,$SERVER1:$MONGODB_PORT,$SERVER2:$MONGODB_PORT,$SERVER3:$MONGODB_PORT"  
+  fi
+  if [ $RS_SIZE -eq 2 ]; then
+     SERVERS="$SERVERS,$SERVER1:$MONGODB_PORT,$SERVER2:$MONGODB_PORT"  
+  fi
   sed -i.bak "s#mongodb_server_addresses=.*#mongodb_server_addresses=${SERVERS}#g" /etc/cmon.cnf
   
   if [ $RESTART_CMON -eq 1 ]; then
@@ -659,18 +663,28 @@ function create_rs
 {
     RS_SIZE=3
     local xhost=$SERVER1
-    
-    cat << 'EOF' > $S9S_TMPDIR/init.js
+    if [ $RS_SIZE -eq 3 ]; then
+	cat << 'EOF' > $S9S_TMPDIR/init.js
     rs.initiate({_id: 'RSNAME', members: [
         {_id: 0, host: 'SERVER1:MONGOPORT'},
         {_id: 1, host: 'SERVER2:MONGOPORT'},
         {_id: 2, host: 'SERVER3:MONGOPORT'}]
 });
 EOF
-    sed -i.bak "s#RSNAME#$RSNAME#g" $S9S_TMPDIR/init.js
+    else
+		cat << 'EOF' > $S9S_TMPDIR/init.js
+    rs.initiate({_id: 'RSNAME', members: [
+        {_id: 0, host: 'SERVER1:MONGOPORT'},
+        {_id: 1, host: 'SERVER2:MONGOPORT'}]
+});
+EOF
+    fi
+	sed -i.bak "s#RSNAME#$RSNAME#g" $S9S_TMPDIR/init.js
     sed -i.bak "s#SERVER1#$SERVER1#g" $S9S_TMPDIR/init.js
     sed -i.bak "s#SERVER2#$SERVER2#g" $S9S_TMPDIR/init.js
-    sed -i.bak "s#SERVER3#$SERVER3#g" $S9S_TMPDIR/init.js
+    if [ $RS_SIZE -eq 3 ]; then
+       sed -i.bak "s#SERVER3#$SERVER3#g" $S9S_TMPDIR/init.js
+    fi
     sed -i.bak "s#MONGOPORT#$MONGODB_PORT#g" $S9S_TMPDIR/init.js
     remote_copy $S9S_TMPDIR/init.js  ${xhost} $S9S_TMPDIR/init.js
     remote_cmd ${xhost} "sync"
