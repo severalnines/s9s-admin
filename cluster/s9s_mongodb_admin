@@ -211,7 +211,18 @@ function load_opts
     MONGODB_LOGDIR=`dirname $MONGODB_LOGDIR`
     MONGODB_BASEDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MONGODB_BASEDIR' AND cid=$CLUSTER_ID"`
     MONGODB_CONFIGDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MONGODB_CONFIGDIR' AND cid=$CLUSTER_ID"`
-    MONGODB_CNF=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select data  from cmon.cluster_configuration_templates where cid=1 limit 1"`
+#    MONGODB_CNF=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select data  from cmon.cluster_configuration_templates where cid=${CLUSTER_ID} limit 1"`
+    MONGODB_CNF=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select data  from cmon.cluster_configuration where cid=${CLUSTER_ID} AND filename='mongodb.27018.conf' limit 1"`
+    
+    if [ -z "$MONGODB_PORT" ];
+       MONGODB_PORT=27018
+    fi
+    if [ -z "$MONGOS_PORT" ];
+       MONGOS_PORT=27017
+    fi
+    if [ -z "$MONGOCFG_PORT" ];
+       MONGOCFG_PORT=27019
+    fi
     
     mkdir -p $S9S_TMPDIR
     echo $MONGODB_CNF |  sed 's#\\n#\n\r#g' > $S9S_TMPDIR/mongodb.conf
@@ -566,6 +577,7 @@ function install_mongodb
 	tokutek)
 	    TGZ_FILE=$2
 	    remote_copy $TGZ_FILE $xhost $S9S_TMPDIR/ 
+	    remote_cmd_nofail $xhost "chown -R $SSH_USER:$SSH_USER  $S9S_TMPDIR"
 	    remote_cmd $xhost  "tar xfz $S9S_TMPDIR/`basename $TGZ_FILE` -C /usr/local"
 	    remote_cmd $xhost  "rm -rf /usr/local/tokumx"
 	    remote_cmd $xhost  "ln -s --force /usr/local/`basename $TGZ_FILE .tgz`  /usr/local/tokumx" 
