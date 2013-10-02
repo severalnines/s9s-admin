@@ -438,6 +438,7 @@ function add_shard
   do
       remote_cmd $R "echo 'ssh test'"
       remote_cmd_nofail $R "mkdir -p $S9S_TMPDIR"
+      remote_cmd_nofail $R "chown -R $SSH_USER:$SSH_USER  $S9S_TMPDIR"
   done
   
   for R in $RS_MEMBERS
