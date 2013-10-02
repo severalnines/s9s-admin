@@ -458,6 +458,11 @@ function add_shard
       remote_cmd $R "echo 'ssh test'"
       remote_cmd_nofail $R "mkdir -p $S9S_TMPDIR"
       remote_cmd_nofail $R "chown -R $SSH_USER:$SSH_USER  $S9S_TMPDIR"
+      if [ "$OS"="redhat" ]; then
+	  remote_cmd_nofail $R "/usr/sbin/setenforce 0"
+	  remote_cmd_nofail $R "echo '0' > /selinux/enforce "
+	  remote_cmd_nofail $R "sed -i.bak 's#SELINUX=enforcing#SELINUX=permissive#g' /etc/selinux/config"
+      fi
   done
   
   for R in $RS_MEMBERS
