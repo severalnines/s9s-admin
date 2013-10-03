@@ -549,6 +549,99 @@ function upgrade_mongodb
 		;;
 	esac
     done
+    return 0
+}
+
+
+function rolling_restart
+{
+    RESTART_CMON=1
+    args=`getopt h:i:a:b:c:N:m:j:f: $*`
+    set -- $args
+    for i
+    do
+	case "$i" in
+	    -i)
+		CLUSTER_ID="$2"; shift;
+		shift;;
+	    -j)
+		JOBID="$2"; shift;
+		shift;;
+            -h)
+		XHOST="$2"; shift;
+		shift;;
+            -f)
+		TGZ_FILE="$2"; shift;
+		shift;;
+            --)
+		shift; break;;
+	esac
+    done    
+    
+    if [ -z "$CLUSTER_ID" ]; then
+	echo "s9s_mongodb_admin --upgrade-mongodb -i <cluster id>"
+	exit 1
+    fi
+    load_opts $CLUSTER_ID
+    
+    echo "Rolling restart"
+    TYPE="shardsvr"
+    SERVER_LIST=$(get_servers $TYPE)
+    if [ "$SERVER_LIST" != "NULL" ]; then
+	for r in $SERVER_LIST
+	do
+	    HNAME=`echo $r | awk -F ',' '{print $1};'`
+	    NODEID=`echo $r | awk -F ',' '{print $2};'`
+	    echo "Restarting $HNAME"
+	    remote_cmd $HNAME "killall -9 mongod"
+	    sleep 1
+	    STATE=$(check_node_up $HNAME $NODEID)
+	    if [ "$STATE" = "DOWN" ]; then
+		start_node $HNAME $NODEID
+	    fi
+	    sleep 2
+	    wait_for_cluster_state "STARTED"
+	done
+    fi
+    
+    
+    TYPE="configsvr"
+    SERVER_LIST=$(get_servers $TYPE)
+    if [ "$SERVER_LIST" != "NULL" ]; then
+      for r in $SERVER_LIST
+      do
+	  HNAME=`echo $r | awk -F ',' '{print $1};'`
+	  NODEID=`echo $r | awk -F ',' '{print $2};'
+	  echo "Restarting $HNAME"`
+	  remote_cmd $HNAME "killall -9 mongod"
+	  sleep 1
+	  STATE=$(check_node_up $HNAME $NODEID)
+	  if [ "$STATE" = "DOWN" ]; then
+	      start_node $HNAME $NODEID
+	  fi
+	  sleep 2
+	  wait_for_cluster_state "STARTED"
+      done
+    fi
+    
+    TYPE="mongos"
+    SERVER_LIST=$(get_servers $TYPE)
+    if [ "$SERVER_LIST" != "NULL" ]; then
+	for r in $SERVER_LIST
+	do
+	    HNAME=`echo $r | awk -F ',' '{print $1};'`
+	    NODEID=`echo $r | awk -F ',' '{print $2};'`
+	    echo "Restarting $HNAME"
+	    remote_cmd $HNAME "killall -9 mongos"
+	    sleep 2
+	    STATE=$(check_node_up $HNAME $NODEID)
+	    if [ "$STATE" = "DOWN" ]; then
+		start_node $HNAME $NODEID
+	    fi
+	    sleep 2
+	    wait_for_cluster_state "STARTED"
+	done
+    fi        
 }
 
 
@@ -1814,6 +1907,9 @@ case $ARG in
 	;;
     --upgrade-mongodb)
 	upgrade_mongodb $*
+	;;
+    --rolling-restart)
+	rolling_restart $*
 	;;
     *)
     echo "Usage:"
