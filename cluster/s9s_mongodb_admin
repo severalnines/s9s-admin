@@ -211,7 +211,22 @@ function load_opts
     MONGODB_LOGDIR=`dirname $MONGODB_LOGDIR`
     MONGODB_BASEDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MONGODB_BASEDIR' AND cid=$CLUSTER_ID"`
     MONGODB_CONFIGDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MONGODB_CONFIGDIR' AND cid=$CLUSTER_ID"`
-    MONGODB_CNF=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select data  from cmon.cluster_configuration_templates where cid=1 limit 1"`
+#    MONGODB_CNF=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select data  from cmon.cluster_configuration_templates where cid=${CLUSTER_ID} limit 1"`
+    MONGODB_CNF=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select data  from cmon.cluster_configuration where cid=${CLUSTER_ID} AND filename='mongodb.27018.conf' limit 1"`
+    
+    if [ -z "$MONGODB_PORT" ]; then
+       MONGODB_PORT=27018
+    fi
+    if [ -z "$MONGOS_PORT" ]; then
+       MONGOS_PORT=27017
+    fi
+    if [ -z "$MONGOCFG_PORT" ]; then
+       MONGOCFG_PORT=27019
+    fi
+
+    if [ -z "$MONGODB_CONFIGDIR" ]; then
+       MONGODB_CONFIGDIR="/etc/"
+    fi
     
     mkdir -p $S9S_TMPDIR
     echo $MONGODB_CNF |  sed 's#\\n#\n\r#g' > $S9S_TMPDIR/mongodb.conf
@@ -408,9 +423,13 @@ function add_shard
       exit 1
   fi
   if [ -z "$SERVER3" ]; then
-      echo "s9s_mongodb_admin --add-shard -c <replica set member address>"
-      exit 1
+      RS_SIZE=2
+  else
+      RS_SIZE=3
   fi
+  
+  echo "$RS_SIZE replica set members"
+  
   if [ -z "$RSNAME" ]; then
       echo "s9s_mongodb_admin --add-shard -N <replica set name>"
       exit 1
@@ -438,6 +457,12 @@ function add_shard
   do
       remote_cmd $R "echo 'ssh test'"
       remote_cmd_nofail $R "mkdir -p $S9S_TMPDIR"
+      remote_cmd_nofail $R "chown -R $SSH_USER:$SSH_USER  $S9S_TMPDIR"
+      if [ "$OS"="redhat" ]; then
+	  remote_cmd_nofail $R "/usr/sbin/setenforce 0"
+	  remote_cmd_nofail $R "echo '0' > /selinux/enforce "
+	  remote_cmd_nofail $R "sed -i.bak 's#SELINUX=enforcing#SELINUX=permissive#g' /etc/selinux/config"
+      fi
   done
   
   for R in $RS_MEMBERS
@@ -456,7 +481,12 @@ function add_shard
       log_job_message "Failed to get mysql_server list" 1
       exit 1
   fi
-  SERVERS="$SERVERS,$SERVER1:$MONGODB_PORT,$SERVER2:$MONGODB_PORT,$SERVER3:$MONGODB_PORT"
+  if [ $RS_SIZE -eq 3 ]; then
+     SERVERS="$SERVERS,$SERVER1:$MONGODB_PORT,$SERVER2:$MONGODB_PORT,$SERVER3:$MONGODB_PORT"  
+  fi
+  if [ $RS_SIZE -eq 2 ]; then
+     SERVERS="$SERVERS,$SERVER1:$MONGODB_PORT,$SERVER2:$MONGODB_PORT"  
+  fi
   sed -i.bak "s#mongodb_server_addresses=.*#mongodb_server_addresses=${SERVERS}#g" /etc/cmon.cnf
   
   if [ $RESTART_CMON -eq 1 ]; then
@@ -654,10 +684,12 @@ function install_mongodb
     remote_cmd_nofail $xhost "rm -rf /var/lib/mongodb"
     remote_cmd_nofail $xhost "rm -rf /var/log/mongodb"
     remote_cmd_nofail $xhost "rm -rf /etc/init.d/mongod"
+    remote_cmd_nofail $xhost "rm -rf ${MONGODB_DATADIR}"
     case $VENDOR in
 	tokutek)
 	    TGZ_FILE=$2
 	    remote_copy $TGZ_FILE $xhost $S9S_TMPDIR/ 
+	    remote_cmd_nofail $xhost "chown -R $SSH_USER:$SSH_USER  $S9S_TMPDIR"
 	    remote_cmd $xhost  "tar xfz $S9S_TMPDIR/`basename $TGZ_FILE` -C /usr/local"
 	    remote_cmd $xhost  "rm -rf /usr/local/tokumx"
 	    remote_cmd $xhost  "ln -s --force /usr/local/`basename $TGZ_FILE .tgz`  /usr/local/tokumx" 
@@ -722,10 +754,9 @@ function start_rs
 	echo "Copying configuation"
 	remote_copy $S9S_TMPDIR/mongodb.conf ${xhost} $S9S_TMPDIR/mongodb.${MONGODB_PORT}.conf
 	remote_cmd ${xhost} "mv -f $S9S_TMPDIR/mongodb.${MONGODB_PORT}.conf $MONGODB_CONFIGDIR"
-	remote_cmd ${xhost} "killall -9 mongod"
+	remote_cmd_nofail ${xhost} "killall -9 mongod"
 	echo "Starting mongodb shard server, this may take a while"
 	remote_cmd3 $xhost "LC_ALL=C $MONGODB_BASEDIR/bin//mongod -f ${MONGODB_CONFIGDIR}/mongodb.${MONGODB_PORT}.conf  --logpath /var/log//mongodb_${MONGODB_PORT}.log --pidfilepath /var/run/mongodb/mongodb_${MONGODB_PORT}.pid --shardsvr"
-	remote_cmd $xhost "sync"
         wait_for_ok $xhost ${MONGODB_PORT} 300
     done
 }
@@ -733,20 +764,29 @@ function start_rs
 
 function create_rs
 {
-    RS_SIZE=3
     local xhost=$SERVER1
-    
-    cat << 'EOF' > $S9S_TMPDIR/init.js
+    if [ $RS_SIZE -eq 3 ]; then
+	cat << 'EOF' > $S9S_TMPDIR/init.js
     rs.initiate({_id: 'RSNAME', members: [
         {_id: 0, host: 'SERVER1:MONGOPORT'},
         {_id: 1, host: 'SERVER2:MONGOPORT'},
         {_id: 2, host: 'SERVER3:MONGOPORT'}]
 });
 EOF
-    sed -i.bak "s#RSNAME#$RSNAME#g" $S9S_TMPDIR/init.js
+    else
+		cat << 'EOF' > $S9S_TMPDIR/init.js
+    rs.initiate({_id: 'RSNAME', members: [
+        {_id: 0, host: 'SERVER1:MONGOPORT'},
+        {_id: 1, host: 'SERVER2:MONGOPORT'}]
+});
+EOF
+    fi
+	sed -i.bak "s#RSNAME#$RSNAME#g" $S9S_TMPDIR/init.js
     sed -i.bak "s#SERVER1#$SERVER1#g" $S9S_TMPDIR/init.js
     sed -i.bak "s#SERVER2#$SERVER2#g" $S9S_TMPDIR/init.js
-    sed -i.bak "s#SERVER3#$SERVER3#g" $S9S_TMPDIR/init.js
+    if [ $RS_SIZE -eq 3 ]; then
+       sed -i.bak "s#SERVER3#$SERVER3#g" $S9S_TMPDIR/init.js
+    fi
     sed -i.bak "s#MONGOPORT#$MONGODB_PORT#g" $S9S_TMPDIR/init.js
     remote_copy $S9S_TMPDIR/init.js  ${xhost} $S9S_TMPDIR/init.js
     remote_cmd ${xhost} "sync"
