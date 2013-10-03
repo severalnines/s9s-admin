@@ -227,6 +227,10 @@ function load_opts
     if [ -z "$MONGODB_CONFIGDIR" ]; then
        MONGODB_CONFIGDIR="/etc/"
     fi
+
+    if [ -z "$MONGODB_PIDFILEDIR" ]; then
+	MONGODB_PIDFILEDIR="/var/run/mongodb/"
+    fi
     
     mkdir -p $S9S_TMPDIR
     echo $MONGODB_CNF |  sed 's#\\n#\n\r#g' > $S9S_TMPDIR/mongodb.conf
