@@ -591,6 +591,7 @@ function install_mongodb
     remote_cmd_nofail $xhost "rm -rf /var/lib/mongodb"
     remote_cmd_nofail $xhost "rm -rf /var/log/mongodb"
     remote_cmd_nofail $xhost "rm -rf /etc/init.d/mongod"
+    remote_cmd_nofail $xhost "rm -rf ${MONGODB_DATADIR}"
     case $VENDOR in
 	tokutek)
 	    TGZ_FILE=$2
