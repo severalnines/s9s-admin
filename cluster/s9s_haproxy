@@ -1302,14 +1302,14 @@ function delete_keepalived
     do    
 	echo "Removing keepalived on $LB_HOSTNAME"
 	remote_cmd_nofail $LB_HOSTNAME "killall -q -15 keepalived"
-	remote_cmd $LB_HOSTNAME "$PKG_MGR keepalived"
-	remote_cmd $LB_HOSTNAME "rm -f /etc/keepalived/keepalived.conf"
+	remote_cmd_nofail $LB_HOSTNAME "$PKG_MGR keepalived"
+	remote_cmd_nofail $LB_HOSTNAME "rm -f /etc/keepalived/keepalived.conf"
 	
 	if [ $OS = "rhel" ] || [ $OS = "centos6"  ] ; then
-            remote_cmd $LB_HOSTNAME "/sbin/chkconfig --del keepalived"
+            remote_cmd_nofail $LB_HOSTNAME "/sbin/chkconfig --del keepalived"
             remote_cmd_nofail $LB_HOSTNAME "/sbin/chkconfig keepalived off"
 	else
-            remote_cmd $LB_HOSTNAME "/usr/sbin/update-rc.d -f keepalived remove"
+            remote_cmd_nofail $LB_HOSTNAME "/usr/sbin/update-rc.d -f keepalived remove"
 	fi
 	
 	QUERY="DELETE FROM keepalived WHERE cid=${CLUSTER_ID} AND virtual_ip='$VIRTUAL_IP' AND name='$KEEPALIVED_NAME'"
@@ -1428,7 +1428,7 @@ function delete_haproxy
     esac
 
 
-    remote_cmd $LB_HOSTNAME "$PKG_MGR haproxy"
+    remote_cmd_nofail $LB_HOSTNAME "$PKG_MGR haproxy"
     remote_cmd_nofail $LB_HOSTNAME "rm -f /etc/haproxy/haproxy.cfg"
     remote_cmd_nofail $LB_HOSTNAME "killall -9 haproxy"
     echo ""
