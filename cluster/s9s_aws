@@ -7,7 +7,7 @@ function init
 {
     FILES=`ls /etc/cmon.cnf 2>&1`
     FILES2=`ls /etc/cmon.d/*.cnf 2>&1`    
-    FILES="$FILES FILES2"
+    FILES="$FILES $FILES2"
     configfile=""
     for f in $FILES 
     do
