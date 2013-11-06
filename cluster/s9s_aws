@@ -351,7 +351,7 @@ function change_ip
 	NEW_IP=`$MYSQL_BASEDIR/bin/resolveip -s $NEW_HOSTNAME`
         #NEW_IP=$(nslookup $NEW_HOSTNAME | tail --lines=2 | head --lines=1 | cut -f 2 -d " ")
 	if [ $? -ne 0 ]; then
-	    echo "$MYSQL_BASEDIR/bin/resolveip -s $NEW_HOSTNAM failed"
+	    echo "$MYSQL_BASEDIR/bin/resolveip -s $NEW_HOSTNAME failed"
 	    exit 1
 	fi
     fi
