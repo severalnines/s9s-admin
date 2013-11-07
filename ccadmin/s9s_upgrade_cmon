@@ -72,27 +72,46 @@ fi
 arch=`uname -m`
 [ "$arch" == "i686" ] && echo "Architecture not supported. Kindly use OS with x86_64 architecture." && exit 1
 
-CMON_CONFIG=/etc/cmon.cnf
-if [ ! -e $CMON_CONFIG ] ; then
-	echo "Could not find $CMON_CONFIG"
-	exit 1
-else
-	cat $CMON_CONFIG | grep -v ^# | grep -v ^$ | grep -q -E '[ \t]' 2> /dev/null
+FILES=`ls /etc/cmon.cnf 2>&1`
+FILES2=`ls /etc/cmon.d/*.cnf 2>&1`
+FILES="$FILES FILES2"
+configfile=""
+for f in $FILES
+do
+    X=`grep -l cluster_id=${CLUSTER_ID} $f 2>&1 `
+    if [ $? -eq 0 ]; then
+        source $f
+        configfile=$f
+    fi
+done
 
-	if [ $? -eq 0 ]; then
-        	i=0
-	        while read line; do
-        	if [[ $line =~ ^[^#]*= ]]; then
-                	name[i]=`echo $line | cut -d'=' -f 1`
-	                value[i]=`echo $line | cut -d'=' -f 2- | tr ' ' ','`
-        	        sed -i.bak "s|^${name[$i]}=.*|${name[$i]}=${value[$i]}|g" $CMON_CONFIG
-	                ((i++))
-        	fi
-	        done < $CMON_CONFIG
-        	source $CMON_CONFIG
-	else
-	        source $CMON_CONFIG
-	fi
+if [ -z "$configfile" ]; then
+    echo "No matching configuration file found having cluster_id=${CLUSTER_ID}"
+    exit 1
+fi
+
+CMON_CONFIG=$configfile
+
+if [ ! -e $CMON_CONFIG ] ; then
+    echo "Could not find $CMON_CONFIG"
+    exit 1
+else
+    cat $CMON_CONFIG | grep -v ^# | grep -v ^$ | grep -q -E '[ \t]' 2> /dev/null
+    
+    if [ $? -eq 0 ]; then
+        i=0
+	while read line; do
+            if [[ $line =~ ^[^#]*= ]]; then
+                name[i]=`echo $line | cut -d'=' -f 1`
+	        value[i]=`echo $line | cut -d'=' -f 2- | tr ' ' ','`
+        	sed -i.bak "s|^${name[$i]}=.*|${name[$i]}=${value[$i]}|g" $CMON_CONFIG
+	        ((i++))
+            fi
+	done < $CMON_CONFIG
+        source $CMON_CONFIG
+    else
+	source $CMON_CONFIG
+    fi
 fi
 
 CMON_DB_HOST=$mysql_hostname
@@ -223,15 +242,15 @@ checkRequirement(){
 		CURL_BIN=`which curl`
 		if [ -z "$CURL_BIN" ]; then
 			echo "** Installing required packages .."
-			[ "$os" == "debian" ] && apt-get update -qq && apt-get install -y -qq curl
-			[ "$os" == "redhat" ] && yum install -y --quiet curl
+			[ "$os" == "debian" ] && $HTTP_PROXY apt-get update -qq && $HTTP_PROXY apt-get install -y -qq curl
+			[ "$os" == "redhat" ] && $HTTP_PROXY yum install -y --quiet curl
 		fi
 	elif [ "$check_option" == "bc" ]; then
 		BC_BIN=`which bc`
 		if [ -z "$BC_BIN" ]; then
                 	echo "** Installing required packages .."
-	                [ "$os" == "debian" ] && apt-get update -qq && apt-get install -y --quiet bc
-        	        [ "$os" == "redhat" ] && yum install -y --quiet bc
+	                [ "$os" == "debian" ] && $HTTP_PROXY apt-get update -qq && $HTTP_PROXY apt-get install -y --quiet bc
+        	        [ "$os" == "redhat" ] && $HTTP_PROXY yum install -y --quiet bc
 	        fi
 	fi
 }
@@ -250,6 +269,7 @@ collectInfo()
 	
 	query_cmon_version="SELECT DISTINCT cmon_version FROM cmon.hosts WHERE cid=$cluster_id"
 	query_cmon_install_method="SELECT value FROM cmon.cmon_configuration WHERE param='INSTALL_METHOD' AND cid=$cluster_id"
+	HTTP_PROXY="SELECT value FROM cmon.cmon_configuration WHERE param='HTTP_PROXY' AND cid=$cluster_id"
 	version_url="$DOWNLOAD_URL/version.txt"
 	CMON_VERSION_DB=`$MYSQL_BIN -ucmon -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT -A -Bse "$query_cmon_version"`
 	INSTALL_METHOD=`$MYSQL_BIN -ucmon -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT -A -Bse "$query_cmon_install_method"`
@@ -437,7 +457,7 @@ upgradeCmonDatabase()
 		for mod_file in "${file_array[@]}"
 		do
 			if [ -e $cmon_sql_path/$mod_file ]; then
-				($MYSQL_BIN -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT $CMON_DB_DB < $cmon_sql_path/$mod_file) &
+				($MYSQL_BIN -f -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT $CMON_DB_DB < $cmon_sql_path/$mod_file) &
 				printf "%-70s" "Applying CMON mod database $mod_file" && spinner $! && printf "[\e[00;32m %s\e[00m ]\n" OK
 			else
 				echo "Error: Could not found $cmon_sql_path/$mod_file." && exit 1
@@ -450,9 +470,9 @@ upgradeCmonDatabase()
 	[ ! -e $cmon_sql_path/cmon_db.sql ] && echo "Error: Could not found $cmon_sql_path/cmon_db.sql" && exit 1
 	[ ! -e $cmon_sql_path/cmon_data.sql ] && echo "Error: Could not found $cmon_sql_path/cmon_data.sql" && exit 1
 
-	($MYSQL_BIN -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT $CMON_DB_DB < $cmon_sql_path/cmon_db.sql) &
+	($MYSQL_BIN -f -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT $CMON_DB_DB < $cmon_sql_path/cmon_db.sql) &
 	printf "%-70s" "Upgrading CMON schema structure" && spinner $! && printf "[\e[00;32m %s\e[00m ]\n" OK
-	($MYSQL_BIN -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT $CMON_DB_DB < $cmon_sql_path/cmon_data.sql) &
+	($MYSQL_BIN -f -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT $CMON_DB_DB < $cmon_sql_path/cmon_data.sql) &
 	printf "%-70s" "Upgrading CMON schema data" && spinner $! && printf "[\e[00;32m %s\e[00m ]\n" OK
 
 }
@@ -478,7 +498,7 @@ installCcUi()
 	apache_conf=/etc/apache2/sites-available/default
 	apache_conf_ssl=/etc/apache2/sites-available/default-ssl
 	www_user=www-data
-	install_packages="apt-get install -y --quiet php5-curl"
+	install_packages="$HTTP_PROXY apt-get install -y --quiet php5-curl"
 	enable_mods="ssl rewrite"
 	cert_file="/etc/ssl/certs/s9server.crt"
 	key_file="/etc/ssl/private/s9server.key"
@@ -489,7 +509,7 @@ installCcUi()
 		apache_conf=/etc/httpd/conf/httpd.conf
 		apache_conf_ssl=/etc/httpd/conf.d/ssl.conf
 		www_user=apache
-		install_packages="yum install -y --quiet mod_ssl php-curl"
+		install_packages="$HTTP_PROXY yum install -y --quiet mod_ssl php-curl"
 		enable_mods=""
 		cert_file="/etc/pki/tls/certs/s9server.crt"
 		key_file="/etc/pki/tls/private/s9server.key"
