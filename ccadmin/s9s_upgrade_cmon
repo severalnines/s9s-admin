@@ -74,7 +74,7 @@ arch=`uname -m`
 
 FILES=`ls /etc/cmon.cnf 2>&1`
 FILES2=`ls /etc/cmon.d/*.cnf 2>&1`
-FILES="$FILES FILES2"
+FILES="$FILES $FILES2"
 configfile=""
 for f in $FILES
 do
@@ -408,7 +408,12 @@ getModDatabase()
 
 	# compare version
 	i=1;j=1
-	for file in `ls -1 $cmon_sql_path | grep cmon_db_mods | sed "s|cmon_db_mods-||g;s|.sql$||g;s|-.*||g"`
+	if [ "$type" == "mongodb" ]; then
+		list_com=`ls -1 $cmon_sql_path | grep cmon_db_mods | sed "s|cmon_db_mods-||g;s|.sql$||g;s|-.*||g"`
+	else
+		list_com=`ls -1 $cmon_sql_path | grep cmon_db_mods | grep -v mongodb | sed "s|cmon_db_mods-||g;s|.sql$||g;s|-.*||g"`
+	fi
+	for file in $list_com
 	do
         	for h in $file
         	do
@@ -428,15 +433,18 @@ getModDatabase()
         	f1=`echo "scale=0;$val/1000" | bc`
 		f2=`echo "scale=0;($val-1000)/100" | bc`
         	f3=`echo "scale=1;(($val-1000)-100)" | bc`
-	        [ $f3 -ge 100 ] && f3=0
+	        [ $f3 -ge 100 ] && f3=`echo $[f3-100]`
         	mod_ver="$f1.$f2.$f3"
 	        if [ $v1 -le $val ] && [ $lv1 -gt $val ]; then
-			file_array[$j]=`ls -1 $cmon_sql_path | grep $mod_ver-`
+			if [ "$type" == "mongodb" ]; then
+				file_array[$j]=`ls -1 $cmon_sql_path | grep $mod_ver- | grep mongodb`
+			else
+				file_array[$j]=`ls -1 $cmon_sql_path | grep $mod_ver- | grep -v mongodb`
+			fi
 	                (( j++ ))
         	fi
 	done
-	#echo ${file_array[@]}
-
+#	echo "ifile: ${file_array[@]}"
 }
 
 upgradeCmonDatabase()
@@ -452,12 +460,17 @@ upgradeCmonDatabase()
 	[ "$os" == "redhat" ] && cmon_sql_path=/usr/share/cmon
 
 	[ ! -d $cmon_sql_path ] && echo "Error: Could not found the cmon_sql_path." && exit 1
+	[ ! -e $cmon_sql_path/cmon_db.sql ] && echo "Error: Could not found $cmon_sql_path/cmon_db.sql" && exit 1
+        [ ! -e $cmon_sql_path/cmon_data.sql ] && echo "Error: Could not found $cmon_sql_path/cmon_data.sql" && exit 1
+
+	($MYSQL_BIN -f -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT $CMON_DB_DB < $cmon_sql_path/cmon_db.sql) &
+        printf "%-70s" "Upgrading CMON schema structure" && spinner $! && printf "[\e[00;32m %s\e[00m ]\n" OK
 
 	if [[ ! -z "${file_array[@]}" ]]; then
 		for mod_file in "${file_array[@]}"
 		do
-			if [ -e $cmon_sql_path/$mod_file ]; then
-				($MYSQL_BIN -f -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT $CMON_DB_DB < $cmon_sql_path/$mod_file) &
+			if [ -f "$cmon_sql_path/$mod_file" ]; then
+				($MYSQL_BIN -f -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT $CMON_DB_DB < $cmon_sql_path/$mod_file 2>/dev/null) &
 				printf "%-70s" "Applying CMON mod database $mod_file" && spinner $! && printf "[\e[00;32m %s\e[00m ]\n" OK
 			else
 				echo "Error: Could not found $cmon_sql_path/$mod_file." && exit 1
@@ -467,11 +480,6 @@ upgradeCmonDatabase()
 		echo "** No need to apply cmon_db_mods"
 	fi
 	
-	[ ! -e $cmon_sql_path/cmon_db.sql ] && echo "Error: Could not found $cmon_sql_path/cmon_db.sql" && exit 1
-	[ ! -e $cmon_sql_path/cmon_data.sql ] && echo "Error: Could not found $cmon_sql_path/cmon_data.sql" && exit 1
-
-	($MYSQL_BIN -f -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT $CMON_DB_DB < $cmon_sql_path/cmon_db.sql) &
-	printf "%-70s" "Upgrading CMON schema structure" && spinner $! && printf "[\e[00;32m %s\e[00m ]\n" OK
 	($MYSQL_BIN -f -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT $CMON_DB_DB < $cmon_sql_path/cmon_data.sql) &
 	printf "%-70s" "Upgrading CMON schema data" && spinner $! && printf "[\e[00;32m %s\e[00m ]\n" OK
 
@@ -582,7 +590,7 @@ upgradeCcUi()
 	rm -f $wwwroot/cmonapi
 	commandStatus 'Upgrading CMONAPI' "ln -sf $wwwroot/cc-cmonapi-${version} $wwwroot/cmonapi"
 	commandStatus 'Upgrading ClusterControl UI' "ln -sf $wwwroot/cc-ui-${version} $wwwroot/clustercontrol"
-	($MYSQL_BIN -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT $CMON_DB_DB < $repo_dir/cc-ui-${version}/sql/dc-schema.sql) &
+	($MYSQL_BIN -f -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT $CMON_DB_DB < $repo_dir/cc-ui-${version}/sql/dc-schema.sql) &
 	printf "%-70s" "Upgrading ClusterControl schema" && spinner $! && printf "[\e[00;32m %s\e[00m ]\n" OK
 	
 	apache_user=www-data
@@ -593,7 +601,7 @@ upgradeCcUi()
 	commandStatus 'Cleaning up ClusterControl packages' "rm -rf $repo_dir/cc-*"
 	commandStatus 'Cleaning up ClusterControl install package' "rm -rf $repo_dir/install"
 
-	echo "** Upgrade ClusterControl UI complete!"
+	echo "** Upgrade ClusterControl UI has been completed!"
 }
 
 upgradeCmon()
@@ -688,7 +696,7 @@ upgradeCmon()
         fi
 	commandStatus 'Restoring CMON config file' "cp -f $tmp_dir/cmon.cnf /etc/"
 	startCmon
-	echo "** Upgrade complete!"
+	echo "** ClusterControl $mode upgrade for this host has been completed!"
 }
 
 downloadLatest(){
@@ -726,7 +734,7 @@ downloadLatest(){
 		printf "%-70s" "Downloading $cc_package to $repo_dir " && spinner $! && printf "[\e[00;32m %s\e[00m ]\n" OK
 	fi
 
-	echo "** Download complete!"
+	echo "** Download completed!"
 }
 
 restoreCmon()
@@ -753,13 +761,13 @@ restoreCmon()
                 if [ "$mode" == "controller" ]; then
 			$MYSQL_BIN -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT -e "DROP DATABASE IF EXISTS $CMON_DB_DB"
 			$MYSQL_BIN -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT -e "CREATE DATABASE $CMON_DB_DB"
-			($MYSQL_BIN -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT $CMON_DB_DB < $backup_dir/cmon_dump.sql) &
+			($MYSQL_BIN -f -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT $CMON_DB_DB < $backup_dir/cmon_dump.sql) &
 			printf "%-70s" "Restoring CMON schema" && spinner $! && printf "[\e[00;32m %s\e[00m ]\n" OK
 			if [ -e $backup_dir/dcps_dump.sql ]; then
 				CC_DB_DB=dcps
 				$MYSQL_BIN -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT -e "DROP DATABASE IF EXISTS $CC_DB_DB"
 				$MYSQL_BIN -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT -e "CREATE DATABASE $CC_DB_DB"
-				($MYSQL_BIN -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT $CC_DB_DB < $backup_dir/dcps_dump.sql) &
+				($MYSQL_BIN -f -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT $CC_DB_DB < $backup_dir/dcps_dump.sql) &
 	                        printf "%-70s" "Restoring ClusterControl UI schema" && spinner $! && printf "[\e[00;32m %s\e[00m ]\n" OK
 			fi
                         commandStatus 'Restoring CMON cron' "cp -pfR $backup_dir/cmon_crond /etc/cron.d/cmon"
@@ -791,9 +799,9 @@ restoreCmon()
 
                 commandStatus 'Restoring CMON and S9S binary' "cp -pfR $backup_dir/bin/* /usr/bin/"
 		[ -f $backup_dir/sbin/cmon ] && commandStatus 'Restoring CMON sbin binary' "cp -pf $backup_dir/sbin/cmon /usr/sbin/"
-                startCmon $os
+                startCmon $OS
 
-                echo "** Restoration to version $OLD_CMON_VERSION complete!"
+                echo "** Restoration to version $OLD_CMON_VERSION has been completed!"
         else
                 echo "** ClusterControl backup is incomplete or not exists."
                 exit 1
@@ -815,6 +823,7 @@ backupCmon()
 	upgrade_details=$tmp_dir/upgrade_details.txt
 	echo "OLD_CMON_VERSION=$CMON_VERSION" >> $upgrade_details
 	echo "LATEST_CMON_VERSION=$LATEST_CMON_VERSION" >> $upgrade_details
+	echo "OS=$os" >> $upgrade_details
 
 	if [ "$mode" == "controller" ]; then
 		commandStatus 'Backup CMON schema' "$MYSQLDUMP_BIN -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT $CMON_DB_DB -r $tmp_dir/cmon_dump.sql"
@@ -850,6 +859,13 @@ backupCmon()
 	echo "** Backup completed at $tmp_dir"
 }
 
+sshOptions()
+{
+	[ -z "$ssh_port" ] && ssh_port=22
+        SSH_OPTS="-t -q -oUserKnownHostsFile=/dev/null -oStrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 -i $ssh_key -p $ssh_port"
+        SCP_OPTS="-q -oUserKnownHostsFile=/dev/null -oStrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 -i $ssh_key -P $ssh_port"
+}
+
 restoreAgent()
 {
 	collectInfo	
@@ -864,16 +880,18 @@ restoreAgent()
 
         mv $AGENT_CONFIG $repo_dir/
 
+	sshOptions
+
         for h in $all_agent_hosts
         do
-                ssh -t -q -i $ssh_key $os_user@$h "mkdir -p ~/cc/"
-                ssh -t -q -i $ssh_key $os_user@$h "mkdir -p ~/cc/$repo_dir_name"
-                scp -r -q -i $ssh_key $repo_dir/agent.config $os_user@$h:~/cc/$repo_dir_name/
-                scp -q -i $ssh_key `basename $0` $os_user@$h:~/cc/
+                ssh $SSH_OPTS $os_user@$h "mkdir -p ~/cc/"
+                ssh $SSH_OPTS $os_user@$h "mkdir -p ~/cc/$repo_dir_name"
+                scp -r $SCP_OPTS $repo_dir/agent.config $os_user@$h:~/cc/$repo_dir_name/
+                scp $SCP_OPTS `basename $0` $os_user@$h:~/cc/
 		echo ""
 		echo "Hostname/IP: $h"
-                ssh -t -q -i $ssh_key $os_user@$h "$sudo cc/`basename $0` $options"
-                ssh -t -q -i $ssh_key $os_user@$h "rm -rf ~/cc"
+                ssh $SSH_OPTS $os_user@$h "$sudo cc/`basename $0` $options"
+                ssh $SSH_OPTS $os_user@$h "rm -rf ~/cc"
         done
 
 }
@@ -893,16 +911,18 @@ upgradeAgent()
 
 	mv $AGENT_CONFIG $repo_dir/
 
+	sshOptions
+
 	for h in $all_agent_hosts
 	do
-		ssh -t -q -i $ssh_key $os_user@$h "mkdir -p ~/cc/"
-		ssh -t -q -i $ssh_key $os_user@$h "mkdir -p ~/cc/$repo_dir_name"
-		scp -r -q -i $ssh_key $repo_dir/* $os_user@$h:~/cc/$repo_dir_name/
-		scp -q -i $ssh_key `basename $0` $os_user@$h:~/cc/
+		ssh $SSH_OPTS $os_user@$h "mkdir -p ~/cc/"
+		ssh $SSH_OPTS $os_user@$h "mkdir -p ~/cc/$repo_dir_name"
+		scp -r $SCP_OPTS $repo_dir/* $os_user@$h:~/cc/$repo_dir_name/
+		scp $SCP_OPTS `basename $0` $os_user@$h:~/cc/
 		echo ""
 		echo "Hostname/IP: $h"
-		ssh -t -q -i $ssh_key $os_user@$h "$sudo cc/`basename $0` $options"
-		ssh -t -q -i $ssh_key $os_user@$h "rm -rf ~/cc"
+		ssh $SSH_OPTS $os_user@$h "$sudo cc/`basename $0` $options"
+		ssh $SSH_OPTS $os_user@$h "rm -rf ~/cc"
 	done
 
 }
@@ -921,16 +941,18 @@ backupAgent()
 
 	mv $AGENT_CONFIG $repo_dir/
 
+	sshOptions
+
         for h in $all_agent_hosts
         do
-                ssh -t -q -i $ssh_key $os_user@$h "mkdir -p ~/cc/"
-                ssh -t -q -i $ssh_key $os_user@$h "mkdir -p ~/cc/$repo_dir_name"
-                scp -r -q -i $ssh_key $repo_dir/agent.config $os_user@$h:~/cc/$repo_dir_name/
-                scp -q -i $ssh_key `basename $0` $os_user@$h:~/cc/
+                ssh $SSH_OPTS $os_user@$h "mkdir -p ~/cc/"
+                ssh $SSH_OPTS $os_user@$h "mkdir -p ~/cc/$repo_dir_name"
+                scp -r $SCP_OPTS $repo_dir/agent.config $os_user@$h:~/cc/$repo_dir_name/
+                scp $SCP_OPTS `basename $0` $os_user@$h:~/cc/
 		echo ""
 		echo "Hostname/IP: $h"
-                ssh -t -q -i $ssh_key $os_user@$h "$sudo cc/`basename $0` $options"
-                ssh -t -q -i $ssh_key $os_user@$h "rm -rf ~/cc"
+                ssh $SSH_OPTS $os_user@$h "$sudo cc/`basename $0` $options"
+                ssh $SSH_OPTS $os_user@$h "rm -rf ~/cc"
         done
 
 }
@@ -966,6 +988,11 @@ performUpgrade()
 		[ "$mode" == "controller" ] && downloadLatest
 		upgradeCmon
 		[ "$mode" == "controller" ] && upgradeAgent
+		echo ""
+		echo "========================================="
+		echo " Upgrade Has Been Successfully Completed"
+		echo "========================================="
+		echo ""
 		[ "$install_cc_ui" == 1 ] && echo -e "\nNew ClusterControl web app installed!!\nKindly go to http://${CMON_DB_HOST}/install to finalize the installation"
 	fi
 }
