@@ -1,5 +1,5 @@
 #!/bin/bash
-
+set -x 
 BACKUP_LOGFILE=$1
 BACKUP_HOSTNAME=$2
 SSH_USER=$3
@@ -19,10 +19,13 @@ ret=$?
 pid=$!
 
 if [ $ret -ne 0 ]; then
-   echo "Failed to start netcat"
-   exit 1
+   nc -d -l $NETCAT_PORT > $BACKUPFILE &
+   ret=$?
+   if [ $ret -ne 0 ]; then
+     echo "Failed to start netcat" >> /tmp/s9s_backupc_wd.log
+     exit 1
+   fi
 fi
-#echo $SSH_OPTS
 sleep 60
 
 while [ 1 ]; 
@@ -30,7 +33,6 @@ do
     x=`ssh $SSH_OPTS $SSH_USER@$BACKUP_HOSTNAME "pgrep -f innobackupex" `
     ret=$?
     echo "s9s_backupc_wd:  $x " >> $BACKUP_LOGFILE
-   #if [ $ret -eq 0 ]; 
     if [ -n "$x" ]; 
     then
 	scp -q $SCP_OPTS $SSH_USER@$BACKUP_HOSTNAME:$BACKUP_LOGFILE $BACKUP_LOGFILE
@@ -39,6 +41,7 @@ do
             sleep $SLEEPTIME
             ssh $SSH_OPTS $SSH_USER@$BACKUP_HOSTNAME "$SUDO killall -q -9 xtrabackup innobackupex xtrabackup_55 xtrabackup_56"
             echo "BACKUP FAILED: $err " >> $BACKUP_LOGFILE
+            echo "BACKUP FAILED: $err " >> /tmp/s9s_backupc_wd.log
 	    kill -9 $pid 2>/dev/null
             exit 1
 	fi
@@ -48,6 +51,7 @@ do
 	    do
 		ssh $SSH_OPTS $SSH_USER@$BACKUP_HOSTNAME "$SUDO kill -15 $p"
 	    done
+            echo "BACKUP FAILED: $err " >> /tmp/s9s_backupc_wd.log
 	    kill -9 $pid 2>/dev/null
 	    exit 0
 	fi

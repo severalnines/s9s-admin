@@ -8,41 +8,55 @@
 # for the work on the makecfg, mysqlckk, and haproxy.cfg.tmpl
 
 
-if [ ! -e /etc/cmon.cnf ] ; then
-    echo "Could not find /etc/cmon.cnf"
-    exit 1
-else
-    source /etc/cmon.cnf
-fi
 
+function init
+{    
+    FILES=`ls /etc/cmon.cnf 2>&1`
+    FILES2=`ls /etc/cmon.d/*.cnf 2>&1`
+    FILES="$FILES $FILES2"
+    configfile=""
+    for f in $FILES
+    do
+	X=`grep -l cluster_id=${CLUSTER_ID} $f 2>&1 `
+	if [ $? -eq 0 ]; then
+            source $f
+            configfile=$f
+        fi
+    done
 
-CMON_DB_HOST=127.0.0.1
-CMON_DB_PORT=$mysql_port
-CMON_USER=cmon
-CMON_DB_DB=cmon
-CMON_PASSWORD=$mysql_password
-MYSQL_BIN=$mysql_basedir/bin/mysql
-MYSQL_BIN2=$mysql_bindir/mysql
-CONNECT_TIMEOUT=10
-CLUSTER_TYPE=$type
-MYSQL_OPTS="--connect-timeout=$CONNECT_TIMEOUT"
-LOCKFILE="/tmp/s9s_create.lock"
-OSUSER=$USER
-SUFFIX="1"
-PREFIX="s9s"
-JOBID=0
-HAPROXY_MYSQL_LISTEN_PORT="33306"
-HAPROXY_OPTS="-f /etc/haproxy/haproxy.cfg -p /var/run/haproxy.pid -st \$(cat /var/run/haproxy.pid)"
-LB_ADMIN_USER='admin'
-LB_ADMIN_PORT="9600"
-LB_ADMIN_PASSWORD='admin'
+    if [ -z "$configfile" ]; then
+        echo "No matching configuration file found having cluster_id=${CLUSTER_ID}"
+        exit 1
+    fi
+    source $configfile;
 
-
-if [ "$OSUSER" != "root" ]; then
-    echo "must be executed as 'root' or with 'sudo'"
-    exit 1
-fi
- 
+    CMON_DB_HOST=127.0.0.1
+    CMON_DB_PORT=$mysql_port
+    CMON_USER=cmon
+    CMON_DB_DB=cmon
+    CMON_PASSWORD=$mysql_password
+    MYSQL_BIN=$mysql_basedir/bin/mysql
+    MYSQL_BIN2=$mysql_bindir/mysql
+    CONNECT_TIMEOUT=10
+    CLUSTER_TYPE=$type
+    MYSQL_OPTS="--connect-timeout=$CONNECT_TIMEOUT"
+    LOCKFILE="/tmp/s9s_create.lock"
+    OSUSER=$USER
+    SUFFIX="1"
+    PREFIX="s9s"
+    JOBID=0
+    HAPROXY_MYSQL_LISTEN_PORT="33306"
+    HAPROXY_OPTS="-f /etc/haproxy/haproxy.cfg -p /var/run/haproxy.pid -st \$(cat /var/run/haproxy.pid)"
+    LB_ADMIN_USER='admin'
+    LB_ADMIN_PORT="9600"
+    LB_ADMIN_PASSWORD='admin'
+    
+    
+    if [ "$OSUSER" != "root" ]; then
+	echo "must be executed as 'root' or with 'sudo'"
+	exit 1
+    fi    
+}
 
 function log_job_message
 {    
@@ -308,6 +322,7 @@ function change_cmon_password
         echo "s9s_change_passwd --cmon  -i <cluster id> is missing"
 	exit 1
     fi
+    init
 
     if [ -z "$NEW_PASSWORD" ]; then
         echo "s9s_change_passwd --cmon  -n <new_password> is missing"
@@ -437,6 +452,7 @@ function change_root_password
         echo "s9s_change_passwd --root  -i <cluster id> is missing"
 	exit 1
     fi
+    init
 
     if [ -z "$NEW_PASSWORD" ]; then
         echo "s9s_change_passwd --root  -n <new_root_password> is missing"

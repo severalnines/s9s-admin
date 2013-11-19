@@ -50,16 +50,25 @@ elif [ ! -z "$default_value" ] && [ ! -z "$ulimit_value" ] && [ ! -z "$ulimit_ty
         exit 1
 fi
 
-CMON_CONFIG=/etc/cmon.cnf
-if [ ! -e $CMON_CONFIG ] ; then
-	echo "Could not find $CMON_CONFIG"
-	exit 1
-else
-	source $CMON_CONFIG
-fi
 
-ULIMIT_FILE=/etc/security/limits.conf
-[ ! -e $ULIMIT_FILE ] && echo "ulimit configuration file not found." && exit 1
+FILES=`ls /etc/cmon.cnf 2>&1`
+FILES2=`ls /etc/cmon.d/*.cnf 2>&1`
+FILES="$FILES $FILES2"
+configfile=""
+for f in $FILES
+do
+    X=`grep -l cluster_id=${CLUSTER_ID} $f 2>&1 `
+    if [ $? -eq 0 ]; then
+        source $f
+        configfile=$f
+    fi
+done
+
+if [ -z "$configfile" ]; then
+    echo "No matching configuration file found having cluster_id=${CLUSTER_ID}"
+    exit 1
+fi
+source $configfile
 
 CMON_DB_HOST=127.0.0.1
 CMON_DB_PORT=$mysql_port
@@ -71,6 +80,12 @@ CONNECT_TIMEOUT=10
 CLUSTER_TYPE=$type
 MYSQL_OPTS="--connect-timeout=$CONNECT_TIMEOUT"
 OSUSER=`whoami`
+CMON_CONFIG=$configfile
+
+
+ULIMIT_FILE=/etc/security/limits.conf
+[ ! -e $ULIMIT_FILE ] && echo "ulimit configuration file not found." && exit 1
+
 [ ! -z "$osuser" ] && os_user=$osuser
 [ -z "$ssh_port" ] && ssh_port=22
 

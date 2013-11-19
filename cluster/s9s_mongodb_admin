@@ -3,35 +3,52 @@
 #
 # MODIFY THE BELOW TO SUIT YOU ENV:
 
-
-if [ ! -e /etc/cmon.cnf ]  ; then
-    echo "Could not find /etc/cmon.cnf"
-    exit 1
-else
-    source /etc/cmon.cnf
-fi
-CID=$cluster_id
-CMON_USER=cmon
-CMON_DB_PORT=$mysql_port
-CMON_PASSWORD=$mysql_password
-CMON_DB_HOST=$mysql_hostname
-CMON_DB_DB=cmon
-MYSQL_BIN=$mysql_basedir/bin//mysql
-MYSQL_BIN2=$mysql_bindir/mysql
-CLUSTER_STATE_TIMEOUT=3600
-START_BALANCER_TIMEOUT=3600
-BACKUP_LOGFILE="/tmp/s9s_mongodb_backup.log"
 JOBID=0
+function init
+{    
+    FILES=`ls /etc/cmon.cnf 2>&1`
+    FILES2=`ls /etc/cmon.d/*.cnf 2>&1`    
+    FILES="$FILES $FILES2"
+    configfile=""
+    for f in $FILES 
+    do
+	X=`grep -l cluster_id=${CLUSTER_ID} $f 2>&1 `	
+	if [ $? -eq 0 ]; then 
+	    source $f
+            configfile=$f
+	fi
+    done
+
+    if [ -z "$configfile" ]; then
+	echo "No matching configuration file found having cluster_id=${CLUSTER_ID}"
+	exit 1
+    fi
+   
+    source $configfile;
+
+
+    CID=$cluster_id
+    CMON_USER=cmon
+    CMON_DB_PORT=$mysql_port
+    CMON_PASSWORD=$mysql_password
+    CMON_DB_HOST=$mysql_hostname
+    CMON_DB_DB=cmon
+    MYSQL_BIN=$mysql_basedir/bin//mysql
+    MYSQL_BIN2=$mysql_bindir/mysql
+    CLUSTER_STATE_TIMEOUT=3600
+    START_BALANCER_TIMEOUT=3600
+    BACKUP_LOGFILE="/tmp/s9s_mongodb_backup.log"
 ### NO MODS BELOW UNLESS YOU KNOW WHAT YOU DO:
-
-export LC_ALL=C
-OSUSER=$USER
-
-
-if [ "$OSUSER" != "root" ]; then
-    echo "must be executed as 'root' or with 'sudo'"
-    exit 1
-fi
+    
+    export LC_ALL=C
+    OSUSER=$USER
+    
+    
+    if [ "$OSUSER" != "root" ]; then
+	echo "must be executed as 'root' or with 'sudo'"
+	exit 1
+    fi
+}
 
 if ! test -f $MYSQL_BIN; then
     if ! test -f $MYSQL_BIN2; then
@@ -181,6 +198,16 @@ function remote_cmd()
    exit 1
 }
 
+function write_email
+{
+  SUBJECT=$1
+  MSG=$2
+  cat $BACKUP_LOGFILE | sed  -e "s/'/\\\'/g" -e 's/"/\\"/g' > /tmp/s9s_backup_log_escaped
+  MSG="$MSG \nBackup log follows:\n `cat /tmp/s9s_backup_log_escaped`" 
+  QUERY="INSERT INTO simple_email(cid,subject,message) VALUES($CLUSTER_ID, \"$SUBJECT\", \"$MSG\")"
+  $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
+}
+
 
 function load_opts 
 {
@@ -189,6 +216,7 @@ function load_opts
     OS=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='OS' AND cid=$CLUSTER_ID"`
     CONFIGDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='CONFIGDIR' AND cid=$CLUSTER_ID"`
     MYSQL_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MYSQL_PORT' AND cid=$CLUSTER_ID"`
+    HTTP_PROXY=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='HTTP_PROXY' AND cid=$CLUSTER_ID"`
     GALERA_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='GALERA_PORT' AND cid=$CLUSTER_ID"`
     MYSQL_BASEDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MYSQL_BASEDIR' AND cid=$CLUSTER_ID"`
     MONGODB_BASEDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MONGODB_BASEDIR' AND cid=$CLUSTER_ID"`
@@ -350,7 +378,7 @@ function remove_lockfile
       echo "s9s_mongodb_admin --remove-lockfile -i <cluster id> -h <hostname> -t <configsvr|shardsvr>"
       exit 1
   fi
-
+  init 
   if [ -z "$XHOSTNAME" ]; then
       echo "s9s_mongodb_admin --remove-lockfile -i <cluster id> -h <hostname> -t <configsvr|shardsvr>"
       exit 1
@@ -417,7 +445,7 @@ function add_shard
       echo "s9s_mongodb_admin --add-shard -i <cluster id>"
       exit 1
   fi
-  
+  init 
   if [ -z "$SERVER1" ]; then
       echo "s9s_mongodb_admin --add-shard -a <replica set member address>"
       exit 1
@@ -529,6 +557,7 @@ function upgrade_mongodb
 	echo "s9s_mongodb_admin --upgrade-mongodb -i <cluster id>"
 	exit 1
     fi
+    init
     load_opts $CLUSTER_ID
 
     if [ -z $XHOST ]; then	
@@ -565,11 +594,11 @@ function upgrade_mongodb
 	    10gen)
 		case $OS in
 		    redhat)
-			remote_cmd $xhost "yum -y install mongo-10gen mongo-10gen-server"
+			remote_cmd $xhost "$HTTP_PROXY yum -y install mongo-10gen mongo-10gen-server"
 			;;
 		    debian)
-	   		remote_cmd $xhost "apt-get -q -y update"
-			remote_cmd $xhost "LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::='--force-confnew' -y -q install mongodb-10gen"
+	   		remote_cmd $xhost "$HTTP_PROXY apt-get -q -y update"
+			remote_cmd $xhost "LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive $HTTP_PROXY apt-get -o Dpkg::Options::='--force-confnew' -y -q install mongodb-10gen"
 			;;
 		    *)
 			echo "unknown OS"
@@ -616,6 +645,7 @@ function rolling_restart
 	echo "s9s_mongodb_admin --upgrade-mongodb -i <cluster id>"
 	exit 1
     fi
+    init
     load_opts $CLUSTER_ID
     
     echo "Rolling restart"
@@ -706,21 +736,21 @@ function install_mongodb
 		    exit 1
 		    remote_copy 10gen.repo $xhost $S9S_TMPDIR/ 
 		    remote_cmd $xhost "mv $S9S_TMPDIR/10gen.repo /etc/yum.repos.d/"
-		    remote_cmd_nofail $xhost "yum -y remove mongo-10gen mongo-10gen-server"
-		    remote_cmd_nofail $xhost "yum -y install mongo-10gen mongo-10gen-server"
+		    remote_cmd_nofail $xhost "$HTTP_PROXY yum -y remove mongo-10gen mongo-10gen-server"
+		    remote_cmd_nofail $xhost "$HTTP_PROXY yum -y install mongo-10gen mongo-10gen-server"
 		    remote_cmd $xhost  "chown 755 /etc/init.d/mongod"
 		    remote_cmd $xhost  "/sbin/chkconfig --add mongod"
 		    ;;
 		debian)
 		    remote_cmd $xhost "apt-key adv --keyserver keyserver.ubuntu.com --recv 7F0CEB10"
 		    remote_cmd_nofail $xhost "touch /etc/init.d/mongodb"
-		    remote_cmd_nofail $xhost "LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive apt-get -y remove mongo*"
-		    remote_cmd_nofail $xhost "LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive apt-get -y remove mongodb-10gen"
+		    remote_cmd_nofail $xhost "LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive $HTTP_PROXY apt-get -y remove mongo*"
+		    remote_cmd_nofail $xhost "LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive $HTTP_PROXY apt-get -y remove mongodb-10gen"
 		    remote_cmd_nofail $xhost "rm -rf /etc/init.d/mongo*"
 		    remote_cmd_nofail $xhost "sed -i.bak '/10gen/d'  /etc/apt/sources.list"
 		    remote_cmd $xhost "/bin/sh -c 'echo \"deb http://downloads-distro.mongodb.org/repo/ubuntu-upstart dist 10gen\" >> /etc/apt/sources.list'"
-		    remote_cmd $xhost "apt-get -q -y update"
-		    remote_cmd $xhost "LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::='--force-confnew' -y -q install mongodb-10gen"
+		    remote_cmd $xhost "$HTTP_PROXY apt-get -q -y update"
+		    remote_cmd $xhost "LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive $HTTP_PROXY apt-get -o Dpkg::Options::='--force-confnew' -y -q install mongodb-10gen"
 		    ;;
 		*)
 		    echo "OS is unknonwn / not supported" 		  
@@ -862,11 +892,13 @@ function set_nodestate
 {
     NODEID=$1
     STATE=$2
-    QUERY="UPDATE mongodb_server SET status=$STATE WHERE cid=$CLUSTER_ID AND nodeid=$NODEID"  
-    `$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=127.0.0.1 --port=$CMON_DB_PORT --auto-vertical-output -Bse "$QUERY"`
-    if [ $? -ne 0 ]; then
-	echo "setting state failed"
-	exit 1
+    if [ -n "$STATE" ]; then
+	QUERY="UPDATE mongodb_server SET status=$STATE WHERE cid=$CLUSTER_ID AND nodeid=$NODEID"  
+	`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=127.0.0.1 --port=$CMON_DB_PORT --auto-vertical-output -Bse "$QUERY"`
+	if [ $? -ne 0 ]; then
+	    echo "setting state failed"
+	    exit 1
+	fi
     fi
 }
 
@@ -1095,9 +1127,7 @@ function stop_cluster
       echo "s9s_mongodb_admin --stop-cluster -i <cluster id>"
       exit 1
   fi
-
-
-  echo $CLUSTER_ID
+  init
   load_opts $CLUSTER_ID
   
   echo "Are you sure you want to stop the cluster? Enter YES to stop the cluster."
@@ -1165,9 +1195,7 @@ function start_cluster
       echo "s9s_mongodb_admin --start-cluster -i <cluster id>"
       exit 1
   fi
-
-
-  echo $CLUSTER_ID
+  init
   load_opts $CLUSTER_ID
   
   echo "Are you sure you want to start the cluster? Enter YES to start the cluster."
@@ -1263,9 +1291,7 @@ function backup_cluster
       echo "s9s_mongodb_admin --backup -i <cluster id>"
       exit 1
   fi
-
-
-  echo $CLUSTER_ID
+  init
   load_opts $CLUSTER_ID
 
   if [ -n "$XBACKUPDIR" ]; then
@@ -1276,12 +1302,13 @@ function backup_cluster
   if [ ! -f $MONGODB_BASEDIR/bin/mongo ]; then
       log_job_message "Could not find $MONGODB_BASEDIR/bin/mongo on the controller, please install the mongo client utilities" 1
       log_job "FAILED" "Backup Failed" 1
+      write_email "Backup failed" "Could not find $MONGODB_BASEDIR/bin/mongo on the controller, please install the mongo client utilities"
       exit 1
   fi
 
   echo "starting mongodb shard backup" > $BACKUP_LOGFILE
   sleep 5
-  log_job_message "Startinng backup" 0
+  log_job_message "Starting backup" 0
   log_job "RUNNING" "Backup started" 0
   
 
@@ -1308,6 +1335,7 @@ EOF
   if [ $CNT_UP -ne $CNT_ALL ]; then
       log_job_message "All servers are not started - refusing to start backup." 1
       log_job "FAILED" "Backup Failed" 1
+      write_email "Backup failed" "All servers are not started - refusing to start backup"
       exit 1
   fi
 
@@ -1337,6 +1365,7 @@ EOF
   if [ $? -ne 0 ]; then
       log_job_message  "Failed to create backup record" 1
       log_job "FAILED" "Backup Failed" 1
+      write_email "Backup failed" "Failed to create backup record"
       exit 1
   fi
 
@@ -1358,6 +1387,7 @@ EOF
 	  set_backup_status 'failed' 1
 	  log_job_message "No cfg servers found" 1
 	  log_job "FAILED" "Backup Failed" 1
+	  write_email "Backup failed" "No configuration servers found."
 	  exit 1
       fi
   fi
@@ -1378,6 +1408,7 @@ EOF
           if [ $? -ne 0 ];  then
 	      echo "Failed to lock shard server" >> $BACKUP_LOGFILE
 	      log_job_message "Failed to lock shard  $RS_HNAME:$RS_PORT" 1
+	      write_email "Backup failed" "Failed to lock shard  $RS_HNAME:$RS_PORT" 
 	      set_backup_status 'failed' 1
 	      exit 1
 	  fi	  
@@ -1386,6 +1417,7 @@ EOF
       log_job_message "No rs servers" 1
       set_backup_status 'failed' 1
       log_job "FAILED" "Backup Failed" 1
+      write_email "Backup failed" "No replica set servers found." 
       exit 1
   fi
 
@@ -1411,6 +1443,7 @@ EOF
       else
 	  set_backup_status 'failed' 1
 	  log_job_message "No cfg server to dump from" 1
+	  write_email "Backup failed" "No config servers found to run mongodump on." 
 	  log_job "FAILED" "Backup Failed" 1
 	  exit 1
       fi
@@ -1437,6 +1470,7 @@ EOF
   else
       set_backup_status 'failed' 1
       log_job_message "No rs servers" 1
+      write_email "Backup failed" "No replica set servers found to run mongodump on." 
       log_job "FAILED" "Backup Failed" 1
       exit 1
   fi
@@ -1477,6 +1511,7 @@ EOF
 	      echo "Failed to unlock shard server" >> $BACKUP_LOGFILE
 	      log_job_message "Failed to unlock shard  $RS_HNAME:$PORT" 1
 	      set_backup_status 'failed' 1
+	      write_email "Backup failed" "Failed to unlock shard  $RS_HNAME:$PORT" 
 	      log_job "FAILED" "Backup Failed" 1
 	      exit 1
           fi
@@ -1518,6 +1553,7 @@ EOF
 		  if [ $? -ne 0 ];  then
 		      echo "Failed to start balancer" >> $BACKUP_LOGFILE
 		      log_job_message "Failed to start balancer (1) - could not connect to mongos  $HNAME:$PORT" 1
+		      write_email "Backup failed" "Failed to start balancer (1) - could not connect to mongos  $HNAME:$PORT" 
 		      set_backup_status 'failed' 1
 		      log_job "FAILED" "Backup Failed" 1
 		      exit 1
@@ -1526,6 +1562,7 @@ EOF
 		  BAL_STATE=`$MONGODB_BASEDIR/bin/mongo $HNAME:$PORT --quiet --eval "sh.getBalancerState()"`
 		  if [ $? -ne 0 ];  then
 		      echo "Failed to start balancer" >> $BACKUP_LOGFILE
+		      write_email "Backup failed" "Failed to start balancer (2) - could not connect to mongos  $HNAME:$PORT" 
 		      log_job_message "Failed to start balancer (2) - could not connect to mongos  $HNAME:$PORT" 1
 		      set_backup_status 'failed' 1
 		      log_job "FAILED" "Backup Failed" 1
@@ -1543,7 +1580,8 @@ EOF
 	      break
 	  done
 	  if [ $OK -eq 0 ]; then
-	      log_job_message "Failed to start balancer" 1
+	      log_job_message "Failed to start balancer (3)" 1
+	      write_email "Backup failed" "Failed to start balancer (2)"
 	      set_backup_status 'failed' 1
 	      log_job "FAILED" "Backup Failed" 1
 	      exit 1
@@ -1553,9 +1591,11 @@ EOF
 
   if [ $FAIL -eq 0 ]; then
      set_backup_status 'completed' 0
+     write_email "Backup Completed" "Backup successful"
      log_job "FINISHED" "Backup Successful" 0
   else
      set_backup_status 'failed' 1 
+     write_email "Backup Failed" "Backup Failed"
      log_job "FAILED" "Backup Failed" 1
   fi
   exit 0
@@ -1564,7 +1604,7 @@ EOF
 ## ADD ARBITER
 function add_arbiter
 {        
-    args=`getopt i:N:P:j:d:h: $*`
+    args=`getopt i:N:P:j:d:h:k: $*`
     set -- $args
     for i
     do
@@ -1587,6 +1627,9 @@ function add_arbiter
 	    -d)
 		ARBIT_DATADIR="$2"; shift;
 		shift;;
+	    -k)
+		KEYFILE="--keyFile=$2 --auth"; shift;
+		shift;;
             --)
 		shift; break;;
 	esac
@@ -1597,7 +1640,7 @@ function add_arbiter
       echo "s9s_mongodb_admin --add-arbiter -i <cluster id>"
       exit 1
   fi
-
+  init 
   if [ -z "$RS_NAME" ]; then
       echo "s9s_mongodb_admin --add-arbiter -N <replica set name to add the arbiter to>"
       exit 1
@@ -1656,8 +1699,11 @@ EOF
   remote_cmd $ARBIT_HOSTNAME "mkdir -p /var/log/mongodb"
   remote_cmd $ARBIT_HOSTNAME "mkdir -p /var/run/mongodb"
   PIDFILE="/var/run/mongodb/arbiter_${ARBIT_PORT}.pid"
-  CMDLINE="$MONGODB_BASEDIR/bin/mongod --port $ARBIT_PORT --dbpath $ARBIT_DATADIR --replSet $RS_NAME  --logpath /var/log/mongodb/arbiter_${ARBIT_PORT}.log --pidfilepath $PIDFILE --smallfiles"
-  
+  if [ "$VENDOR" != "tokutek" ]; then
+     MORE_OPTS="--smallfiles"
+  fi
+  CMDLINE="$MONGODB_BASEDIR/bin/mongod --port $ARBIT_PORT --dbpath $ARBIT_DATADIR --replSet $RS_NAME  --logpath /var/log/mongodb/arbiter_${ARBIT_PORT}.log --pidfilepath $PIDFILE $MORE_OPTS $KEYFILE $AUTH"
+
   remote_cmd3 $ARBIT_HOSTNAME "$CMDLINE"
   
   sed  -i.bak "s#ARBIT_HOSTNAME#${ARBIT_HOSTNAME}#g"  /tmp/addArbiter.js
@@ -1771,7 +1817,7 @@ function remove_member
       echo "s9s_mongodb_admin --remove-member -i <cluster id>"
       exit 1
   fi
-
+  init
   if [ -z "$RS_NAME" ]; then
       echo "s9s_mongodb_admin --remove-member -N <replica set name to add the arbiter to>"
       exit 1
@@ -1957,7 +2003,7 @@ case $ARG in
 	;;
     *)
     echo "Usage:"
-    echo "bash ./s9s_mongodb_admin <--remove-lockfile|start-cluster|stop-cluster|--backup|--remove-member|--add-arbiter|upgrade-mongodb> <options follows>"
+    echo "bash ./s9s_mongodb_admin <--remove-lockfile|start-cluster|stop-cluster|--backup|--remove-member|--add-arbiter|upgrade-mongodb|--rolling-restart> <options follows>"
     exit 1
     ;;
 esac

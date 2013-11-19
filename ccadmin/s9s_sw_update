@@ -1,37 +1,54 @@
 #!/bin/bash
+
 # Copyright 2012 Severalnines AB
 #
 # MODIFY THE BELOW TO SUIT YOU ENV:
-
-
-if [ ! -e /etc/cmon.cnf ] ; then
-    echo "Could not find /etc/cmon.cnf"
-    exit 1
-else
-    source /etc/cmon.cnf
-fi
-CID=$cluster_id
-CMON_DB_PORT=$mysql_port
-CLUSTER_TYPE=$type
-CMON_USER=cmon
-CMON_PASSWORD=$mysql_password
-CMON_DB_HOST=$mysql_hostname
-CMON_DB_DB=cmon
-MYSQL_BIN=$mysql_bindir/mysql
-BACKUP_LOGFILE=/tmp/s9s_backup.log
-LOCKFILE="/tmp/s9s_backup.lock"
 JOBID=0
+function init
+{    
+    FILES=`ls /etc/cmon.cnf 2>&1`
+    FILES2=`ls /etc/cmon.d/*.cnf 2>&1`
+    FILES="$FILES $FILES2"
+    configfile=""
+    for f in $FILES
+    do
+	X=`grep -l cluster_id=${CLUSTER_ID} $f 2>&1 `
+	if [ $? -eq 0 ]; then
+            source $f
+            configfile=$f
+        fi
+    done
+
+    if [ -z "$configfile" ]; then
+        echo "No matching configuration file found having cluster_id=${CLUSTER_ID}"
+        exit 1
+    fi
+
+    source $configfile;
+
+    CLUSTER_ID=$cluster_id
+    CMON_DB_PORT=$mysql_port
+    CLUSTER_TYPE=$type
+    CMON_USER=cmon
+    CMON_PASSWORD=$mysql_password
+    CMON_DB_HOST=$mysql_hostname
+    CMON_DB_DB=cmon
+    MYSQL_BIN=$mysql_bindir/mysql
+    BACKUP_LOGFILE=/tmp/s9s_backup.log
+    LOCKFILE="/tmp/s9s_backup.lock"
 ### NO MODS BELOW UNLESS YOU KNOW WHAT YOU DO:
+    
+    OSUSER=$USER
+    if [ "$USER" != "root" ]; then
+	echo "must be executed as 'root' or with 'sudo'"
+	exit 1
+    fi
+    WWWROOT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='WWWROOT' AND cid=$CLUSTER_ID"`
+}
 
-OSUSER=$USER
-if [ "$USER" != "root" ]; then
-    echo "must be executed as 'root' or with 'sudo'"
-    exit 1
-fi
 
 
 
-WWWROOT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='WWWROOT' AND cid=$CID"`
 
 
 function log_job_message
@@ -39,7 +56,6 @@ function log_job_message
     MSG=$1
     EXIT_CODE=$2
     QUERY="INSERT INTO cmon_job_message(cid, JOBID,message,exit_code,report_ts) VALUES($CLUSTER_ID,$JOBID,\"$MSG\",$EXIT_CODE,now())"
-    echo $QUERY >> /tmp/queries
     if [ $JOBID -ne 0 ]; then 
 	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
     else
@@ -86,7 +102,7 @@ function write_logfile
    LOG_CONTENT=`cat /tmp/s9s_backup_log_escaped`
    SIZE=`stat --printf='%s' /tmp/s9s_backup_log_escaped`
    HNAME=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$CMON_DB_PORT -e "SHOW GLOBAL VARIABLES LIKE 'hostname'" | awk '{print $2;}'`
-   QUERY="REPLACE INTO cmon_host_log(cid, hostname, filename, result_len, result, report_ts,description, tag) VALUES ($CID,'$HNAME', '$BACKUP_LOGFILE', $SIZE, \"$LOG_CONTENT\", NOW(), 's9s_backup log', 's9s_backup')"
+   QUERY="REPLACE INTO cmon_host_log(cid, hostname, filename, result_len, result, report_ts,description, tag) VALUES ($CLUSTER_ID,'$HNAME', '$BACKUP_LOGFILE', $SIZE, \"$LOG_CONTENT\", NOW(), 's9s_backup log', 's9s_backup')"
    $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
    rm -rf /tmp/s9s_backup_log_escaped
 }
@@ -100,6 +116,14 @@ function remote_cmd_getreply()
    x=`ssh -q $SSH_OPTS $SSH_USER@$desthost "$SUDO $xcommand 2>/dev/null"`
    x=`echo $x | grep -v "password"`
    echo $x
+}
+
+function remote_cmd_getretcode()
+{
+   desthost=$1
+   xcommand=$2
+   ssh -q $SSH_OPTS $SSH_USER@$desthost "$SUDO $xcommand 2>/dev/null"
+   return $?
 }
 
 function remote_copy()
@@ -145,6 +169,11 @@ function remote_cmd_nofail()
    printf "%-4s: Executing '%s'" "$desthost" "$xcommand"
    ssh -q $SSH_OPTS $SSH_USER@$desthost "$SUDO $xcommand "  >> $HOME/s9s_deploy.log 2>&1
    ret=$?
+   if [ $ret -ne 0 ]; then
+       log_job_message "Failed (but moving on) $desthost : $xcommand" 0
+   else
+       log_job_message "Executed $desthost : $xcommand" 0
+   fi
    printf "\033[32m[ok]\033[0m\n"
    return $ret
 }
@@ -208,7 +237,7 @@ function update_cmon_pkg
                 CMON_PASSWORD="$2"; shift;
                 shift;;
             -i)
-                CID="$2"; shift;
+                CLUSTER_ID="$2"; shift;
                 shift;;
             -f)
                 CMON_FILENAME="$2"; shift;
@@ -225,10 +254,11 @@ function update_cmon_pkg
 	exit 1
     fi
 
-    if [ -z "$CID" ]; then
+    if [ -z "$CLUSTER_ID" ]; then
 	echo "s9s_sw_update --update-cmon-pkg -i <clusterid>"
 	exit 1
     fi
+    init
     if [ ! -s $CMON_FILENAME ]; then
 	echo "$CMON_FILENAME does not exists or is zero bytes"
 	exit 1
@@ -246,7 +276,7 @@ function update_cmon_pkg
 	    echo "FAILED: cp -rf $CMON_FILENAME  $WWWROOT/cmon/upload/"
 	    exit 1
 	fi
-	QUERY="BEGIN; DELETE FROM cmon_uploads WHERE cid=$CID AND packageid=(SELECT packageid FROM cmon.cmon_sw_package WHERE name='CMON_DEFAULT' AND cid=$CID);\
+	QUERY="BEGIN; DELETE FROM cmon_uploads WHERE cid=$CLUSTER_ID AND packageid=(SELECT packageid FROM cmon.cmon_sw_package WHERE name='CMON_DEFAULT' AND cid=$CLUSTER_ID);\
                 INSERT IGNORE INTO cmon.cmon_uploads ( cid, packageid, filename,path,cluster_type,version_tag,md5sum,filesize,selected) VALUES (1,1,'$fname','${WWWROOT}/cmon/upload/','$CLUSTER_TYPE','','$sum', $filesize ,1); COMMIT"    
 	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log    
 	if [ $? -ne 0 ]; then 
@@ -271,7 +301,7 @@ function update_mysql_pkg
                 CMON_PASSWORD="$2"; shift;
                 shift;;
             -i)
-                CID="$2"; shift;
+                CLUSTER_ID="$2"; shift;
                 shift;;
             -f)
                 COMMASEP_FILELIST="$2"; shift;
@@ -318,20 +348,20 @@ function update_mysql_pkg
     read x
     if [ "$x" == "y" ] || [ "$x" == "Y" ]; then	
 	echo "Updating software package"
-	QUERY="SELECT packageid FROM ${CMON_DB}.cmon_sw_package WHERE name='$PKG_NAME' AND cid=$CID"
+	QUERY="SELECT packageid FROM ${CMON_DB}.cmon_sw_package WHERE name='$PKG_NAME' AND cid=$CLUSTER_ID"
 	PID=`$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY"`	
 	if [ -z "$PID" ]; then
 	    echo "Creating package $PKG_NAME"
-	    QUERY="INSERT INTO ${CMON_DB}.cmon_sw_package(cid,name,rpm) VALUES($CID, '$PKG_NAME', $rpm)"
+	    QUERY="INSERT INTO ${CMON_DB}.cmon_sw_package(cid,name,rpm) VALUES($CLUSTER_ID, '$PKG_NAME', $rpm)"
 	    $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY"
 	fi
-	QUERY="SELECT packageid FROM ${CMON_DB}.cmon_sw_package WHERE name='$PKG_NAME' AND cid=$CID"
+	QUERY="SELECT packageid FROM ${CMON_DB}.cmon_sw_package WHERE name='$PKG_NAME' AND cid=$CLUSTER_ID"
 	PID=`$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY"`
 	if [ -z "$PID" ]; then
 	    echo "Creating package failed"
 	    exit 1	    
 	fi
-	QUERY="BEGIN; DELETE FROM cmon_uploads WHERE cid=$CID AND packageid=(SELECT packageid FROM ${CMON_DB}.cmon_sw_package WHERE name='$PKG_NAME' AND cid=$CID); UPDATE ${CMON_DB}.cmon_sw_package SET selected=0 WHERE cid=$CID and name<>'CMON_DEFAULT'; UPDATE ${CMON_DB}.cmon_sw_package SET selected=1 WHERE cid=$CID AND packageid=$PID"
+	QUERY="BEGIN; DELETE FROM cmon_uploads WHERE cid=$CLUSTER_ID AND packageid=(SELECT packageid FROM ${CMON_DB}.cmon_sw_package WHERE name='$PKG_NAME' AND cid=$CLUSTER_ID); UPDATE ${CMON_DB}.cmon_sw_package SET selected=0 WHERE cid=$CLUSTER_ID and name<>'CMON_DEFAULT'; UPDATE ${CMON_DB}.cmon_sw_package SET selected=1 WHERE cid=$CLUSTER_ID AND packageid=$PID"
 	for f in $FILELIST 
 	do
 	    sum=`md5sum $f | awk '{print $1;}'`
@@ -342,7 +372,7 @@ function update_mysql_pkg
 		echo "FAILED: cp -rf $f  $WWWROOT/cmon/upload/"
 		exit 1
 	    fi
-	    QUERY="$QUERY; INSERT IGNORE INTO ${CMON_DB}.cmon_uploads ( cid, packageid, filename,path,cluster_type,version_tag,md5sum,filesize,selected) VALUES ($CID,$PID,'$fname','${WWWROOT}/cmon/upload/','$CLUSTER_TYPE','','$sum', $filesize ,1)"
+	    QUERY="$QUERY; INSERT IGNORE INTO ${CMON_DB}.cmon_uploads ( cid, packageid, filename,path,cluster_type,version_tag,md5sum,filesize,selected) VALUES ($CLUSTER_ID,$PID,'$fname','${WWWROOT}/cmon/upload/','$CLUSTER_TYPE','','$sum', $filesize ,1)"
 	done
 	QUERY="$QUERY;COMMIT"
 	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log    
@@ -391,12 +421,12 @@ function install_mysql
 	log_job 'FAILED' 'job failed' 1
 	exit 1
     fi
-    if [ -z "$CID" ]; then
+    if [ -z "$CLUSTER_ID" ]; then
 	log_job_message 'Syntax: s9s_sw_update --install-mysql -i <clusterid> -n <package_name> -h <hostname>' 1
 	log_job 'FAILED' 'job failed' 1
 	exit 1
     fi
-    
+    init
     log_job_message "Installing .. " 0
     sleep 5
     log_job 'RUNNING' 's9s_sw_update is running' 0
@@ -421,44 +451,87 @@ function install_mysql
     log_job 'RUNNING' 's9s_sw_update is running' 0
     remote_cmd_nofail $XHOSTNAME "mkdir -p $S9S_TMPDIR"
     remote_cmd_nofail $XHOSTNAME "chown  -R $SSH_USER:$SSH_USER $S9S_TMPDIR"
-    remote_cmd_nofail $XHOSTNAME "cp /etc/init.d/mysql.bak /etc/init.d/mysql"	
     if [ "$OS" = "redhat" ]; then
+        if  remote_cmd_getretcode $XHOSTNAME "grep -q -i 'release 6' /etc/redhat-release" ; then
+            RHEL=6
+            EPEL_REL="6-8"
+        fi
+        if  remote_cmd_getretcode $XHOSTNAME "grep -q -i 'release 1' /etc/redhat-release" ; then
+            RHEL=5
+            EPEL_REL="5-4"
+        fi
+	$HTTP_PROXY wget  -c --no-check-certificate --tries=5 -O$S9S_TMPDIR/epel-release-${EPEL_REL}.noarch.rpm  http://dl.fedoraproject.org/pub/epel/$RHEL/x86_64/epel-release-${EPEL_REL}.noarch.rpm
+	if [ $? -ne 0 ]; then
+	    log_job_message "FAILED : download failed - check link and/or that EPEL version. EPEL is needed for socat."
+	    log_job 'FAILED' 'job failed' 1	   
+	    exit 1
+	else
+	    remote_copy $S9S_TMPDIR/epel-release-${EPEL_REL}.noarch.rpm $XHOSTNAME $S9S_TMPDIR
+	    remote_cmd_nofail $XHOSTNAME sync
+	    remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY yum -y remove epel-release"	
+	    remote_cmd $XHOSTNAME "rpm -Uvh ${S9S_TMPDIR}/epel-release-6-8.noarch.rpm"
+	fi
 	remote_cmd_nofail $XHOSTNAME "rm -rf /var/lib/mysql/RPM_UPGRADE_MARKER"
-	remote_cmd_nofail $XHOSTNAME "yum -y remove MySQL* mysql* Percona* percona* MariaDB* mariadb* MySQL-Cluster* MySQL-cluster* mysql-cluster* galera*"	
+	remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY yum -y remove MySQL* mysql* Percona* percona* MariaDB* mariadb* MySQL-Cluster* MySQL-cluster* mysql-cluster* galera*"	
 	remote_cmd_nofail $XHOSTNAME "rpm -e `rpm -qa |grep -i maria`"	
 	remote_cmd_nofail $XHOSTNAME "rpm -e `rpm -qa |grep -i percona`"	
 	remote_cmd_nofail $XHOSTNAME "rpm -e `rpm -qa |grep -i mysql`"	
 	remote_cmd_nofail $XHOSTNAME "/usr/sbin/setenforce 0 "
 	remote_cmd_nofail $XHOSTNAME "echo '0' > /selinux/enforce "
         remote_cmd_nofail $XHOSTNAME "sed -i.bak 's#SELINUX=enforcing#SELINUX=permissive#g' /etc/selinux/config"
-	remote_cmd_nofail $XHOSTNAME "yum -y install nc libaio rsync wget"	
+	remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY yum -y install nc libaio rsync wget"	
+	remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY yum -y install socat"	
+	remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY yum -y install nc"	
     else
-	remote_cmd_nofail $XHOSTNAME "LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive apt-get -y -f install"
-	remote_cmd_nofail $XHOSTNAME "apt-get -y remove MySQL* mysql* libmailutils2* Percona* percona* MariaDB* mariadb* MySQL-Cluster* MySQL-cluster* mysql-cluster* galera*"	
+	remote_cmd_nofail $XHOSTNAME "LC_ALL=C DEBIAN_FRONTEND=noninteractive $HTTP_PROXY apt-get -y -f install"
+	remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY apt-get -y purge MySQL* mysql* libmailutils2* Percona* percona* MariaDB* mariadb* galera*"	
+	remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY apt-get -y purge MySQL*"
+	remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY apt-get -y purge mysql*"
+	remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY apt-get -y purge libmailutils2"
+	remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY apt-get -y purge percona*"
+	remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY apt-get -y purge Percona*"
+	remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY apt-get -y purge mariadb*"
+	remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY apt-get -y purge MySQL-Cluster*"
+	remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY apt-get -y purge galera*"
+	remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY apt-get -y purge mysql-cluster*"
+	remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY apt-get -y autoremove"	
+	remote_cmd_nofail $XHOSTNAME "rm -rf /etc/my.cnf"
+	remote_cmd_nofail $XHOSTNAME "rm -rf /etc/mysql/"
+	remote_cmd_nofail $XHOSTNAME "rm -rf /var/lib/mysql"
+	remote_cmd_nofail $XHOSTNAME "rm -rf /var/run/mysqld"
+	remote_cmd_nofail $XHOSTNAME "rm -rf /usr/bin/wsrep*"
+	remote_cmd_nofail $XHOSTNAME "rm -rf /etc/rc*.d/*mysql"
+	remote_cmd_nofail $XHOSTNAME "rm -rf /var/lib/update-rc.d/mysql"
+	remote_cmd_nofail $XHOSTNAME "rm -rf /etc/init.d/mysql"
+	remote_cmd_nofail $XHOSTNAME "sed -i.bak '/repo.percona.com/d'  /etc/apt/sources.list"
+	remote_cmd_nofail $XHOSTNAME "sed -i.bak '/mariadb/d'  /etc/apt/sources.list"
 	remote_cmd_nofail $XHOSTNAME "dpkg -P galera"	
-	remote_cmd_nofail $XHOSTNAME "LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive dpkg -P galera percona-xtradb-cluster-galera-2.x percona-server-server percona-server-server-5.1 percona-server-server-5.5 percona-server-client percona-server-client-5.1 percona-server-client-5.5 percona-server-common percona-server-common-5.5 percona-xtradb-cluster-galera percona-xtradb-cluster-client-5.5 percona-xtradb-cluster-server-5.5 percona-xtrabackup mysql-server mysql-libs mysql-client-core-5.5 mysql-server-core-5.5"			
-	remote_cmd_nofail $XHOSTNAME "LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive dpkg --configure -a"
-	remote_cmd_nofail $XHOSTNAME "apt-get -y update"
-	remote_cmd_nofail $XHOSTNAME "wget -O${S9S_TMPDIR}/libssl0.9.8_0.9.8o-4squeeze14_amd64.deb  http://ftp.us.debian.org/debian/pool/main/o/openssl/libssl0.9.8_0.9.8o-4squeeze14_amd64.deb"
+	remote_cmd_nofail $XHOSTNAME "LC_ALL=C DEBIAN_FRONTEND=noninteractive dpkg -P galera percona-xtradb-cluster-galera-2.x percona-server-server percona-server-server-5.1 percona-server-server-5.5 percona-server-client percona-server-client-5.1 percona-server-client-5.5 percona-server-common percona-server-common-5.5 percona-xtradb-cluster-galera percona-xtradb-cluster-client-5.5 percona-xtradb-cluster-server-5.5 percona-xtrabackup mysql-server mysql-libs mysql-client-core-5.5 mysql-server-core-5.5"			
+	remote_cmd_nofail $XHOSTNAME "LC_ALL=C DEBIAN_FRONTEND=noninteractive dpkg --configure -a"
+	remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY apt-get -y update"
+	remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY apt-get -y purge MySQL* mysql* libmailutils2* Percona* percona* MariaDB* mariadb*  galera*"	
+	remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY wget -O${S9S_TMPDIR}/libssl0.9.8_0.9.8o-4squeeze14_amd64.deb  http://ftp.us.debian.org/debian/pool/main/o/openssl/libssl0.9.8_0.9.8o-4squeeze14_amd64.deb"
 	remote_cmd_nofail $XHOSTNAME "dpkg -i ${S9S_TMPDIR}/libssl0.9.8_0.9.8o-4squeeze14_amd64.deb"
-	remote_cmd_nofail $XHOSTNAME "apt-get -y install libssl0.9.8"
-	remote_cmd $XHOSTNAME "apt-get -y install libssl0.9.8 libssl1.0.0  wget rsync psmisc netcat-openbsd"
+	remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY apt-get -y install libssl0.9.8"
+	remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY apt-get -y install socat"
+	remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY apt-get -y install lsb-release"
+	remote_cmd $XHOSTNAME "$HTTP_PROXY apt-get -y install libssl0.9.8 libssl1.0.0  wget rsync psmisc netcat-openbsd"
 	remote_cmd_nofail $XHOSTNAME "ln --force -s /lib/x86_64-linux-gnu/libssl.so.1.0.0 /lib/x86_64-linux-gnu/libssl.so.10"
 	remote_cmd_nofail $XHOSTNAME "ln --force -s /lib/x86_64-linux-gnu/libcrypto.so.1.0.0 /lib/x86_64-linux-gnu/libcrypto.so.10"
 	remote_cmd_nofail $XHOSTNAME "ln --force -s /usr/lib/x86_64-linux-gnu/libssl.so.1.0.0 /usr/lib/x86_64-linux-gnu/libssl.so.10"
 	remote_cmd_nofail $XHOSTNAME "ln --force -s /usr/lib/x86_64-linux-gnu/libcrypto.so.1.0.0 /usr/lib/x86_64-linux-gnu/libcrypto.so.10"
-	remote_cmd $XHOSTNAME "apt-get -y install libaio1"
-        remote_cmd_nofail $XHOSTNAME "rm -rf $CONFIGDIR/my.cnf"
-        remote_cmd_nofail $XHOSTNAME "rm -rf /etc/mysql/*"
-	remote_cmd $XHOSTNAME "apt-get -y install libdbd-mysql-perl"
+	remote_cmd $XHOSTNAME "$HTTP_PROXY apt-get -y install libaio1"
+        #remote_cmd_nofail $XHOSTNAME "rm -rf $CONFIGDIR/my.cnf"
+       # remote_cmd_nofail $XHOSTNAME "rm -rf /etc/mysql/*"
+	remote_cmd $XHOSTNAME "$HTTP_PROXY apt-get -y install libdbd-mysql-perl"
     fi
     log_job 'RUNNING' 's9s_sw_update is running' 0
     remote_cmd_nofail $XHOSTNAME "rm -rf /etc/my.cnf"
     remote_cmd_nofail $XHOSTNAME "rm -rf /usr/bin/wsre*"
-    remote_cmd_nofail $XHOSTNAME "rm -rf /etc/mysql/*"
+#    remote_cmd_nofail $XHOSTNAME "rm -rf /etc/mysql/*"
     remote_cmd_nofail $XHOSTNAME "rm -rf /var/lib/mysql"
     remote_cmd_nofail $XHOSTNAME "rm -rf /var/run/mysqld"
-    remote_cmd_nofail $XHOSTNAME "rm -rf /etc/init.d/mysql"
+    remote_cmd_nofail $XHOSTNAME "rm -rf /etc/init.d/mysql*"
     remote_cmd_nofail $XHOSTNAME "rm -rf /etc/init.d/mysql.server"
     
     remote_cmd_nofail $XHOSTNAME "mkdir -p $S9S_TMPDIR"
@@ -508,15 +581,15 @@ function install_mysql
     case $VENDOR in
 	percona)
 	    if [ "$OS" = "redhat" ]; then
-		#remote_cmd_nofail $XHOSTNAME "yum -y install perl-DBD-MySQL.x86_64"	
-		remote_cmd $XHOSTNAME "rpm -Uhv --force http://www.percona.com/downloads/percona-release/percona-release-0.0-1.x86_64.rpm"
-		remote_cmd $XHOSTNAME "yum -y install Percona-XtraDB-Cluster-server Percona-XtraDB-Cluster-client xtrabackup"
+		#remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY yum -y install perl-DBD-MySQL.x86_64"	
+		remote_cmd $XHOSTNAME "$HTTP_PROXY rpm -Uhv --force http://www.percona.com/downloads/percona-release/percona-release-0.0-1.x86_64.rpm"
+		remote_cmd $XHOSTNAME "$HTTP_PROXY yum -y install Percona-XtraDB-Cluster-server Percona-XtraDB-Cluster-client percona-xtrabackup"
 	    else
-		remote_cmd $XHOSTNAME "apt-get update"
+		remote_cmd $XHOSTNAME "$HTTP_PROXY apt-get update"
 		remote_cmd_nofail $XHOSTNAME "sed -i.bak '/repo.percona.com/d'  /etc/apt/sources.list"
-		wget --no-check-certificate --tries=5  -O ${S9S_TMPDIR}/RPM-GPG-KEY-percona http://www.percona.com/redir/downloads/RPM-GPG-KEY-percona
+		$HTTP_PROXY wget --no-check-certificate --tries=5  -O ${S9S_TMPDIR}/RPM-GPG-KEY-percona http://www.percona.com/redir/downloads/RPM-GPG-KEY-percona
 		if [ $? -ne 0 ]; then
-		    log_job_message "Failed: wget --no-check-certificate --tries=5  -O ${S9S_TMPDIR}/RPM-GPG-KEY-percona http://www.percona.com/redir/downloads/RPM-GPG-KEY-percona" 1
+		    log_job_message "Failed: $HTTP_PROXY wget --no-check-certificate --tries=5  -O ${S9S_TMPDIR}/RPM-GPG-KEY-percona http://www.percona.com/redir/downloads/RPM-GPG-KEY-percona" 1
 		    log_job 'FAILED' 'install garbd failed' 1
 		    exit 1
 		fi
@@ -526,8 +599,8 @@ function install_mysql
 		remote_cmd $XHOSTNAME "/bin/sh -c 'gpg -a --export CD2EFD2A | apt-key add -'"
 		remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"deb http://repo.percona.com/apt `lsb_release -c -s` main\" >> /etc/apt/sources.list'"
 		remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"deb-src http://repo.percona.com/apt `lsb_release -c -s` main\" >> /etc/apt/sources.list'"
-		remote_cmd $XHOSTNAME "apt-get -q -y update"
-		remote_cmd $XHOSTNAME "LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::='--force-confnew' -y -q install percona-xtradb-cluster-galera percona-xtradb-cluster-client-5.5 percona-xtradb-cluster-server-5.5 percona-xtrabackup"
+		remote_cmd $XHOSTNAME "$HTTP_PROXY apt-get -q -y update"
+		remote_cmd $XHOSTNAME "LC_ALL=C DEBIAN_FRONTEND=noninteractive $HTTP_PROXY apt-get -o Dpkg::Options::='--force-confnew' -y -q install percona-xtradb-cluster-galera percona-xtradb-cluster-client-5.5 percona-xtradb-cluster-server-5.5 percona-xtrabackup"
 		remote_cmd $XHOSTNAME "sync"	
 	    fi
 	    ;;
@@ -536,16 +609,15 @@ function install_mysql
 		## default to MYSQL_INITIAL_DEPLOY if not set
 		PKG_NAME="MYSQL_INITIAL_DEPLOY"
 	    fi
-	    QUERY="SELECT packageid FROM ${CMON_DB}.cmon_sw_package WHERE name='$PKG_NAME' AND cid=$CID"
+	    QUERY="SELECT packageid FROM ${CMON_DB}.cmon_sw_package WHERE name='$PKG_NAME' AND cid=$CLUSTER_ID"
 	    PID=`$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY"`	
 	    if [ -z "$PID" ]; then
 		log_job_message "Invalid package name $PKG_NAME" 1
 		log_job 'FAILED' 'job failed' 1
 		exit 1
 	    fi
-	    QUERY="SELECT group_concat(concat(path,',', filename) SEPARATOR ' ') FROM ${CMON_DB}.cmon_uploads WHERE packageid='$PID' AND cid=$CID"
-	    FILELIST=`$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY"`
-	
+	    QUERY="SELECT group_concat(concat(path,',', filename) SEPARATOR ' ') FROM ${CMON_DB}.cmon_uploads WHERE packageid='$PID' AND cid=$CLUSTER_ID"
+	    FILELIST=`$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY"`	    
 	    if [ -z "$FILELIST" ]; then
 		log_job_message "No files in package $PKG_NAME" 1
 		log_job 'FAILED' 'job failed' 1
@@ -598,7 +670,7 @@ function install_mysql
 		remote_cmd $XHOSTNAME "rpm -Uvh $RPMLIST"
 	    fi
 	    if [ -n "$DEBLIST" ]; then
-		remote_cmd $XHOSTNAME "LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive /usr/bin/dpkg -i $DEBLIST"
+		remote_cmd $XHOSTNAME "LC_ALL=C DEBIAN_FRONTEND=noninteractive /usr/bin/dpkg -i $DEBLIST"
 	    fi	    
 	    ;;
 	mariadb)
@@ -641,9 +713,31 @@ EOF
 		remote_cmd_nofail $XHOSTNAME "chown  -R $SSH_USER:$SSH_USER $S9S_TMPDIR"
 		remote_copy ${S9S_TMPDIR}/MariaDB.${OS2}${RHEL} $XHOSTNAME ${S9S_TMPDIR}/MariaDB.${OS2}${RHEL}.tmp
 		remote_cmd $XHOSTNAME "mv -f ${S9S_TMPDIR}/MariaDB.${OS2}${RHEL}.tmp /etc/yum.repos.d/MariaDB.repo"
-                remote_cmd $XHOSTNAME "yum -y install MariaDB-Galera-server.x86_64 MariaDB-client.x86_64 galera"
+                remote_cmd $XHOSTNAME "$HTTP_PROXY yum -y install MariaDB-Galera-server.x86_64 MariaDB-client.x86_64 galera"
+		remote_cmd $XHOSTNAME "$HTTP_PROXY rpm -Uhv --force http://www.percona.com/downloads/percona-release/percona-release-0.0-1.x86_64.rpm"
+		remote_cmd $XHOSTNAME "$HTTP_PROXY yum -y install percona-xtrabackup"
 	    else
-		echo "debian/ubuntu not supported yet"
+		remote_cmd_nofail $XHOSTNAME "killall -9 mysqld mysqld_safe mysql mysql_chk ndb_mgmd ndbmtd ndbd cmon"
+		$HTTP_PROXY wget --no-check-certificate --tries=5  -O ${S9S_TMPDIR}/RPM-GPG-KEY-percona http://www.percona.com/redir/downloads/RPM-GPG-KEY-percona
+		remote_copy ${S9S_TMPDIR}/RPM-GPG-KEY-percona ${XHOSTNAME} ${S9S_TMPDIR}/RPM-GPG-KEY-percona
+		remote_cmd $XHOSTNAME "gpg --import ${S9S_TMPDIR}/RPM-GPG-KEY-percona"
+		remote_cmd $XHOSTNAME "/bin/sh -c 'gpg -a --export CD2EFD2A | apt-key add -'"
+		remote_cmd $XHOSTNAME "apt-key adv --recv-keys --keyserver keyserver.ubuntu.com 0xcbcb082a1bb943db"
+		remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"deb http://ftp.osuosl.org/pub/mariadb/repo/5.5/`lsb_release -i -s | tr '[A-Z]' '[a-z]'` `lsb_release -c -s` main\" > /etc/apt/sources.list.d/MariaDB.list'"
+		remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"deb-src http://ftp.osuosl.org/pub/mariadb/repo/5.5/`lsb_release -i -s | tr '[A-Z]' '[a-z]'` `lsb_release -c -s` main\" >> /etc/apt/sources.list.d/MariaDB.list'"
+		remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"Package: *\nPin: origin osuosl.org\nPin-Priority: 1000\n\nPackage: *\nPin: origin ftp.osuosl.org\nPin-Priority: 1000\n\nPackage: libmysqlclient18\nPin: origin ftp.osuosl.org\nPin-Priority: 1000\" > /etc/apt/preferences.d/00MariaDB.pref'"
+		remote_cmd $XHOSTNAME "apt-get -q -y update"
+		remote_cmd $XHOSTNAME "LC_ALL=C DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::='--force-confnew' --force-yes -y -q install  galera  mariadb-galera-server-5.5 mariadb-client-5.5 libmariadbclient18 mariadb-client-core-5.5 rsync netcat-openbsd"		
+		remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"deb http://repo.percona.com/apt `lsb_release -c -s` main\" >> /etc/apt/sources.list'"
+		remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"deb-src http://repo.percona.com/apt `lsb_release -c -s` main\" >> /etc/apt/sources.list'"
+		remote_cmd $XHOSTNAME "apt-get -q -y update"
+		remote_cmd $XHOSTNAME "LC_ALL=C DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::='--force-confnew' --force-yes -y -q install percona-xtrabackup percona-toolkit"
+		remote_cmd $XHOSTNAME "sed -i.bak 's#==#=#' /usr/bin/mysqld_safe"
+		remote_cmd_nofail $XHOSTNAME "killall -9 mysqld mysqld_safe mysql mysql_chk ndb_mgmd ndbmtd ndbd"
+		remote_cmd_nofail $XHOSTNAME "rm -rf /etc/my.cnf"
+		remote_cmd $XHOSTNAME  "chown 755 /etc/init.d/mysql"
+		remote_cmd $XHOSTNAME  "sed -i.bak 's#MYSQLD_STARTUP_TIMEOUT:-30#MYSQLD_STARTUP_TIMEOUT:-3600#g' /etc/init.d/mysql"
+		remote_cmd $XHOSTNAME  "/usr/sbin/update-rc.d mysql defaults"
 	    fi
 	    ;;
 	*)
@@ -655,7 +749,7 @@ EOF
     
     remote_cmd_nofail $XHOSTNAME "killall -9 mysqld mysqld_safe mysql mysql_chk ndb_mgmd ndbmtd ndbd "
     remote_cmd_nofail $XHOSTNAME "rm -rf /etc/my.cnf"
-    remote_cmd_nofail $XHOSTNAME "rm -rf /etc/mysql/*"
+#    remote_cmd_nofail $XHOSTNAME "rm -rf /etc/mysql/*"
     remote_cmd_nofail $XHOSTNAME "rm -rf /var/lib/mysql"
     remote_cmd_nofail $XHOSTNAME "rm -rf /var/run/mysqld"
     # remote_cmd_nofail $XHOSTNAME "rm -rf /etc/init.d/mysql"
@@ -670,25 +764,40 @@ EOF
 	exit 1
     fi
 
-    if [ -n "$CONFIGDIR" ]; then
-	remote_cmd_nofail $XHOSTNAME "rm -rf /etc/mysql/*"
-    fi
+   # if [ -n "$CONFIGDIR" ]; then
+	#remote_cmd_nofail $XHOSTNAME "rm -rf /etc/mysql/*"
+    #fi
 
 
     remote_cmd_nofail $XHOSTNAME "mkdir -p $S9S_TMPDIR"
     remote_cmd_nofail $XHOSTNAME "chown  -R $SSH_USER:$SSH_USER $S9S_TMPDIR"
     remote_cmd $XHOSTNAME "chown -R $SSH_USER:$SSH_USER $S9S_TMPDIR"
     remote_copy $S9S_TMPDIR/my.cnf $XHOSTNAME $S9S_TMPDIR
+    rm -rf $S9S_TMPDIR/my.cnf
     remote_cmd $XHOSTNAME "mkdir -p $CONFIGDIR/"
     remote_cmd $XHOSTNAME "mv -f $S9S_TMPDIR/my.cnf $CONFIGDIR/"
-    
+    remote_cmd $XHOSTNAME "chmod 600 $CONFIGDIR/my.cnf"
+    remote_cmd_nofail $XHOSTNAME "chown mysql.mysql $CONFIGDIR/my.cnf"
 
     case $CLUSTER_TYPE in
 	galera)
 	    if [ "$VENDOR" != "percona_nonet" ]; then
+		$HTTP_PROXY wget --no-check-certificate --tries=5  -O ${S9S_TMPDIR}/RPM-GPG-KEY-percona http://www.percona.com/redir/downloads/RPM-GPG-KEY-percona
+		if [ $? -ne 0 ]; then
+		    log_job_message "Failed: $HTTP_PROXY wget --no-check-certificate --tries=5  -O ${S9S_TMPDIR}/RPM-GPG-KEY-percona http://www.percona.com/redir/downloads/RPM-GPG-KEY-percona" 1
+		    log_job 'FAILED' 'install garbd failed' 1
+		    exit 1
+		fi
+		remote_cmd_nofail $XHOSTNAME "chown  -R $SSH_USER:$SSH_USER $S9S_TMPDIR"
+		if [ "$OS" = "debian" ]; then
+		    remote_copy $S9S_TMPDIR/RPM-GPG-KEY-percona ${XHOSTNAME} ${S9S_TMPDIR}/RPM-GPG-KEY-percona
+		    remote_cmd $XHOSTNAME "gpg --import ${S9S_TMPDIR}/RPM-GPG-KEY-percona"
+		    remote_cmd $XHOSTNAME "/bin/sh -c 'gpg -a --export CD2EFD2A | apt-key add -'"
+		fi
 		remote_cmd $XHOSTNAME "/usr/bin/s9s_backup --install -i $CLUSTER_ID -b /tmp/"
-		remote_cmd_nofail $XHOSTNAME "/usr/bin/s9s_galera --install-notifycc -i $CLUSTER_ID"
 	    fi
+	    bash /usr/bin/s9s_galera --install-notifycc -i${CLUSTER_ID} -h${XHOSTNAME}
+	    bash /usr/bin/s9s_galera --install-notifycc -i${CLUSTER_ID}
 	    ;;
 	*)
 	    ;;
@@ -698,58 +807,45 @@ EOF
     ### POST INSTALL
     mkdir -p $S9S_TMPDIR
     chown  -R $SSH_USER:$SSH_USER $S9S_TMPDIR
-    
+
     case $VENDOR in
 	percona)
 	    if [ "$OS" = "redhat" ]; then
-		remote_cmd $XHOSTNAME "cp /usr/share/mysql/mysql.server  /etc/init.d/mysql"
-		remote_cmd $XHOSTNAME "chown 755 /etc/init.d/mysql"
+		remote_cmd $XHOSTNAME "chmod 755 /etc/init.d/mysql"
 		remote_cmd $XHOSTNAME "/sbin/chkconfig --add mysql "
 		remote_cmd $XHOSTNAME "/sbin/chkconfig mysql off --level 2345"
 	    else
-		remote_cmd $XHOSTNAME "cp /usr/share/mysql/mysql.server  /etc/init.d/mysql"
-		remote_cmd $XHOSTNAME "chown 755 /etc/init.d/mysql"
+		remote_cmd $XHOSTNAME "chmod 755 /etc/init.d/mysql"
 		remote_cmd_nofail $XHOSTNAME "/usr/sbin/update-rc.d -f mysql remove"
 		remote_cmd_nofail $XHOSTNAME "/usr/sbin/update-rc.d mysql stop 20 0 1 6 ."
 	    fi
 	    ;;
 	internal_pkg | codership)	 
 	    if [ "$OS" = "redhat" ]; then   
-		remote_cmd $XHOSTNAME "chown 755 /etc/init.d/mysql"
+		remote_cmd $XHOSTNAME "chmod 755 /etc/init.d/mysql"
 		remote_cmd $XHOSTNAME "/sbin/chkconfig --add mysql "
 		remote_cmd $XHOSTNAME "/sbin/chkconfig mysql off --level 2345"
-		wget --no-check-certificate --tries=5  -O $S9S_TMPDIR/wsrep_sst_xtrabackup https://launchpad.net/codership-mysql/5.5/5.5.28-23.7/+download/wsrep_sst_xtrabackup
-		remote_copy $S9S_TMPDIR/wsrep_sst_xtrabackup ${XHOSTNAME} ${S9S_TMPDIR}/wsrep_sst_xtrabackup
-		remote_cmd ${XHOSTNAME} "mv ${S9S_TMPDIR}/wsrep_sst_xtrabackup /usr/bin/"
-		remote_cmd ${XHOSTNAME} "chmod +x /usr/bin/wsrep_sst_xtrabackup "
-		remote_cmd ${XHOSTNAME} "chown mysql:mysql /usr/bin/wsrep_sst_xtrabackup"		
 	    else
-		remote_cmd $XHOSTNAME "cp /usr/local/mysql/support-files/mysql.server  /etc/init.d/mysql"
-		remote_cmd $XHOSTNAME "chown 755 /etc/init.d/mysql"
+		remote_cmd $XHOSTNAME "cp $MYSQL_BASEDIR/support-files/mysql.server  /etc/init.d/mysql"
+		remote_cmd $XHOSTNAME "chmod 755 /etc/init.d/mysql"
 		remote_cmd_nofail $XHOSTNAME "/usr/sbin/update-rc.d -f mysql remove"
 		remote_cmd_nofail $XHOSTNAME "/usr/sbin/update-rc.d mysql stop 20 0 1 6 ."
-		wget --no-check-certificate --tries=5  -O $S9S_TMPDIR/wsrep_sst_xtrabackup https://launchpad.net/codership-mysql/5.5/5.5.28-23.7/+download/wsrep_sst_xtrabackup
-		remote_copy $S9S_TMPDIR/wsrep_sst_xtrabackup ${XHOSTNAME} ${S9S_TMPDIR}/wsrep_sst_xtrabackup
-		remote_cmd ${XHOSTNAME} "mv ${S9S_TMPDIR}/wsrep_sst_xtrabackup /usr/local/mysql/bin/"
-		remote_cmd ${XHOSTNAME} "chmod +x /usr/local/mysql/bin/wsrep_sst_xtrabackup "
-		remote_cmd ${XHOSTNAME} "chown mysql:mysql /usr/local/mysql/bin/wsrep_sst_xtrabackup"		
 	    fi
 	    ;;
 	percona_nonet)
 	    if [ "$OS" = "redhat" ]; then
-		remote_cmd $XHOSTNAME "chown 755 /etc/init.d/mysql"
+		remote_cmd $XHOSTNAME "chmod 755 /etc/init.d/mysql"
 		remote_cmd $XHOSTNAME "/sbin/chkconfig --add mysql "
 		remote_cmd $XHOSTNAME "/sbin/chkconfig mysql off --level 2345"
 	    else
-		remote_cmd $XHOSTNAME "cp /usr/share/mysql/mysql.server  /etc/init.d/mysql"
-		remote_cmd $XHOSTNAME "chown 755 /etc/init.d/mysql"
+		remote_cmd $XHOSTNAME "chmod 755 /etc/init.d/mysql"
 		remote_cmd_nofail $XHOSTNAME "/usr/sbin/update-rc.d -f mysql remove"
 		remote_cmd_nofail $XHOSTNAME "/usr/sbin/update-rc.d mysql stop 20 0 1 6 ."
 	    fi
 	    ;;
 	mariadb)
 	    if [ "$OS" = "redhat" ]; then
-		remote_cmd $XHOSTNAME "chown 755 /etc/init.d/mysql"
+		remote_cmd $XHOSTNAME "chmod 755 /etc/init.d/mysql"
 		remote_cmd $XHOSTNAME "/sbin/chkconfig --add mysql "
 		remote_cmd $XHOSTNAME "/sbin/chkconfig mysql off --level 2345"
 	    else
@@ -758,8 +854,8 @@ EOF
 	    fi
 	    ;;
 	mariadb_tgz | percona_tgz)	 	    
-	    remote_cmd $XHOSTNAME "cp /usr/local/mysql/support-files/mysql.server  /etc/init.d/mysql"
-	    remote_cmd $XHOSTNAME "chown 755 /etc/init.d/mysql"
+	    remote_cmd $XHOSTNAME "cp $MYSQL_BASEDIR/support-files/mysql.server  /etc/init.d/mysql"
+	    remote_cmd $XHOSTNAME "chmod 755 /etc/init.d/mysql"
 	    remote_cmd_nofail $XHOSTNAME "/usr/sbin/update-rc.d -f mysql remove"
 	    remote_cmd_nofail $XHOSTNAME "/usr/sbin/update-rc.d mysql stop 20 0 1 6 ."	    
 	    ;;
@@ -781,7 +877,7 @@ function install_mysql_pkg
                 CMON_PASSWORD="$2"; shift;
                 shift;;
             -i)
-                CID="$2"; shift;
+                CLUSTER_ID="$2"; shift;
                 shift;;
             -h)
 		XHOSTNAME="$2"; shift;
@@ -800,23 +896,24 @@ function install_mysql_pkg
 	echo ' s9s_sw_update --install-mysql-pkg -i <clusterid> -n <package_name> -h <hostname>'
 	exit 1
     fi
-    if [ -z "$CID" ]; then
+    if [ -z "$CLUSTER_ID" ]; then
 	echo 'Syntax:'
 	echo ' s9s_sw_update --install-mysql-pkg -i <clusterid> -n <package_name> -h <hostname>'
 	exit 1
     fi
-    load_opts $CID
+    init
+    load_opts $CLUSTER_ID
     CMON_DB='cmon'
     echo "Do you want install $PKG_NAME on '$XHOSTNAME' (press y or Y to continue)?"
     read x
     if [ "$x" == "y" ] || [ "$x" == "Y" ]; then
-	QUERY="SELECT packageid FROM ${CMON_DB}.cmon_sw_package WHERE name='$PKG_NAME' AND cid=$CID"
+	QUERY="SELECT packageid FROM ${CMON_DB}.cmon_sw_package WHERE name='$PKG_NAME' AND cid=$CLUSTER_ID"
 	PID=`$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY"`
 	if [ -z "$PID" ]; then
 	    echo "Invalid package name $PKG_NAME - not found."
 	    exit 1
 	fi
-	QUERY="SELECT group_concat(concat(path,',', filename) SEPARATOR ' ') FROM ${CMON_DB}.cmon_uploads WHERE packageid='$PID' AND cid=$CID"
+	QUERY="SELECT group_concat(concat(path,',', filename) SEPARATOR ' ') FROM ${CMON_DB}.cmon_uploads WHERE packageid='$PID' AND cid=$CLUSTER_ID"
 	FILELIST=`$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY"`
 	
 	if [ -z "$FILELIST" ]; then
@@ -833,7 +930,7 @@ function install_mysql_pkg
 	remote_cmd $XHOSTNAME "chown  -R $SSH_USER:$SSH_USER $STAGING_DIR"
 	
 	if [ $OS = "debian" ]; then
-	    remote_cmd $XHOSTNAME "apt-get -y install libssl0.9.8 libssl1.0.0  wget rsync psmisc netcat-openbsd"
+	    remote_cmd $XHOSTNAME "$HTTP_PROXY apt-get -y install libssl0.9.8 libssl1.0.0  wget rsync psmisc netcat-openbsd"
 	    remote_cmd_nofail $XHOSTNAME "ln --force -s /lib/x86_64-linux-gnu/libssl.so.1.0.0 /lib/x86_64-linux-gnu/libssl.so.10"
 	    remote_cmd_nofail $XHOSTNAME "ln --force -s /lib/x86_64-linux-gnu/libcrypto.so.1.0.0 /lib/x86_64-linux-gnu/libcrypto.so.10"
 	    remote_cmd_nofail $XHOSTNAME "ln --force -s /usr/lib/x86_64-linux-gnu/libssl.so.1.0.0 /usr/lib/x86_64-linux-gnu/libssl.so.10"
@@ -905,12 +1002,12 @@ function install_mongodb
 	log_job 'FAILED' 'job failed' 1
 	exit 1
     fi
-    if [ -z "$CID" ]; then
+    if [ -z "$CLUSTER_ID" ]; then
 	log_job_message 'Syntax: s9s_sw_update --install-mysql -i <clusterid> -n <package_name> -h <hostname>' 1
 	log_job 'FAILED' 'job failed' 1
 	exit 1
     fi
-    
+    init
     log_job_message "Installing .. " 0
     sleep 5
     log_job 'RUNNING' 's9s_sw_update is running' 0
@@ -936,13 +1033,13 @@ function install_mongodb
     remote_cmd_nofail $XHOSTNAME "cp /etc/init.d/mysql.bak /etc/init.d/mysql"	
     if [ "$OS" = "redhat" ]; then
 	remote_cmd_nofail $XHOSTNAME "rm -rf /var/lib/mysql/RPM_UPGRADE_MARKER"
-	remote_cmd_nofail $XHOSTNAME "yum -y remove 10gen* mongo*"	
+	remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY yum -y remove 10gen* mongo*"	
 	remote_cmd_nofail $XHOSTNAME "/usr/sbin/setenforce 0 "
 	remote_cmd_nofail $XHOSTNAME "echo '0' > /selinux/enforce "
         remote_cmd_nofail $XHOSTNAME "sed -i.bak 's#SELINUX=enforcing#SELINUX=permissive#g' /etc/selinux/config"
-	remote_cmd_nofail $XHOSTNAME "yum -y install nc libaio"	
+	remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY yum -y install nc libaio"	
     else
-	remote_cmd_nofail $XHOSTNAME "apt-get -y remove mongo* 10gen*"	
+	remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY apt-get -y remove mongo* 10gen*"	
     fi
     log_job 'RUNNING' 's9s_sw_update is running' 0
     remote_cmd_nofail $XHOSTNAME "rm -rf /etc/my.cnf"
@@ -985,7 +1082,7 @@ function install_mongodb
     case $VENDOR in
 	10gen)
 	    if [ "$OS" = "redhat" ]; then
-		remote_cmd $XHOSTNAME "yum -y install Percona-XtraDB-Cluster-server Percona-XtraDB-Cluster-client xtrabackup"
+		remote_cmd $XHOSTNAME "$HTTP_PROXY yum -y install Percona-XtraDB-Cluster-server Percona-XtraDB-Cluster-client percona-xtrabackup"
 	    else
 		remote_cmd $XHOSTNAME "apt-key adv --keyserver keyserver.ubuntu.com --recv 7F0CEB10"
 		remote_cmd_nofail $XHOSTNAME "killall -9 cmon mongod"
@@ -993,14 +1090,14 @@ function install_mongodb
 		remote_cmd_nofail $XHOSTNAME "rm -rf /var/lib/mongodb"
 		remote_cmd_nofail $XHOSTNAME "rm -rf /var/log/mongodb"
 		remote_cmd_nofail $XHOSTNAME "touch /etc/init.d/mongodb"
-		remote_cmd_nofail $XHOSTNAME "LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive apt-get -y remove mongo*"
-		remote_cmd_nofail $XHOSTNAME "LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive apt-get -y remove mongodb-10gen"
+		remote_cmd_nofail $XHOSTNAME "LC_ALL=C DEBIAN_FRONTEND=noninteractive $HTTP_PROXY apt-get -y remove mongo*"
+		remote_cmd_nofail $XHOSTNAME "LC_ALL=C DEBIAN_FRONTEND=noninteractive $HTTP_PROXY apt-get -y remove mongodb-10gen"
 		remote_cmd_nofail $XHOSTNAME "rm -rf /etc/init.d/mongo*"
 		remote_cmd_nofail $XHOSTNAME "sed -i.bak '/10gen/d'  /etc/apt/sources.list"
 		remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"deb http://downloads-distro.mongodb.org/repo/ubuntu-upstart dist 10gen\" >> /etc/apt/sources.list'"
-		remote_cmd $XHOSTNAME "apt-get -q -y update"
-		remote_cmd $XHOSTNAME "LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::='--force-confnew' -y -q install mongodb-10gen"
-		remote_cmd $XHOSTNAME "apt-get -y update"
+		remote_cmd $XHOSTNAME "$HTTP_PROXY apt-get -q -y update"
+		remote_cmd $XHOSTNAME "LC_ALL=C DEBIAN_FRONTEND=noninteractive $HTTP_PROXY apt-get -o Dpkg::Options::='--force-confnew' -y -q install mongodb-10gen"
+		remote_cmd $XHOSTNAME "$HTTP_PROXY apt-get -y update"
 	    fi
 	    ;;
 	tokutek)	    
@@ -1026,7 +1123,7 @@ function update_mysql_pkg_yum
                 CMON_PASSWORD="$2"; shift;
                 shift;;
             -i)
-                CID="$2"; shift;
+                CLUSTER_ID="$2"; shift;
                 shift;;
             -h)
 		XHOSTNAME="$2"; shift;
@@ -1042,17 +1139,18 @@ function update_mysql_pkg_yum
 	echo ' s9s_sw_update --update-mysql-yum -i <clusterid> -h <hostname>'
 	exit 1
     fi
-    if [ -z "$CID" ]; then
+    if [ -z "$CLUSTER_ID" ]; then
 	echo 'Syntax:'
 	echo ' s9s_sw_update --update-mysql-yum -i <clusterid> -h <hostname>'
 	exit 1
     fi
-    load_opts $CID
+    init
+    load_opts $CLUSTER_ID
     CMON_DB='cmon'
     echo "Do you want update the database yum packages on '$XHOSTNAME' (press y or Y to continue)?"
     read x
     if [ "$x" == "y" ] || [ "$x" == "Y" ]; then	
-	remote_cmd $XHOSTNAME "yum update `rpm -qa | egrep -i  '(percona|mysql|galera|maria)'`"
+	remote_cmd $XHOSTNAME "$HTTP_PROXY yum update `rpm -qa | egrep -i  '(percona|mysql|galera|maria)'`"
 	echo "Updated packages on $XHOSTNAME"		    
     fi
     echo "Updated packages on $XHOSTNAME"		    
@@ -1071,7 +1169,7 @@ function update_mysql_pkg_apt
                 CMON_PASSWORD="$2"; shift;
                 shift;;
             -i)
-                CID="$2"; shift;
+                CLUSTER_ID="$2"; shift;
                 shift;;
             -h)
 		XHOSTNAME="$2"; shift;
@@ -1087,12 +1185,13 @@ function update_mysql_pkg_apt
 	echo ' s9s_sw_update --update-mysql-apt -i <clusterid> -h <hostname>'
 	exit 1
     fi
-    if [ -z "$CID" ]; then
+    if [ -z "$CLUSTER_ID" ]; then
 	echo 'Syntax:'
 	echo ' s9s_sw_update --update-mysql-apt -i <clusterid> -h <hostname>'
 	exit 1
     fi
-    load_opts $CID
+    init
+    load_opts $CLUSTER_ID
     CMON_DB='cmon'
     echo "Do you want update database apt packages on '$XHOSTNAME' (press y or Y to continue)?"
     read x
@@ -1100,7 +1199,7 @@ function update_mysql_pkg_apt
 	####
 	case $XVENDOR in
 	    percona)
-		remote_cmd $XHOSTNAME "LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive apt-get -y install percona-xtradb-cluster-galera percona-xtradb-cluster-client-5.5 percona-xtradb-cluster-server-5.5 percona-xtrabackup"
+		remote_cmd $XHOSTNAME "LC_ALL=C DEBIAN_FRONTEND=noninteractive $HTTP_PROXY apt-get -y install percona-xtradb-cluster-galera percona-xtradb-cluster-client-5.5 percona-xtradb-cluster-server-5.5 percona-xtrabackup"
 		;;
 	    *)
 		echo "Not a supported vendor: $XVENDOR"
@@ -1120,6 +1219,7 @@ function load_opts
     local CLUSTER_ID=$1
     log_job_message "load opts from $CLUSTER_ID" 0
     OS=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='OS' AND cid=$CLUSTER_ID" 2>/dev/null`
+    HTTP_PROXY=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='HTTP_PROXY' AND cid=$CLUSTER_ID" 2>/dev/null`
     CONFIGDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='CONFIGDIR' AND cid=$CLUSTER_ID" 2>/dev/null`
     MYSQL_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MYSQL_PORT' AND cid=$CLUSTER_ID" 2>/dev/null`
     GALERA_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='GALERA_PORT' AND cid=$CLUSTER_ID" 2>/dev/null`

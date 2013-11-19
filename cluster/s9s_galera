@@ -2,34 +2,46 @@
 # Copyright 2013 Severalnines AB
 #
 # MODIFY THE BELOW TO SUIT YOU ENV:
-
-
-if [ ! -e /etc/cmon.cnf ] ; then
-    echo "Could not find /etc/cmon.cnf"
-    exit 1
-else
-    source /etc/cmon.cnf
-fi
-
-
-CMON_DB_HOST=127.0.0.1
-CMON_DB_PORT=$mysql_port
-CMON_USER=cmon
-CMON_DB_DB=cmon
-CMON_PASSWORD=$mysql_password
-MYSQL_BIN=$mysql_basedir/bin/mysql
-CONNECT_TIMEOUT=10
-CLUSTER_TYPE=$type
-MYSQL_OPTS="--connect-timeout=$CONNECT_TIMEOUT"
 LOCKFILE="/tmp/s9s_galera.lock"
-OSUSER=$USER
 jobid=0
+function init
+{    
+    FILES=`ls /etc/cmon.cnf 2>&1`
+    FILES2=`ls /etc/cmon.d/*.cnf 2>&1`    
+    FILES="$FILES $FILES2"
+    configfile=""
+    for f in $FILES 
+    do
+	X=`grep -l cluster_id=${CLUSTER_ID} $f 2>&1 `	
+	if [ $? -eq 0 ]; then 
+	    source $f
+            configfile=$f
+	fi
+    done
 
+    if [ -z "$configfile" ]; then
+	echo "No matching configuration file found having cluster_id=${CLUSTER_ID}"
+	exit 1
+    fi
+    
+    source $configfile   
 
-if [ "$OSUSER" != "root" ]; then
-    echo "must be executed as 'root' or with 'sudo'"
-    exit 1
-fi
+    CMON_DB_HOST=127.0.0.1
+    CMON_DB_PORT=$mysql_port
+    CMON_USER=cmon
+    CMON_DB_DB=cmon
+    CMON_PASSWORD=$mysql_password
+    MYSQL_BIN=$mysql_basedir/bin/mysql
+    CONNECT_TIMEOUT=10
+    CLUSTER_TYPE=$type
+    MYSQL_OPTS="--connect-timeout=$CONNECT_TIMEOUT"
+    OSUSER=$USER
+        
+    if [ "$OSUSER" != "root" ]; then
+	echo "must be executed as 'root' or with 'sudo'"
+	exit 1
+    fi
+}
  
 function log_job_message
 {    
@@ -201,13 +213,13 @@ function install_agent
 		shift; break;;
 	esac
     done    
-
-    if [ -z "$CMON_PASSWORD" ]; then
+    if [ -z "$CLUSTER_ID" ]; then
 	echo "s9s_galera "
 	exit 1
     fi
-    
-    if [ -z "$CLUSTER_ID" ]; then
+    init 
+
+    if [ -z "$CMON_PASSWORD" ]; then
 	echo "s9s_galera "
 	exit 1
     fi
@@ -243,6 +255,7 @@ function load_opts
     SUDO=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SUDO' AND cid=$CLUSTER_ID" 2>/dev/null`    
     OS_USER_HOME=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='OS_USER_HOME' AND cid=$CLUSTER_ID" 2>/dev/null`
     TMPDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='STAGING_DIR' AND cid=$CLUSTER_ID"`
+    HTTP_PROXY=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='HTTP_PROXY' AND cid=$CLUSTER_ID"`
     S9S_TMPDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='STAGING_DIR' AND cid=$CLUSTER_ID"`
     VENDOR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='VENDOR' AND cid=$CLUSTER_ID" 2>/dev/null`
     DATADIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon.cluster_config where variable='datadir' and cid=1 order by id asc limit 1" 2>/dev/null`
@@ -311,6 +324,12 @@ function install_mysql
 		shift; break;;
 	esac
     done    
+    if [ -z "$CLUSTER_ID" ]; then
+	echo "s9s_galera "
+	exit 1
+    fi
+    init
+
     if [ -z "$CMON_PASSWORD" ]; then
 	echo "s9s_galera "
 	exit 1
@@ -318,11 +337,6 @@ function install_mysql
 
     if [ -z "$DONOR" ]; then
 	echo "donor -d not set "
-	exit 1
-    fi
-    
-    if [ -z "$CLUSTER_ID" ]; then
-	echo "s9s_galera "
 	exit 1
     fi
     
@@ -374,18 +388,18 @@ function stop_cluster
 		esac
     done    
    
+    if [ -z "$CLUSTER_ID" ]; then
+      echo "s9s_galera --stop-cluster -i <clusterid>  missing"
+      exit 1
+    fi
+    init
+
 
 
     if [ -z "$CMON_PASSWORD" ]; then
       echo "s9s_galera --stop-cluster -p  missing"
       exit 1
     fi
-
-    if [ -z "$CLUSTER_ID" ]; then
-      echo "s9s_galera --stop-cluster -i <clusterid>  missing"
-      exit 1
-    fi
-
 
     
     case $CLUSTER_TYPE in
@@ -421,7 +435,7 @@ function stop_cluster
 
 function install_notifycc
 {
-    KILLSIG=15
+    KILLSIG=15    
     args=`getopt p:u:P:h:t:N:j:i:f $*`
     set -- $args
     for i
@@ -436,6 +450,9 @@ function install_notifycc
             -j)
 		jobid="$2"; shift;
 		shift;;
+            -h)
+		XHOSTNAME="$2"; shift;
+		shift;;
             -f)
 		KILLSIG="9"; shift;
 		shift;;
@@ -444,20 +461,18 @@ function install_notifycc
 		esac
     done    
    
+    if [ -z "$CLUSTER_ID" ]; then
+      echo "s9s_galera --install-notifycc -i <clusterid>  missing"
+      exit 1
+    fi
+    init
 
-
+   
     if [ -z "$CMON_PASSWORD" ]; then
       echo "s9s_galera --install-notifycc -p  missing"
       exit 1
     fi
 
-    if [ -z "$CLUSTER_ID" ]; then
-      echo "s9s_galera --install-notifycc -i <clusterid>  missing"
-      exit 1
-    fi
-
-
-    
     case $CLUSTER_TYPE in
 	galera)
 	    ;;
@@ -466,15 +481,18 @@ function install_notifycc
 	    exit 1;	           	     
     esac
     load_opts $CLUSTER_ID 
-    
-    QUERY="select group_concat(hostname SEPARATOR ' ') from ${CMON_DB_DB}.mysql_server where cid=${CLUSTER_ID}"
-    SERVER_LIST=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$CMON_DB_PORT -N -Bse "$QUERY"  2>/dev/null`
-    if [ -z "$OS" ]; then
-	if [ `hash /usr/sbin/update-rc.d 2>/dev/null`  ]; then
-	    OS="redhat"
-	else
-	    OS="debian"
-	fi	
+    if [ -z "$XHOSTNAME" ]; then
+	QUERY="select group_concat(hostname SEPARATOR ' ') from ${CMON_DB_DB}.mysql_server where cid=${CLUSTER_ID}"
+	SERVER_LIST=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$CMON_DB_PORT -N -Bse "$QUERY"  2>/dev/null`
+	if [ -z "$OS" ]; then
+	    if [ `hash /usr/sbin/update-rc.d 2>/dev/null`  ]; then
+		OS="redhat"
+	    else
+		OS="debian"
+	    fi	
+	fi
+    else
+	SERVER_LIST="$XHOSTNAME"
     fi
 
 
@@ -552,6 +570,10 @@ case $STATUS in
 	Joined)
 	   STATUS_VAL=6
            ;;
+        Undefined)
+           STATUS='Initialized'
+	   STATUS_VAL=0
+           ;;
         *)
            STATUS_VAL=0
            ;;
@@ -560,16 +582,16 @@ esac
 if [ -n "$MEMBERS" ]; then
   CLU_SZ=$(echo $MEMBERS | sed 's/, /_ /g' | tr ',' '\n' | wc -l)
 else
-  CLU_SZ=""
+  CLU_SZ="0"
 fi
 
 if [ -n "$MYSQL_HOSTNAME" ]; then
-    QUERY="BEGIN; UPDATE galera_status SET value=$STATUS_VAL, value_txt='$STATUS', report_ts=NOW()  WHERE cid=$CLUSTER_ID AND hostid=$HID AND  var='WSREP_LOCAL_STATE'"
+    QUERY="BEGIN;  REPLACE INTO galera_status SET value=$STATUS_VAL, value_txt='$STATUS', report_ts=NOW(), cid=$CLUSTER_ID , hostid=$HID , var='WSREP_LOCAL_STATE'"
     
     if [ -n "$CLU_SZ" ]; then
-       QUERY="$QUERY; UPDATE galera_status SET value=$CLU_SZ, value_txt='$CLU_SZ', report_ts=NOW()  WHERE cid=$CLUSTER_ID AND hostid=$HID AND var='WSREP_CLUSTER_SIZE'"
+       QUERY="$QUERY; REPLACE INTO galera_status SET value=$CLU_SZ, value_txt='$CLU_SZ', report_ts=NOW(), cid=$CLUSTER_ID , hostid=$HID , var='WSREP_CLUSTER_SIZE'"
     fi
-       QUERY="$QUERY; UPDATE galera_status SET value=0, value_txt='$STATUS', report_ts=NOW()  WHERE cid=$CLUSTER_ID AND hostid=$HID AND var='WSREP_LOCAL_STATE_COMMENT';COMMIT"
+       QUERY="$QUERY; REPLACE INTO galera_status SET value=0, value_txt='$STATUS', report_ts=NOW() , cid=$CLUSTER_ID , hostid=$HID , var='WSREP_LOCAL_STATE_COMMENT';COMMIT"
     $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/dev/null
 fi
 EOF
@@ -585,6 +607,7 @@ EOF
 	    remote_cmd $HNAME "chown mysql:mysql /usr/bin//wsrep_notify_cc"
 	    remote_cmd $HNAME "chmod u+x /usr/bin/wsrep_notify_cc"
 	    remote_cmd $HNAME "chmod 755 /usr/bin/wsrep_notify_cc"
+	    remote_cmd $HNAME "chown mysql.mysql /etc/cmon.cnf"
 	    remote_cmd $HNAME "sed -i.bak 's#.*wsrep_notify_cmd=.*#wsrep_notify_cmd=/usr/bin/wsrep_notify_cc#g' $CONFIGDIR/my.cnf"
 	done
     fi
@@ -621,14 +644,13 @@ function stop_node
 		esac
     done    
    
-
-    if [ -z "$CMON_PASSWORD" ]; then
-      echo "s9s_galera --create -p  missing"
-      exit 1
-    fi
-
     if [ -z "$CLUSTER_ID" ]; then
       echo "s9s_galera --stop-node -i <clusterid>  missing"
+      exit 1
+    fi
+    init
+    if [ -z "$CMON_PASSWORD" ]; then
+      echo "s9s_galera --create -p  missing"
       exit 1
     fi
 
@@ -692,7 +714,7 @@ function stop_node_int
 		break
 	    fi
 	    remote_cmd_nofail $xHNAME "killall -${KILLSIG} mysqld mysqld_safe"
-	    remote_cmd_nofail $xHNAME "killall -9 nc xtrabackup innobackupex"
+	    remote_cmd_nofail $xHNAME "killall -9 nc socat xtrabackup innobackupex"
 	done
     fi
 
@@ -723,7 +745,9 @@ function start_node_donor
 	echo "Node $xHNAME is already started"
 	exit 1
     fi
-    ###remote_cmd3 $xHNAME "nohup nice /etc/init.d/mysql start --wsrep-cluster-address=gcomm:// > /dev/null 2>&1"    
+    ###remote_cmd3 $xHNAME "nohup nice /etc/init.d/mysql start --wsrep-cluster-address=gcomm:// > /dev/null 2>&1"   
+##    remote_cmd $XHNAME "sed -i.bak 's/^wsrep_cluster_address=.*/\#wsrep_cluster_address=gcomm:\/\//g' $CONFIGDIR/my.cnf" 
+ ##   remote_cmd $XHNAME "sed -i.bak 's/^\#wsrep_cluster_address=.*/wsrep_cluster_address=gcomm:\/\//g' $CONFIGDIR/my.cnf"
     remote_cmd3 $xHNAME "nohup $MYSQL_BASEDIR/bin/mysqld_safe --wsrep-cluster-address=gcomm://  >/dev/null 2>&1"    
     sleep 2
     STATE=$(check_node_up $xHNAME)
@@ -772,15 +796,14 @@ function install_garbd
 		shift; break;;
 	esac
     done    
-    
+    if [ -z "$CLUSTER_ID" ]; then
+      echo "s9s_galera --install-garbd -i <cluster id> missing"
+      exit 1
+    fi
+    init     
 
     if [ -z "$CMON_PASSWORD" ]; then
       echo "s9s_galera --install-garbd -p  missing"
-      exit 1
-    fi
-
-    if [ -z "$CLUSTER_ID" ]; then
-      echo "s9s_galera --install-garbd -i <cluster id> missing"
       exit 1
     fi
 
@@ -848,9 +871,9 @@ function install_garbd
 		remote_cmd $XHOSTNAME "apt-get update"
 		remote_cmd_nofail $XHOSTNAME "apt-get -y install  libssl0.9.8  wget rsync psmisc"
 		remote_cmd_nofail $XHOSTNAME "sed -i.bak '/repo.percona.com/d'  /etc/apt/sources.list"
-		wget --no-check-certificate --tries=5  -O ${S9S_TMPDIR}/RPM-GPG-KEY-percona http://www.percona.com/redir/downloads/RPM-GPG-KEY-percona
+		$HTTP_PROXY wget --no-check-certificate --tries=5  -O ${S9S_TMPDIR}/RPM-GPG-KEY-percona http://www.percona.com/redir/downloads/RPM-GPG-KEY-percona
 		if [ $? -ne 0 ]; then
-		    log_job_message "Failed: wget --no-check-certificate --tries=5  -O ${S9S_TMPDIR}/RPM-GPG-KEY-percona http://www.percona.com/redir/downloads/RPM-GPG-KEY-percona" 1
+		    log_job_message "Failed: $HTTP_PROXY wget --no-check-certificate --tries=5  -O ${S9S_TMPDIR}/RPM-GPG-KEY-percona http://www.percona.com/redir/downloads/RPM-GPG-KEY-percona" 1
 		    log_job 'FAILED' 'install garbd failed' 1
 		    exit 1
 		fi
@@ -1002,15 +1025,14 @@ function remove_garbd
 		shift; break;;
 	esac
     done    
-    
+    if [ -z "$CLUSTER_ID" ]; then
+      echo "s9s_galera --remove-garbd -i <cluster id> missing"
+      exit 1
+    fi
+    init       
 
     if [ -z "$CMON_PASSWORD" ]; then
       echo "s9s_galera --remove-garbd -p  missing"
-      exit 1
-    fi
-
-    if [ -z "$CLUSTER_ID" ]; then
-      echo "s9s_galera --remove-garbd -i <cluster id> missing"
       exit 1
     fi
 
@@ -1206,18 +1228,18 @@ function reinit_cluster
 		shift; break;;
 	esac
     done    
+
+    if [ -z "$CLUSTER_ID" ]; then
+      echo "s9s_galera --reinit-cluster -i <cluster id> missing"
+      exit 1
+    fi
+    init
     
 
     if [ -z "$CMON_PASSWORD" ]; then
       echo "s9s_galera --reinit-cluster -p  missing"
       exit 1
     fi
-
-    if [ -z "$CLUSTER_ID" ]; then
-      echo "s9s_galera --reinit-cluster -i <cluster id> missing"
-      exit 1
-    fi
-
     if [ -z "$DONOR_HOSTNAME" ]; then
       echo "s9s_galera --reinit-cluster -d <donor_addres -donor node is missing, specify one server address part of the cluster> missing"
       exit 1
@@ -1339,15 +1361,15 @@ function make_primary
 		shift; break;;
 	esac
     done    
-    
-
-    if [ -z "$CMON_PASSWORD" ]; then
-      echo "s9s_galera --make-primary -p  missing"
-      exit 1
-    fi
 
     if [ -z "$CLUSTER_ID" ]; then
       echo "s9s_galera --make-primary -i <cluster id> missing"
+      exit 1
+    fi
+    init    
+
+    if [ -z "$CMON_PASSWORD" ]; then
+      echo "s9s_galera --make-primary -p  missing"
       exit 1
     fi
 
@@ -1435,14 +1457,14 @@ function start_cluster
 	esac
     done    
     
+    if [ -z "$CLUSTER_ID" ]; then
+      echo "s9s_galera --start-cluster -i <cluster id> missing"
+      exit 1
+    fi
+    init
 
     if [ -z "$CMON_PASSWORD" ]; then
       echo "s9s_galera --start-cluster -p  missing"
-      exit 1
-    fi
-
-    if [ -z "$CLUSTER_ID" ]; then
-      echo "s9s_galera --start-cluster -i <cluster id> missing"
       exit 1
     fi
 
@@ -1534,18 +1556,16 @@ function status_cluster
 		shift; break;;
 	esac
     done    
-    
+    if [ -z "$CLUSTER_ID" ]; then
+      echo "s9s_galera --status -i <cluster id> missing"
+      exit 1
+    fi
+    init    
 
     if [ -z "$CMON_PASSWORD" ]; then
       echo "s9s_galera --status -p  missing"
       exit 1
     fi
-
-    if [ -z "$CLUSTER_ID" ]; then
-      echo "s9s_galera --status -i <cluster id> missing"
-      exit 1
-    fi
-
 
 ##    CMON_DB_DB="cmon_${CLUSTER_ID}"
     
@@ -1629,15 +1649,15 @@ function start_node
 		shift; break;;
 	esac
     done    
+    if [ -z "$CLUSTER_ID" ]; then
+      echo "s9s_galera --start-node -i <cluster id> missing"
+      exit 1
+    fi
+    init
     
 
     if [ -z "$CMON_PASSWORD" ]; then
       echo "s9s_galera --start-node -p  missing"
-      exit 1
-    fi
-
-    if [ -z "$CLUSTER_ID" ]; then
-      echo "s9s_galera --start-node -i <cluster id> missing"
       exit 1
     fi
 

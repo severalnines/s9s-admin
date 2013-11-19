@@ -167,14 +167,21 @@ if [ -z "$SERVER_LIST" ]; then
     echo "No servers found"
     exit
 fi
-rm -rf cluster/s9s_repo
-rm -rf ccadmin/s9s_repo
+if [ -d ccadmin/s9s_repo ]; then   
+    mv ccadmin/s9s_repo ccadmin/repo
+fi
 for H in $SERVER_LIST
 do
+    echo "Installing on $H "
     remote_cmd $H "mkdir -p $S9S_TMPDIR"
     remote_cmd $H "chown -R $SSH_USER:$SSH_USER $S9S_TMPDIR"
     remote_copy "cluster/s9s_*" $H $S9S_TMPDIR
     remote_copy "ccadmin/s9s_*" $H $S9S_TMPDIR
     remote_cmd $H "mv $S9S_TMPDIR/s9s_*  /usr/bin"
+    echo "-----------------"
 done
+if [ -d ccadmin/s9s_repo ]; then   
+    mv ccadmin/repo ccadmin/s9s_repo
+fi
 
+echo "Done."

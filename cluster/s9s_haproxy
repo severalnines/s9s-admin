@@ -45,14 +45,29 @@ function init
     HAPROXY_MYSQL_LISTEN_PORT="33306"
     HAPROXY_OPTS="-f /etc/haproxy/haproxy.cfg -p /var/run/haproxy.pid -st \$(cat /var/run/haproxy.pid)"
     LB_ADMIN_USER='admin'
-    LB_ADMIN_PORT="9600"
+    LB_ADMIN_PORT="9800"
     LB_ADMIN_PASSWORD='admin'
+    HAPROXY_LOG='/tmp/s9s_haproxy.log'
+    HAPROXY_LOG2='/tmp/s9s_haproxy2.log'
 
     if [ "$OSUSER" != "root" ]; then
 	echo "must be executed as 'root' or with 'sudo'"
 	exit 1
     fi
+    echo "" > $HAPROXY_LOG
+    echo "" > $HAPROXY_LOG2
 }
+
+function write_email
+{
+  SUBJECT=$1
+  MSG=$2
+  cat $HAPROXY_LOG | sed  -e "s/'/\\\'/g" -e 's/"/\\"/g' > /tmp/s9s_haproxy_log_escaped
+  MSG="$MSG \nBackup log follows:\n `cat /tmp/s9s_haproxy_log_escaped`" 
+  QUERY="INSERT INTO simple_email(cid,subject,message) VALUES($CLUSTER_ID, \"$SUBJECT\", \"$MSG\")"
+  $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
+}
+
 
 
 function log_job_message
@@ -65,12 +80,25 @@ function log_job_message
     QUERY="INSERT INTO cmon_job_message(cid, jobid,message,exit_code,report_ts) VALUES($CLUSTER_ID,$JOBID,\"$MSG\",$EXIT_CODE,now())"
     if [ $JOBID -ne 0 ]; then 
 	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
+	if [ $EXIT_CODE -ne 0 ]; then
+	    echo "Failed: $MSG" >> $HAPROXY_LOG
+	else
+	    echo "$MSG" >> $HAPROXY_LOG
+	fi
     else
 	if [ $EXIT_CODE -ne 0 ]; then
-	    echo ""
-	    echo "Failed: $MSG"
+	    echo "Failed: $MSG" >> $HAPROXY_LOG
+	else
+	    echo "$MSG" >> $HAPROXY_LOG
 	fi
     fi
+}
+
+function log_message
+{    
+    MSG=$1
+    echo "$MSG" >> $HAPROXY_LOG2
+    echo "$MSG"
 }
 
 function log_job
@@ -121,7 +149,7 @@ userlist STATSUSERS
         user ADMIN_USER insecure-password ADMIN_PASSWORD
         user stats insecure-password PASSWORD
 
-listen admin_page 0.0.0.0:9600
+listen admin_page 0.0.0.0:ADMIN_PORT
         mode http
         stats enable
         stats refresh 60s
@@ -146,7 +174,7 @@ vrrp_script chk_haproxy {
 }
  
 vrrp_instance VI_1 {
-   interface eth0                # interface to monitor
+   interface ETHINTERFACE                # interface to monitor
    state MASTER
    virtual_router_id 51          # Assign one ID for this route
    priority PRIORITY                   # 101 on master, 100 on backup
@@ -161,6 +189,7 @@ EOF
 
 sed -i.bak "s#PRIORITY#$3#g" $TMPDIR/keepalived.conf.$1
 sed -i.bak "s#VIRTUAL_IP#$2#g" $TMPDIR/keepalived.conf.$1
+sed -i.bak "s#ETHINTERFACE#$4#g" $TMPDIR/keepalived.conf.$1
 }	
 
 
@@ -201,7 +230,7 @@ userlist STATSUSERS
         user ADMIN_USER insecure-password ADMIN_PASSWORD
         user stats insecure-password USER_PASSWORD
 
-listen admin_page 0.0.0.0:9600
+listen admin_page 0.0.0.0:ADMIN_PORT
         mode http
         stats enable
         stats refresh 60s
@@ -373,6 +402,7 @@ function test_ssh()
        echo "   http://support.severalnines.com/tickets/new"
        log_job_message 'Could not ssh to remote host, you must setup shared keys to the host first.' 1
        log_job 'FAILED' 's9s_haproxy failed' 1
+       write_email 's9s_haproxy installation failed' 'Could not ssh to remote host, you must setup shared keys to the host first.' 
        exit 1
        return 1
   fi
@@ -445,7 +475,7 @@ function remote_cmd()
 {
    desthost=$1
    xcommand=$2
-   MAX_RETRIES=1
+   MAX_RETRIES=3
    printf "%-4s: Executing '%s' " "$desthost" "$xcommand"
    retry=0
    while [ $retry -lt $MAX_RETRIES ]; 
@@ -463,6 +493,7 @@ function remote_cmd()
    done
    log_job_message "FAILED: ${desthost} : ${xcommand}" 1
    log_job 'FAILED' 's9s_haproxy failed' 1
+   write_email 's9s_haproxy installation failed' "FAILED: ${desthost} : ${xcommand}"
    printf "\033[31m[failed]\033[0m\n"
    echo $x
    echo 'The following command failed:'
@@ -486,6 +517,7 @@ function remote_cmd3()
        printf "\033[31m[failed]\033[0m\n"
        log_job_message "FAILED: ${desthost}@${xcommand}" 1
        log_job 'FAILED' 's9s_haproxy failed' 1
+       write_email 's9s_haproxy installation failed' "FAILED: ${desthost} : ${xcommand}"
        exit 1
    fi
 }
@@ -613,6 +645,7 @@ function load_opts
     SSH_OPTSX=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_OPTS' AND cid=$CLUSTER_ID"`
     SUDO=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SUDO' AND cid=$CLUSTER_ID"`
     TMPDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='STAGING_DIR' AND cid=$CLUSTER_ID"`
+    HTTP_PROXY=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='HTTP_PROXY' AND cid=$CLUSTER_ID"`
     S9S_TMPDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='STAGING_DIR' AND cid=$CLUSTER_ID"`
     VENDOR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='VENDOR' AND cid=$CLUSTER_ID" 2>/dev/null`
     OS_USER_HOME=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='OS_USER_HOME' AND cid=$CLUSTER_ID"`
@@ -630,11 +663,13 @@ function load_opts
     if [ -z "$MYSQL_PORT" ]; then 
         log_job_message "MYSQL_PORT not set in Cluster Settings"
 	log_job 'FAILED' 's9s_haproxy failed' 1
+	write_email 's9s_haproxy installation failed' "MYSQL_PORT not set in Cluster Settings"
         exit 1
     fi
 
     if [ -z "$SSH_USER" ]; then 
         log_job_message "SSH_USER not set in Cluster Settings"
+	write_email 's9s_haproxy installation failed' "SSH_USER not set in Cluster Settings"
 	log_job 'FAILED' 's9s_haproxy failed' 1
         exit 1
     fi
@@ -646,6 +681,7 @@ function load_opts
     
     if [ -z "$OS" ]; then 
         log_job_message "OS not set in Cluster Settings"
+	write_email 's9s_haproxy installation failed' "OS not set in Cluster Settings"
 	log_job 'FAILED' 's9s_haproxy failed' 1
         exit 1
     fi
@@ -812,17 +848,17 @@ function install_haproxy
     log_job 'RUNNING' 'Job is running' 0
     case $OS in
         rhel|redhat)
-            PKG_MGR="yum -y install "
-            PKG_MGR2="yum -y install "
+            PKG_MGR="$HTTP_PROXY yum -y install "
+            PKG_MGR2="$HTTP_PROXY yum -y install "
             PHP_CURL="php-curl"
 	    BUILD="gcc make"
             CENTOS=$(remote_cmd_getreply $LB_HOSTNAME 'test -f /etc/redhat-release && cat /etc/redhat-release  | grep -i centos |grep "6"')
 	    if [ -z "$BUILD_FROM_SRC" ]; then
 		if [ -n "$CENTOS" ]; then
-		    remote_cmd $LB_HOSTNAME "yum -y install centos-release-cr"
+		    remote_cmd $LB_HOSTNAME "$HTTP_PROXY yum -y install centos-release-cr"
 		    remote_cmd_nofail $LB_HOSTNAME "sed  -i.bak  's/enabled=1/enabled=0/g' /etc/yum.repos.d/CentOS-CR.repo"
-		    PKG_MGR2="yum -y --enablerepo=cr install "
-		    PKG_MGR="yum -y install "
+		    PKG_MGR2="$HTTP_PROXY yum -y --enablerepo=cr install "
+		    PKG_MGR="$HTTP_PROXY yum -y install "
 		    PHP_CURL="php-curl"
 		    OS=rhel
 		else
@@ -836,8 +872,8 @@ function install_haproxy
 	    OS=centos6
 	    ;;	
         debian|ubuntu)
-            PKG_MGR="apt-get install -y "
-            PKG_MGR2="apt-get install -y "
+            PKG_MGR="$HTTP_PROXY apt-get install -y "
+            PKG_MGR2="$HTTP_PROXY apt-get install -y "
             PHP_CURL="php5-curl"
 	    BUILD="gcc make"
             OS=debian
@@ -874,11 +910,12 @@ function install_haproxy
     if [ -z "$hostnames" ]; then
        echo "No hostnames found."
        log_job 'FAILED' 's9s_haproxy failed' 1
+       write_email 's9s_haproxy installation failed' "No hostnames found"
        exit 1
     fi
 
     if [ "$hostnames" = "NULL" ]; then
-       echo "No hostnames found."
+       write_email 's9s_haproxy installation failed' "No hostnames found"
        log_job 'FAILED' 's9s_haproxy failed' 1
        exit 1
     fi
@@ -921,10 +958,10 @@ function install_haproxy
     remote_cmd $LB_HOSTNAME "$PKG_MGR wget"
 
     if [ $OS = "rhel" ] || [ $OS = "centos6" ]; then
-	remote_cmd_nofail $LB_HOSTNAME "wget  --no-check-certificate --tries=5 -O ${S9S_TMPDIR}/epel-release-6-8.noarch.rpm  http://dl.fedoraproject.org/pub/epel/6/x86_64/epel-release-6-8.noarch.rpm"
+	remote_cmd_nofail $LB_HOSTNAME "$HTTP_PROXY wget  --no-check-certificate --tries=5 -O ${S9S_TMPDIR}/epel-release-6-8.noarch.rpm  http://dl.fedoraproject.org/pub/epel/6/x86_64/epel-release-6-8.noarch.rpm"
 	remote_cmd_nofail $LB_HOSTNAME "rpm -Uvh --force ${S9S_TMPDIR}/epel-release-6-8.noarch.rpm"
 	remote_cmd_nofail $LB_HOSTNAME "rpm --import http://apt.sw.be/RPM-GPG-KEY.dag.txt"
-	remote_cmd_nofail $LB_HOSTNAME "rpm -Uvh http://packages.sw.be/rpmforge-release/rpmforge-release-0.5.2-2.el6.rf.x86_64.rpm"
+	remote_cmd_nofail $LB_HOSTNAME "$HTTP_PROXY rpm -Uvh http://packages.sw.be/rpmforge-release/rpmforge-release-0.5.2-2.el6.rf.x86_64.rpm"
     fi
     remote_cmd_nofail $LB_HOSTNAME "$PKG_MGR $PHP_CURL"
     if [ -n "$BUILD_FROM_SRC" ]; then
@@ -933,12 +970,13 @@ function install_haproxy
 	    if [ ! -f $BUILD_FROM_SRC_FILE ]; then
 		echo "$BUILD_FROM_SRC_FILE could not be found"
 		log_job 'FAILED' 's9s_haproxy failed' 1
+		write_email 's9s_haproxy installation failed' "$BUILD_FROM_SRC_FILE could not be found"
 		exit 1
 	    fi
 	    HAPROXY_SRC=`basename $BUILD_FROM_SRC_FILE`
 	    remote_copy $BUILD_FROM_SRC_FILE $LB_HOSTNAME /tmp/
 	else
-	    remote_cmd $LB_HOSTNAME "sh -c 'wget -O/tmp/${HAPROXY_SRC}  http://haproxy.1wt.eu/download/1.4/src/${HAPROXY_SRC}'"	 	
+	    remote_cmd $LB_HOSTNAME "sh -c '$HTTP_PROXY wget -O/tmp/${HAPROXY_SRC}  http://haproxy.1wt.eu/download/1.4/src/${HAPROXY_SRC}'"	 	
 	    
 	fi
 	remote_cmd $LB_HOSTNAME "$PKG_MGR $BUILD"
@@ -1000,6 +1038,7 @@ function install_haproxy
             echo ""
             cat /tmp/err.log           
 	    log_job 'FAILED' 's9s_haproxy failed' 1
+	    write_email 's9s_haproxy installation failed' "Query failed: $QUERY"
 	    exit 1
         fi
     fi
@@ -1012,27 +1051,37 @@ function install_haproxy
     QUERY="REPLACE INTO ext_proc (cid, hostname,bin, opts,cmd, proc_name, port) VALUES($CLUSTER_ID, '$LB_HOSTNAME','/usr/sbin/haproxy', \"${HAPROXY_OPTS}\", \"/usr/sbin/haproxy ${HAPROXY_OPTS}\",'haproxy', $LB_ADMIN_PORT)"
     $MYSQL_BIN -B -N  -ucmon -p$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST  --port=${CMON_DB_PORT} -e "$QUERY" 2>&1 >/tmp/err.log
     if [  $? -ne 0 ]; then
-      log_job_message "Query failed: $QUERY"
-       echo ""
-       cat /tmp/err.log
-       log_job 'FAILED' 's9s_haproxy failed' 1
-       exit 1
+	log_job_message "Query failed: $QUERY"
+	echo ""
+	cat /tmp/err.log
+	log_job 'FAILED' 's9s_haproxy failed' 1
+	write_email 's9s_haproxy installation failed' "Query failed: $QUERY"
+	exit 1
     fi
 
 
-    echo ""
-    echo "** Reboot is recommended of $LB_HOSTNAME for network settings to take effect! **"
-    echo ""
-    echo "FIREWALL: To access Haproxy within ClusterControl, you should allow the clustercontrol server to connect to $x on port 9600, and HaProxy must be able to communicate on port 9200 with the MySQL Servers."
-    echo "**The admin interface is on http://${LB_HOSTNAME}:9600 **"
-    echo ""
-    echo "**The admin interface is on http://${LB_HOSTNAME}:9600 **"
-    echo "**Login with ${LB_ADMIN_USER}/${LB_ADMIN_PASSWORD}"
-    echo "**HAProxy listens on ${LB_HOSTNAME}:${HAPROXY_MYSQL_LISTEN_PORT} for mysql connections."
-    echo "**Don't forget to GRANT ${LB_HOSTNAME} on your mysql servers:"
-    echo "GRANT <privs> ON <db>.* TO '<user>'@'${LB_HOSTNAME}' IDENTIFIED BY '<password>'"
-    echo ""
+    log_message ""  
+    log_message  "** Reboot is recommended of $LB_HOSTNAME for network settings to take effect! **"
+    log_message  ""
+    log_message  "FIREWALL: To access HAproxy within ClusterControl, you should allow the clustercontrol server to connect to $LB_HOSTNAME on port ${LB_ADMIN_PORT}, and HAProxy must be able to communicate on port 9200 and 3306 with the MySQL Servers."
+    log_message  ""
+    log_message  "**The admin interface is on http://${LB_HOSTNAME}:${LB_ADMIN_PORT} **"
+    log_message  "  Login with ${LB_ADMIN_USER}/${LB_ADMIN_PASSWORD}"
+    log_message  ""
+    log_message  "** Connect from applications: "
+    log_message  "  HAProxy listens on ${LB_HOSTNAME}:${HAPROXY_MYSQL_LISTEN_PORT} for mysql connections."
+    log_message  ""
+    log_message  " ** Don't forget to GRANT ${LB_HOSTNAME} on your mysql servers:"
+    log_message  "  GRANT <privs> ON <db>.* TO '<user>'@'${LB_HOSTNAME}' IDENTIFIED BY '<password>'"
+    log_message  ""
+    
+    cat $HAPROXY_LOG2  > /tmp/s9s_result
+    cat $HAPROXY_LOG  >> /tmp/s9s_result
+    mv /tmp/s9s_result  $HAPROXY_LOG 
+    rm $HAPROXY_LOG2
+    
     log_job 'FINISHED' 's9s_haproxy --install completed' 0
+    write_email 's9s_haproxy installation completed' "s9s_haproxy --install completed"
     exit 0
 
 }
@@ -1042,7 +1091,7 @@ function install_keepalived
 {
     LB_NODE_LIST=""
     KEEPALIVED_NAME="keepalived"
-    args=`getopt p:P:h:i:N:n:j:sf:c:x:y:v: $*`
+    args=`getopt p:P:h:i:N:n:j:sf:c:x:y:v:I: $*`
     set -- $args
     for i
     do
@@ -1055,6 +1104,9 @@ function install_keepalived
                 shift;;
             -i)
                 CLUSTER_ID="$2"; shift;
+                shift;;
+            -I)
+                ETHINTERFACE="$2"; shift;
                 shift;;
             -x)
                 LB_HOSTNAME1="$2"; shift;
@@ -1087,19 +1139,26 @@ function install_keepalived
       exit 1
     fi
 
+    if [ -z "$ETHINTERFACE" ]; then
+	ETHINTERFACE="eth0"
+    fi
+
     if [ -z "$LB_HOSTNAME1" ]; then
         log_job_message "s9s_haproxy --install-ka  -x <loadbalancer host> missing" 1
+	write_email 's9s_haproxy keepalived installation failed' "s9s_haproxy --install-ka  -x <loadbalancer host> missing" 
 	log_job 'FAILED' 's9s_haproxy failed' 1
         exit 1
     fi
 
     if [ -z "$LB_HOSTNAME2" ]; then
+	write_email 's9s_haproxy keepalived installation failed' "s9s_haproxy --install-ka  -y <loadbalancer host> missing" 
         log_job_message "s9s_haproxy --install-ka  -y <loadbalancer host> missing" 1
 	log_job 'FAILED' 's9s_haproxy failed' 1
         exit 1
     fi
 
     if [ -z "$VIRTUAL_IP" ]; then
+	write_email 's9s_haproxy keepalived installation failed' "s9s_haproxy --install-ka  -v <virtual ip> missing" 
         log_job_message "s9s_haproxy --install-ka  -v <virtual ip> missing" 1
 	log_job 'FAILED' 's9s_haproxy failed' 1
         exit 1
@@ -1113,11 +1172,11 @@ function install_keepalived
 
     log_job 'RUNNING' 'Job is running' 1
     load_opts $CLUSTER_ID
-    prepare_keepalived $LB_HOSTNAME1 $VIRTUAL_IP 101
-    prepare_keepalived $LB_HOSTNAME2 $VIRTUAL_IP 100
+    prepare_keepalived $LB_HOSTNAME1 $VIRTUAL_IP 101 $ETHINTERFACE
+    prepare_keepalived $LB_HOSTNAME2 $VIRTUAL_IP 100 $ETHINTERFACE
     case $OS in
         rhel|redhat)
-            PKG_MGR="yum -y install "
+            PKG_MGR="$HTTP_PROXY yum -y install "
             PHP_CURL="php-curl"
 	    OS=rhel
             ;;
@@ -1125,7 +1184,7 @@ function install_keepalived
 	    OS=centos6
 	    ;;	
         debian|ubuntu)
-            PKG_MGR="apt-get install -y "	    
+            PKG_MGR="$HTTP_PROXY apt-get install -y "	    
             OS=debian
             ;;
         *)
@@ -1136,14 +1195,14 @@ function install_keepalived
 
     case $CLUSTER_TYPE in
         galera)
-        ;;
+            ;;
         mysqlcluster)
-        ;;
+            ;;
         *)
-        log_job_message "Cluster $CLUSTER_TYPE not supported" 1
-	log_job 'FAILED' 's9s_haproxy failed' 1
-	exit 1
-        ;;
+            log_job_message "Cluster $CLUSTER_TYPE not supported" 1
+	    log_job 'FAILED' 's9s_haproxy failed' 1
+	    exit 1
+            ;;
     esac
 
     for LB_HOSTNAME in $LB_HOSTNAME1 $LB_HOSTNAME2
@@ -1178,6 +1237,7 @@ function install_keepalived
 	    log_job_message "Query failed: $QUERY"
 	    echo ""
 	    cat /tmp/err.log
+	    write_email 's9s_haproxy keepalived installation failed' "s9s_haproxy --install-ka query failed: $QUERY"
 	    log_job 'FAILED' 's9s_haproxy --install-ka failed' 1
 	    exit 1
 	fi
@@ -1199,6 +1259,7 @@ function install_keepalived
     done
     log_job_message "Access your cluster on $VIRTUAL_IP and the listening port of HAProxy (33306 default)" 0
     log_job 'FINISHED' 's9s_haproxy --install-ka completed' 0
+    write_email 's9s_haproxy keepalived installation completed' "Access your cluster on $VIRTUAL_IP and the listening port of HAProxy (33306 default)" 
     exit 0
 
 }
@@ -1281,7 +1342,7 @@ function delete_keepalived
     load_opts $CLUSTER_ID
     case $OS in
         rhel|redhat)
-            PKG_MGR="yum -y remove "
+            PKG_MGR="$HTTP_PROXY yum -y remove "
             PHP_CURL="php-curl"
 	    OS=rhel
             ;;
@@ -1289,7 +1350,7 @@ function delete_keepalived
 	    OS=centos6
 	    ;;	
         debian|ubuntu)
-            PKG_MGR="apt-get remove -y "	    
+            PKG_MGR="$HTTP_PROXY apt-get remove -y "	    
             OS=debian
             ;;
         *)
@@ -1412,11 +1473,11 @@ function delete_haproxy
 
     case $OS in
         rhel|redhat|centos6)
-            PKG_MGR="yum -y remove "
+            PKG_MGR="$HTTP_PROXY yum -y remove "
             OS=rhel
             ;;
         debian|ubuntu)
-            PKG_MGR="apt-get -y remove "
+            PKG_MGR="$HTTP_PROXY apt-get -y remove "
             OS=debian
             ;;
         *)
@@ -1536,12 +1597,12 @@ function remove_node
 
     case $OS in
         rhel|redhat)
-            PKG_MGR="yum install -y "
+            PKG_MGR="$HTTP_PROXY yum install -y "
             PHP_CURL="php-curl"
             OS=rhel
             ;;
         debian|ubuntu)
-            PKG_MGR="apt-get install -y "
+            PKG_MGR="$HTTP_PROXY apt-get install -y "
             PHP_CURL="php5-curl"
             OS=debian
             ;;
@@ -1644,12 +1705,12 @@ function add_node
 
     case $OS in
         rhel|redhat)
-            PKG_MGR="yum install -y "
+            PKG_MGR="$HTTP_PROXY yum install -y "
             PHP_CURL="php-curl"
             OS=rhel
             ;;
         debian|ubuntu)
-            PKG_MGR="apt-get install -y "
+            PKG_MGR="$HTTP_PROXY apt-get install -y "
             PHP_CURL="php5-curl"
             OS=debian
             ;;

@@ -2,23 +2,47 @@
 # Copyright 2012 Severalnines AB
 #
 # MODIFY THE BELOW TO SUIT YOU ENV:
+
 LOCKFILE="/tmp/s9s_rebuild_slave.lock"
 
-if [ ! -e /etc/cmon.cnf ] ; then
-    echo "Could not find /etc/cmon.cnf"
-    exit 1
+function init
+{    
+    FILES=`ls /etc/cmon.cnf 2>&1`
+    FILES2=`ls /etc/cmon.d/*.cnf 2>&1`
+    FILES="$FILES $FILES2"
+    configfile=""
+    for f in $FILES
+    do
+	X=`grep -l cluster_id=${CLUSTER_ID} $f 2>&1 `
+	if [ $? -eq 0 ]; then
+            source $f
+            configfile=$f
+        fi
+    done
+
+    if [ -z "$configfile" ]; then
+        echo "No matching configuration file found having cluster_id=${CLUSTER_ID}"
+        exit 1
+    fi
+    source $configfile;
+    
+    if [ ! -e /etc/cmon.cnf ] ; then
+	echo "Could not find /etc/cmon.cnf"
+	exit 1
     else
-    source /etc/cmon.cnf
-fi
-CID=$cluster_id
-CMON_USER=cmon
-CMON_PASSWORD=$mysql_password
-CMON_DB_HOST=$mysql_hostname
-CMON_DB_PORT=$mysql_port
-CMON_DB_DB=cmon
-MYSQL_BIN=$mysql_basedir/bin/mysql
-MYCNF="/etc/my.cnf"
-JOBID=0
+	source /etc/cmon.cnf
+    fi
+    
+    CID=$cluster_id
+    CMON_USER=cmon
+    CMON_PASSWORD=$mysql_password
+    CMON_DB_HOST=$mysql_hostname
+    CMON_DB_PORT=$mysql_port
+    CMON_DB_DB=cmon
+    MYSQL_BIN=$mysql_basedir/bin/mysql
+    MYCNF="/etc/my.cnf"
+    JOBID=0
+}
 
 function load_opts
 {
@@ -307,11 +331,12 @@ ADDNODE=0
 
 
 
-if [ "$CLUSTER_ID" = "" ]; then
+if [ -z "$CLUSTER_ID" ]; then
     log_job_message "-i <clusterid> not set" 1
     log_job 'FAILED' 'rebuild slave failed' 1
     exit 1
 fi
+init
 
 
 if [ "$MASTER" = "" ]; then

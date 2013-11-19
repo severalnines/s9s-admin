@@ -5,8 +5,9 @@
 
 
 DEBUG=1
-TEMP=`getopt -o h,l,f,t:,b:,d:,r: --long help,latest,force,topdir:,backup:,backupdir:,restore: -n 's9s_upgrade_cmon' -- "$@"`
+TEMP=`getopt -o h,l,f,t:,b:,d:,r:,n --long help,latest,force,topdir:,backup:,backupdir:,restore:,skip-backup-db  -n 's9s_upgrade_cmon' -- "$@"`
 eval set -- "$TEMP"
+
 
 while true ; do
 	case "$1" in
@@ -15,6 +16,7 @@ while true ; do
 		-f|--force) force="1" ; shift ;;
 		-t|--topdir) top_dir="$2" ; shift 2 ;;
 		-b|--backup) backup="$2" ; shift 2 ;;
+		-n|--skip-backup-db) skip_backup_db="1" ; shift ;;
 		-d|--backupdir) backup_dir="$2" ; shift 2 ;;
 		-r|--restore) restore="$2" ; shift 2 ;;
 		--) shift ; break ;;
@@ -32,6 +34,7 @@ helpMenu()
 	echo "-f, --force               : Force upgrade"
         echo "-t, --topdir              : Non-default path for CMON installation"
         echo "-b, --backup              : Perform ClusterControl backup (all|controller|agent)"
+        echo "-n, --skip-backup-db      : Skip backing up cmon db and dcps db (saves disk space, not recommended)"
         echo '-d, --backupdir           : Custom path for ClusterControl backup directory (default: /tmp/s9s_backup_{time})'
         echo "-r, --restore             : Restore from ClusterControl backup (all|controller|agent)"
         echo "-h, --help                : Print help"
@@ -42,7 +45,7 @@ helpMenu()
 [ ! -z "$help" ] && helpMenu && exit 1
 [ `whoami` != "root" ] && echo "Please run this script as root or using sudo" && exit 1
 
-if [ ! -z "$backup" ] && [ "$backup" != "all" ] && [ "$backup" != "controller" ] && [ "$backup" != "agent" ]; then
+if [ ! -z "$backup" ] && [ "$backup" != "all" ] && [ "$backup" != "controller" ]  && [ "$backup" != "agent" ]; then
 	echo "Unknown argument. Kindly specify supported argument for -b,--backup: (all|controller|agent)"
 	exit 1
 fi
@@ -173,7 +176,7 @@ adviseRestore()
 
 commandStatus()
 {
-	com=$2
+	com="$2"
 	label=$1
 	printf "%-70s" "$label"
 	$com 2>&1 >> s9s_upgrade_log
@@ -269,10 +272,12 @@ collectInfo()
 	
 	query_cmon_version="SELECT DISTINCT cmon_version FROM cmon.hosts WHERE cid=$cluster_id"
 	query_cmon_install_method="SELECT value FROM cmon.cmon_configuration WHERE param='INSTALL_METHOD' AND cid=$cluster_id"
+	query_cmon_tables="set group_concat_max_len=20480;select group_concat(table_name SEPARATOR ' ')  from information_schema.tables where table_schema='cmon' and (table_name not like '%history%' or table_name not like 'mysql_statistics_tm')"
 	HTTP_PROXY="SELECT value FROM cmon.cmon_configuration WHERE param='HTTP_PROXY' AND cid=$cluster_id"
 	version_url="$DOWNLOAD_URL/version.txt"
 	CMON_VERSION_DB=`$MYSQL_BIN -ucmon -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT -A -Bse "$query_cmon_version"`
 	INSTALL_METHOD=`$MYSQL_BIN -ucmon -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT -A -Bse "$query_cmon_install_method"`
+	CMON_DB_TABLES=`$MYSQL_BIN -ucmon -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT -A -Bse "$query_cmon_tables"`
 	if [ "$cluster_type" == "mongodb" ]; then
 		LATEST_CMON_VERSION=`$CURL_BIN -s $version_url | grep CMON_MONGODB_LATEST_VERSION | sed "s/^CMON_MONGODB_LATEST_VERSION=//g"`
 	else
@@ -295,7 +300,7 @@ collectInfo()
 		echo ""
                 echo "** Kindly perform manual upgrade on the node that running older version of CMON as described in this KB:"
                 echo "   http://support.severalnines.com/entries/21095371-CMON-1-2-3-released-upgrade-instructions"
-                exit 1
+#                exit 1
         else
                 CMON_VERSION=$CMON_VERSION_DB
         fi
@@ -826,14 +831,18 @@ backupCmon()
 	echo "OS=$os" >> $upgrade_details
 
 	if [ "$mode" == "controller" ]; then
-		commandStatus 'Backup CMON schema' "$MYSQLDUMP_BIN -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT $CMON_DB_DB -r $tmp_dir/cmon_dump.sql"
+                if [ -z "$skip_backup_db" ]; then
+		    commandStatus 'Backup CMON schema' "$MYSQLDUMP_BIN -f  -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT  $CMON_DB_DB $CMON_DB_TABLES -r $tmp_dir/cmon_dump.sql"
+		fi
 	        commandStatus 'Backup CMON cron' "cp -pfR /etc/cron.d/cmon $tmp_dir/cmon_crond"
 		mkdir -p $tmp_dir/wwwroot
 	        commandStatus 'Backup CMON web app' "cp -pfR $wwwroot/cmon $tmp_dir/wwwroot"
 		if [ -e $wwwroot/clustercontrol ]; then
 			CC_DB_DB=dcps
 			commandStatus 'Backup ClusterControl web app' "cp -pfR $wwwroot/cc-* $wwwroot/cmona* $wwwroot/clustercontrol $tmp_dir/wwwroot"
-			commandStatus 'Backup ClusterControl schema' "$MYSQLDUMP_BIN -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT $CC_DB_DB -r $tmp_dir/dcps_dump.sql"
+			if [ -z "$skip_backup_db" ]; then
+			    commandStatus 'Backup ClusterControl schema' "$MYSQLDUMP_BIN -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT $CC_DB_DB -r $tmp_dir/dcps_dump.sql"
+			fi
 			echo "NEW_UI=YES" >> $upgrade_details
 		else
 			echo "NEW_UI=NO" >> $upgrade_details
@@ -1044,14 +1053,14 @@ elif [ "$latest" != 1 ] && [ ! -z "$backup" ]; then
 	verify_topdir
 	verify_options
 	if [ "$backup" == "controller" ]; then
-		backupCmon
+	    backupCmon
 	elif [ "$backup" == "agent" ]; then
-		checkSudo
-		backupAgent
+	    checkSudo
+	    backupAgent
 	elif [ "$backup" == "all" ]; then
-		checkSudo
-		backupCmon
-	        backupAgent
+	    checkSudo
+	    backupCmon
+	    backupAgent
 	else
 		echo "Unknown backup option. Please specify either controller, agent or all."
 		exit 1
