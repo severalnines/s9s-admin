@@ -1067,6 +1067,7 @@ elif [ "$latest" != 1 ] && [ ! -z "$backup" ]; then
 	fi
 
 elif [ "$latest" != 1 ] && [ ! -z "$restore" ]; then
+	verify_topdir
 	if [ "$restore" == "controller" ]; then
 		restoreCmon
 	elif [ "$restore" == "agent" ]; then
