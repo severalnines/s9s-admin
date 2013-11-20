@@ -273,11 +273,12 @@ collectInfo()
 	query_cmon_version="SELECT DISTINCT cmon_version FROM cmon.hosts WHERE cid=$cluster_id"
 	query_cmon_install_method="SELECT value FROM cmon.cmon_configuration WHERE param='INSTALL_METHOD' AND cid=$cluster_id"
 	query_cmon_tables="set group_concat_max_len=20480;select group_concat(table_name SEPARATOR ' ')  from information_schema.tables where table_schema='cmon' and (table_name not like '%history%' or table_name not like 'mysql_statistics_tm')"
-	HTTP_PROXY="SELECT value FROM cmon.cmon_configuration WHERE param='HTTP_PROXY' AND cid=$cluster_id"
+	query_cmon_httpproxy="SELECT value FROM cmon.cmon_configuration WHERE param='HTTP_PROXY' AND cid=$cluster_id"
 	version_url="$DOWNLOAD_URL/version.txt"
 	CMON_VERSION_DB=`$MYSQL_BIN -ucmon -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT -A -Bse "$query_cmon_version"`
 	INSTALL_METHOD=`$MYSQL_BIN -ucmon -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT -A -Bse "$query_cmon_install_method"`
 	CMON_DB_TABLES=`$MYSQL_BIN -ucmon -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT -A -Bse "$query_cmon_tables"`
+	HTTP_PROXY=`$MYSQL_BIN -ucmon -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT -A -Bse "$query_cmon_httpproxy"`
 	if [ "$cluster_type" == "mongodb" ]; then
 		LATEST_CMON_VERSION=`$CURL_BIN -s $version_url | grep CMON_MONGODB_LATEST_VERSION | sed "s/^CMON_MONGODB_LATEST_VERSION=//g"`
 	else
