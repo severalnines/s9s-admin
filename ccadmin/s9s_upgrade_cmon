@@ -300,7 +300,7 @@ collectInfo()
                 echo ""
 		echo ""
                 echo "** Kindly perform manual upgrade on the node that running older version of CMON as described in this KB:"
-                echo "   http://support.severalnines.com/entries/21095371-CMON-1-2-3-released-upgrade-instructions"
+                echo "   http://support.severalnines.com/entries/21095371-CMON-1-2-4-released-upgrade-instructions"
                 exit 1
         else
                 CMON_VERSION=$CMON_VERSION_DB
