@@ -867,7 +867,7 @@ backupCmon()
 
 	[ "$os" == "debian" ] && mkdir -p $tmp_dir/local &&  commandStatus 'Backup CMON install directory' "cp -pfR $install_dir_cmon* $tmp_dir/local/"
 	mkdir -p $tmp_dir/bin
-	[ -f /usr/bin/s9s_backup ] && commandStatus 'Backup S9S binary' "cp -pf /usr/bin/s9s_* $tmp_dir/bin/"
+	[ -f /usr/bin/s9s_backup ] && commandStatus 'Backup S9S binary' "cp -pRf /usr/bin/s9s_* $tmp_dir/bin/"
 	[ -f /usr/bin/cmon_install_agent.sh ] && commandStatus 'Backup CMON binary' "cp -pf /usr/bin/cmon* $tmp_dir/bin/"
 	[ -f /usr/sbin/cmon ] && mkdir -p $tmp_dir/sbin && commandStatus 'Backup CMON sbin binary' "cp -pf /usr/sbin/cmon $tmp_dir/sbin/"
 
