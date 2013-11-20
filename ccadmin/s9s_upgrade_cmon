@@ -832,7 +832,10 @@ backupCmon()
 
 	if [ "$mode" == "controller" ]; then
                 if [ -z "$skip_backup_db" ]; then
-		    commandStatus 'Backup CMON schema' "$MYSQLDUMP_BIN -f  -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT  $CMON_DB_DB $CMON_DB_TABLES -r $tmp_dir/cmon_dump.sql"
+			commandStatus 'Backup CMON schema' "$MYSQLDUMP_BIN -f  -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT  $CMON_DB_DB $CMON_DB_TABLES -r $tmp_dir/cmon_dump.sql"
+		else
+			printf "%-70s" "Backup CMON schema"
+                        printf "[\e[00;33m %s\e[00m ]\n" SKIP
 		fi
 	        commandStatus 'Backup CMON cron' "cp -pfR /etc/cron.d/cmon $tmp_dir/cmon_crond"
 		mkdir -p $tmp_dir/wwwroot
@@ -841,7 +844,10 @@ backupCmon()
 			CC_DB_DB=dcps
 			commandStatus 'Backup ClusterControl web app' "cp -pfR $wwwroot/cc-* $wwwroot/cmona* $wwwroot/clustercontrol $tmp_dir/wwwroot"
 			if [ -z "$skip_backup_db" ]; then
-			    commandStatus 'Backup ClusterControl schema' "$MYSQLDUMP_BIN -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT $CC_DB_DB -r $tmp_dir/dcps_dump.sql"
+				commandStatus 'Backup ClusterControl schema' "$MYSQLDUMP_BIN -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT $CC_DB_DB -r $tmp_dir/dcps_dump.sql"
+			else
+				printf "%-70s" "Backup ClusterControl schema"
+				printf "[\e[00;33m %s\e[00m ]\n" SKIP
 			fi
 			echo "NEW_UI=YES" >> $upgrade_details
 		else
