@@ -298,7 +298,7 @@ checkSudo ()
 	[ "$os_user" == "root" ] && ssh_key="/root/.ssh/id_rsa"
 	[ ! -z "$SSH_IDENTITY" ] && ssh_key=$SSH_IDENTITY
 
-	if [ "$mode" == "controller" ]; then
+	if [ "$mode" == "controller" ] || [ "$mode" == "dual" ]; then
 		sudo=sudo
 		[ "$os_user" == "root" ] && sudo="" || setupSudo
 	fi
@@ -335,7 +335,7 @@ confirmation()
 }
 
 ## Runtime
-if [ "$mode" == "controller" ]; then
+if [ "$mode" == "controller" ]  || [ "$mode" == "dual" ]; then
 	confirmation
 	if [ "$retval2" == 0 ]; then
 		checkSudo
