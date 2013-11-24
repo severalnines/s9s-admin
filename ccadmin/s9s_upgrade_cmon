@@ -328,7 +328,7 @@ collectInfo()
 	else
 		LATEST_CMON_VERSION=`$CURL_BIN -s $version_url | grep CMON_LATEST_VERSION | sed "s/^CMON_LATEST_VERSION=//g"`
 	fi
-	
+        LATEST_CCUI_VERSION=`$CURL_BIN -s $version_url | grep CCUI_LATEST_VERSION | sed "s/^CCUI_LATEST_VERSION=//g"`
 	[ -z $LATEST_CMON_VERSION ] && echo "** Unable to retrieve latest version. Please check your internet connection." && exit 1
 
         i=0
@@ -383,11 +383,12 @@ collectInfo()
 	FULL_CMON_VERSION=$CMON_VERSION
 	echo "** Current CMON version: $CMON_VERSION"
 	echo "** Latest CMON version: $LATEST_CMON_VERSION"
+	echo "** Latest CCUI version: $LATEST_CCUI_VERSION"
 
         CMON_VERSION=${CMON_VERSION//[a-z]/}
-        LATEST_CMON_VERSION=${LATEST_CMON_VERSION//[a-z]/}
+        LATEST_CMON_VERSION_SCHEMA=${LATEST_CMON_VERSION//[a-z]/}
 
-	diffVersion $CMON_VERSION $LATEST_CMON_VERSION
+	diffVersion $CMON_VERSION $LATEST_CMON_VERSION_SCHEMA
 
         if [ "$cluster_type" == "mongodb" ]; then
                 cmon_package="cmon-$LATEST_CMON_VERSION-64bit-glibc23-mongodb.tar.gz"
@@ -400,7 +401,7 @@ collectInfo()
                 rpm_www="cmon-www-$LATEST_CMON_VERSION-1.noarch.rpm"
                 rpm_agent="cmon-agent-$LATEST_CMON_VERSION-1.x86_64.rpm"
         fi
-        cc_package="s9s-clustercontrol-$LATEST_CMON_VERSION.tar.gz"
+        cc_package="s9s-clustercontrol-$LATEST_CCUI_VERSION.tar.gz"
 
 	AGENT_CONFIG=$repo_dir/../agent.config
 
@@ -454,7 +455,7 @@ getModDatabase()
 {
 	vers=$CMON_VERSION
 	[ ! -z $1 ] && vers=$1
-	latest_vers=$LATEST_CMON_VERSION
+	latest_vers=$LATEST_CMON_VERSION_SCHEMA
 	[ ! -z $2 ] && latest_vers=$2
 	cmon_sql_path=$install_dir_cmon/sql
 	[ "$os" == "redhat" ] && cmon_sql_path=/usr/share/cmon
@@ -462,9 +463,9 @@ getModDatabase()
 	[ ! -d $cmon_sql_path ] && echo "Error: Could not found the cmon_sql_path." && exit 1
 
 	if [ "$type" == "mongodb" ]; then
-		diffVersion $CMON_VERSION $LATEST_CMON_VERSION mongodb
+		diffVersion $CMON_VERSION $LATEST_CMON_VERSION_SCHEMA mongodb
 	else
-		diffVersion $CMON_VERSION $LATEST_CMON_VERSION
+		diffVersion $CMON_VERSION $LATEST_CMON_VERSION_SCHEMA
 	fi
 
 	# compare version
@@ -542,7 +543,7 @@ upgradeCmonDatabase()
 
 installCcUi()
 {
-        version=$LATEST_CMON_VERSION
+        version=$LATEST_CCUI_VERSION
         [ ! -z $1 ] && version="$1"
 
 	echo ""
@@ -626,7 +627,7 @@ installCcUi()
 
 upgradeCcUi()
 {
-	version=$LATEST_CMON_VERSION
+	version=$LATEST_CCUI_VERSION
 	[ ! -z $1 ] && version="$1"
 
 	echo ""
@@ -752,9 +753,9 @@ upgradeCmon()
 
                 upgradeCmonDatabase
                 if [ "$NEW_UI" == "NO" ]; then
-			installCcUi $LATEST_CMON_VERSION
+			installCcUi $LATEST_CCUI_VERSION
 		else
-			upgradeCcUi $LATEST_CMON_VERSION
+			upgradeCcUi $LATEST_CCUI_VERSION
 		fi
         fi
 	commandStatus 'Restoring CMON config file' "cp -f $tmp_dir/cmon.cnf /etc/"
