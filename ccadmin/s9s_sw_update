@@ -349,14 +349,14 @@ function update_mysql_pkg
     if [ "$x" == "y" ] || [ "$x" == "Y" ]; then	
 	echo "Updating software package"
 	QUERY="SELECT packageid FROM ${CMON_DB}.cmon_sw_package WHERE name='$PKG_NAME' AND cid=$CLUSTER_ID"
-	PID=`$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY"`	
+	PID=`$MYSQL_BIN   -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY"`	
 	if [ -z "$PID" ]; then
 	    echo "Creating package $PKG_NAME"
 	    QUERY="INSERT INTO ${CMON_DB}.cmon_sw_package(cid,name,rpm) VALUES($CLUSTER_ID, '$PKG_NAME', $rpm)"
 	    $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY"
 	fi
 	QUERY="SELECT packageid FROM ${CMON_DB}.cmon_sw_package WHERE name='$PKG_NAME' AND cid=$CLUSTER_ID"
-	PID=`$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY"`
+	PID=`$MYSQL_BIN  -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY"`
 	if [ -z "$PID" ]; then
 	    echo "Creating package failed"
 	    exit 1	    
@@ -375,7 +375,7 @@ function update_mysql_pkg
 	    QUERY="$QUERY; INSERT IGNORE INTO ${CMON_DB}.cmon_uploads ( cid, packageid, filename,path,cluster_type,version_tag,md5sum,filesize,selected) VALUES ($CLUSTER_ID,$PID,'$fname','${WWWROOT}/cmon/upload/','$CLUSTER_TYPE','','$sum', $filesize ,1)"
 	done
 	QUERY="$QUERY;COMMIT"
-	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log    
+	$MYSQL_BIN  -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log    
 	if [ $? -ne 0 ]; then 
 	    echo "FAILED: $QUERY"
 	    echo "Nothing was changed"
