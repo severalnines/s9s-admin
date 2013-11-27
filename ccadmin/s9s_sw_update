@@ -482,6 +482,7 @@ function install_mysql
 	remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY yum -y install nc libaio rsync wget"	
 	remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY yum -y install socat"	
 	remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY yum -y install nc"	
+	remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY yum -y install perl"	
     else
 	remote_cmd_nofail $XHOSTNAME "LC_ALL=C DEBIAN_FRONTEND=noninteractive $HTTP_PROXY apt-get -y -f install"
 	remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY apt-get -y purge MySQL* mysql* libmailutils2* Percona* percona* MariaDB* mariadb* galera*"	
@@ -520,6 +521,10 @@ function install_mysql
 	remote_cmd_nofail $XHOSTNAME "ln --force -s /lib/x86_64-linux-gnu/libcrypto.so.1.0.0 /lib/x86_64-linux-gnu/libcrypto.so.10"
 	remote_cmd_nofail $XHOSTNAME "ln --force -s /usr/lib/x86_64-linux-gnu/libssl.so.1.0.0 /usr/lib/x86_64-linux-gnu/libssl.so.10"
 	remote_cmd_nofail $XHOSTNAME "ln --force -s /usr/lib/x86_64-linux-gnu/libcrypto.so.1.0.0 /usr/lib/x86_64-linux-gnu/libcrypto.so.10"
+	remote_cmd_nofail $XHOSTNAME "ln --force -s /lib/x86_64-linux-gnu/libssl.so.1.0.0 /lib/x86_64-linux-gnu/libssl.so.6"
+	remote_cmd_nofail $XHOSTNAME "ln --force -s /lib/x86_64-linux-gnu/libcrypto.so.1.0.0 /lib/x86_64-linux-gnu/libcrypto.so.6"
+	remote_cmd_nofail $XHOSTNAME "ln --force -s /usr/lib/x86_64-linux-gnu/libssl.so.1.0.0 /usr/lib/x86_64-linux-gnu/libssl.so.6"
+	remote_cmd_nofail $XHOSTNAME "ln --force -s /usr/lib/x86_64-linux-gnu/libcrypto.so.1.0.0 /usr/lib/x86_64-linux-gnu/libcrypto.so.6"
 	remote_cmd $XHOSTNAME "$HTTP_PROXY apt-get -y install libaio1"
         #remote_cmd_nofail $XHOSTNAME "rm -rf $CONFIGDIR/my.cnf"
        # remote_cmd_nofail $XHOSTNAME "rm -rf /etc/mysql/*"
