@@ -42,7 +42,6 @@ function init
 	echo "must be executed as 'root' or with 'sudo'"
 	exit 1
     fi
-    WWWROOT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='WWWROOT' AND cid=$CLUSTER_ID"`
     MYSQL_BIN=$mysql_basedir/bin//mysql
     MYSQL_BIN2=$mysql_bindir/mysql 
     if ! test -f $MYSQL_BIN; then
@@ -59,6 +58,8 @@ function init
 	log_job 'FAILED' 'backup failed' 1
 	exit 1
     fi
+    WWWROOT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='WWWROOT' AND cid=$CLUSTER_ID"`
+
 }
 
 
@@ -328,7 +329,15 @@ function update_mysql_pkg
                 shift; break;;
                 esac
     done
-
+    if [ -z "$CLUSTER_ID" ]; then
+	echo "s9s_sw_update --update-mysql-pkg -i <clusterid>"
+	exit 1
+    fi
+    init
+    if [ -z "$PKG_NAME" ]; then
+	echo "s9s_sw_update --update-mysql-pkg -n <pkgname>"
+	exit 1
+    fi
 
     if [ -z "$COMMASEP_FILELIST" ]; then
 	echo "A comma-separated list of files was not specified. Usage example:"
