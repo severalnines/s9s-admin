@@ -29,15 +29,15 @@ function init
     CMON_PASSWORD=$mysql_password
     CMON_DB_HOST=$mysql_hostname
     CMON_DB_DB=cmon
-    MYSQL_BIN=$mysql_basedir/bin//mysql
-    MYSQL_BIN2=$mysql_bindir/mysql
     BACKUP_LOGFILE=/tmp/s9s_backup.log
     LOCKFILE="/tmp/s9s_backup.lock"
     XTRABACKUP_BIN=/usr/bin/innobackupex
     ULIMIT=32768
 ### NO MODS BELOW UNLESS YOU KNOW WHAT YOU DO:
     jobid=0    
-    OSUSER=$USER    
+    OSUSER=$USER   
+    MYSQL_BIN=$mysql_basedir/bin//mysql
+    MYSQL_BIN2=$mysql_bindir/mysql 
     if ! test -f $MYSQL_BIN; then
 	if ! test -f $MYSQL_BIN2; then
 	    echo "Could not find mysql client binary"

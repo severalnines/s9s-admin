@@ -31,8 +31,6 @@ function init
     CMON_DB_HOST=$mysql_hostname
     CMON_DB_DB=cmon
     CMON_DB_PORT=$mysql_port
-    MYSQL_BIN=$mysql_basedir/bin//mysql
-    MYSQL_BIN2=$mysql_bindir/mysql
     BACKUP_LOGFILE=/tmp/s9s_backup.log
     LOCKFILE="/tmp/s9s_backup.lock"
     XTRABACKUP_BIN=/usr/bin/innobackupex
@@ -40,8 +38,24 @@ function init
     ULIMIT=32768
 ### NO MODS BELOW UNLESS YOU KNOW WHAT YOU DO:
     OSUSER=$USER    
+    MYSQL_BIN=$mysql_basedir/bin//mysql
+    MYSQL_BIN2=$mysql_bindir/mysql 
+    if ! test -f $MYSQL_BIN; then
+	if ! test -f $MYSQL_BIN2; then
+	    echo "Could not find mysql client binary"
+	    echo "Change MYSQL_BIN in beginning of the scipt"
+	    exit 1
+	fi
+	MYSQL_BIN=$MYSQL_BIN2
+    fi
+    if ! test -f $MYSQL_BIN; then
+	echo "Could not find mysql client binary"
+	log_job_message "Could not find mysql client binary" 1
+	log_job 'FAILED' 'backup failed' 1
+	exit 1
+    fi
     check_mysql_client
-    
+
     
     if [ "$OSUSER" != "root" ]; then
 	log_job_message "must be executed as 'root' or with 'sudo'" 1

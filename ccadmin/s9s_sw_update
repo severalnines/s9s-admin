@@ -33,7 +33,6 @@ function init
     CMON_PASSWORD=$mysql_password
     CMON_DB_HOST=$mysql_hostname
     CMON_DB_DB=cmon
-    MYSQL_BIN=$mysql_bindir/mysql
     BACKUP_LOGFILE=/tmp/s9s_backup.log
     LOCKFILE="/tmp/s9s_backup.lock"
 ### NO MODS BELOW UNLESS YOU KNOW WHAT YOU DO:
@@ -44,6 +43,22 @@ function init
 	exit 1
     fi
     WWWROOT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='WWWROOT' AND cid=$CLUSTER_ID"`
+    MYSQL_BIN=$mysql_basedir/bin//mysql
+    MYSQL_BIN2=$mysql_bindir/mysql 
+    if ! test -f $MYSQL_BIN; then
+	if ! test -f $MYSQL_BIN2; then
+	    echo "Could not find mysql client binary"
+	    echo "Change MYSQL_BIN in beginning of the scipt"
+	    exit 1
+	fi
+	MYSQL_BIN=$MYSQL_BIN2
+    fi
+    if ! test -f $MYSQL_BIN; then
+	echo "Could not find mysql client binary"
+	log_job_message "Could not find mysql client binary" 1
+	log_job 'FAILED' 'backup failed' 1
+	exit 1
+    fi
 }
 
 
@@ -349,7 +364,7 @@ function update_mysql_pkg
     if [ "$x" == "y" ] || [ "$x" == "Y" ]; then	
 	echo "Updating software package"
 	QUERY="SELECT packageid FROM ${CMON_DB}.cmon_sw_package WHERE name='$PKG_NAME' AND cid=$CLUSTER_ID"
-	PID=`$MYSQL_BIN   -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY"`	
+	PID=`$MYSQL_BIN -B  -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY"`	
 	if [ -z "$PID" ]; then
 	    echo "Creating package $PKG_NAME"
 	    QUERY="INSERT INTO ${CMON_DB}.cmon_sw_package(cid,name,rpm) VALUES($CLUSTER_ID, '$PKG_NAME', $rpm)"
@@ -375,7 +390,7 @@ function update_mysql_pkg
 	    QUERY="$QUERY; INSERT IGNORE INTO ${CMON_DB}.cmon_uploads ( cid, packageid, filename,path,cluster_type,version_tag,md5sum,filesize,selected) VALUES ($CLUSTER_ID,$PID,'$fname','${WWWROOT}/cmon/upload/','$CLUSTER_TYPE','','$sum', $filesize ,1)"
 	done
 	QUERY="$QUERY;COMMIT"
-	$MYSQL_BIN  -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log    
+	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log    
 	if [ $? -ne 0 ]; then 
 	    echo "FAILED: $QUERY"
 	    echo "Nothing was changed"
