@@ -885,7 +885,15 @@ backupCmon()
 	echo "        Backup CMON $host_type"
 	echo "==================================="
 	
-	[ -e $tmp_dir ] && rm -rf $tmp_dir
+	if [ -e $tmp_dir ]; then
+	    read -p "** $tmp_dir will be removed. Ok to proceed? (y/n): " answer
+	    if [ "$answer" == "Y" ] || [ "$answer" == "y" ]; then
+		[ -e $tmp_dir ] && rm -rf $tmp_dir
+	    else
+		echo "Upgrade cancelled - chose another backupdir"
+		exit 1
+	    fi
+	fi
 	
 	commandStatus "Creating backup directory: $tmp_dir" "mkdir -p $tmp_dir"
 	upgrade_details=$tmp_dir/upgrade_details.txt
