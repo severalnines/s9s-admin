@@ -7,6 +7,9 @@
 # Also see CREDITS, many thanks to Timothy Der (randomorzero.wordpress.com)
 # for the work on the makecfg, mysqlckk, and haproxy.cfg.tmpl
 JOBID=0
+HAPROXY_MYSQL_LISTEN_PORT="33306"
+HAPROXY_LOG='/tmp/s9s_haproxy.log'
+HAPROXY_LOG2='/tmp/s9s_haproxy2.log'
 LOCKFILE="/tmp/s9s_haproxy.lock"
 function init
 {    
@@ -42,13 +45,10 @@ function init
     OSUSER=$USER
     SUFFIX="1"
     PREFIX="s9s"
-    HAPROXY_MYSQL_LISTEN_PORT="33306"
     HAPROXY_OPTS="-f /etc/haproxy/haproxy.cfg -p /var/run/haproxy.pid -st \$(cat /var/run/haproxy.pid)"
     LB_ADMIN_USER='admin'
     LB_ADMIN_PORT="9800"
     LB_ADMIN_PASSWORD='admin'
-    HAPROXY_LOG='/tmp/s9s_haproxy.log'
-    HAPROXY_LOG2='/tmp/s9s_haproxy2.log'
 
     if [ "$OSUSER" != "root" ]; then
 	echo "must be executed as 'root' or with 'sudo'"
@@ -63,7 +63,7 @@ function write_email
   SUBJECT=$1
   MSG=$2
   cat $HAPROXY_LOG | sed  -e "s/'/\\\'/g" -e 's/"/\\"/g' > /tmp/s9s_haproxy_log_escaped
-  MSG="$MSG \nBackup log follows:\n `cat /tmp/s9s_haproxy_log_escaped`" 
+  MSG="$MSG \nInstallation log follows:\n `cat /tmp/s9s_haproxy_log_escaped`" 
   QUERY="INSERT INTO simple_email(cid,subject,message) VALUES($CLUSTER_ID, \"$SUBJECT\", \"$MSG\")"
   $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
 }
@@ -88,8 +88,10 @@ function log_job_message
     else
 	if [ $EXIT_CODE -ne 0 ]; then
 	    echo "Failed: $MSG" >> $HAPROXY_LOG
+	    echo "Failed: $MSG"
 	else
 	    echo "$MSG" >> $HAPROXY_LOG
+	    echo "$MSG" 
 	fi
     fi
 }
@@ -250,6 +252,7 @@ DC="$1"
 SUFFIX="$2"
 TMPDIR2="$3"
 MAX_CONNECTIONS="$4"
+LISTEN_PORT="$5"
 TEMPLATE=${TMPDIR2}/haproxy.cfg.tmpl
 if ([ -z "$DC" ] || [ -z "$SUFFIX" ]); then
         echo "specify PREFIX and SUFFIX: $0 <prefix> <suffix>; ie: $0 dt 1"
@@ -278,7 +281,7 @@ for I in $BACKENDFILES; do
         DESC=`echo $NAME | sed -e 's/^'$DC'_/'$DC$SUFFIX'_/'`
 echo -n "
 listen  "$DESC"
-        bind *:$PORT
+        bind *:$LISTEN_PORT
         mode tcp
         timeout client  60000ms
         timeout server  60000ms
@@ -949,7 +952,7 @@ function install_haproxy
     echo "*************************************************************"
     echo "* writing $TMPDIR/${PREFIX}_${LB_NAME}_haproxy.cfg               *"
     echo "*************************************************************"
-    $TMPDIR/makecfg.sh $PREFIX $SUFFIX $TMPDIR $MAX_CONNECTIONS > $TMPDIR/${PREFIX}_${LB_NAME}_haproxy.cfg
+    $TMPDIR/makecfg.sh $PREFIX $SUFFIX $TMPDIR $MAX_CONNECTIONS $HAPROXY_MYSQL_LISTEN_PORT > $TMPDIR/${PREFIX}_${LB_NAME}_haproxy.cfg
     echo ""
     echo "*************************************************************"
     echo "* Installing haproxy on $LB_HOSTNAME                            *"
@@ -1128,7 +1131,7 @@ function install_keepalived
     if [ -z "$CLUSTER_ID" ]; then
 	log_job_message "s9s_haproxy --install-ka -i <cluster id>  missing" 1
 	log_job 'FAILED' 's9s_haproxy failed' 1
-      exit 1
+	exit 1
     fi
     init
 
@@ -1257,9 +1260,9 @@ function install_keepalived
 	echo "** starting keepalived on $LB_HOSTNAME **"
 	remote_cmd $LB_HOSTNAME "nohup nice /usr/sbin/keepalived"
     done
-    log_job_message "Access your cluster on $VIRTUAL_IP and the listening port of HAProxy (33306 default)" 0
+    log_job_message "Access your cluster on $VIRTUAL_IP and the listening port ${HAPROXY_MYSQL_LISTEN_PORT} " 0
     log_job 'FINISHED' 's9s_haproxy --install-ka completed' 0
-    write_email 's9s_haproxy keepalived installation completed' "Access your cluster on $VIRTUAL_IP and the listening port of HAProxy (33306 default)" 
+    write_email 's9s_haproxy keepalived installation completed' "Access your cluster on $VIRTUAL_IP and the listening port of HAProxy (${HAPROXY_MYSQL_LISTEN_PORT} default)" 
     exit 0
 
 }

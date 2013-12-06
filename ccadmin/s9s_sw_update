@@ -613,7 +613,12 @@ function install_mysql
 	    if [ "$OS" = "redhat" ]; then
 		#remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY yum -y install perl-DBD-MySQL.x86_64"	
 		remote_cmd $XHOSTNAME "$HTTP_PROXY rpm -Uhv --force http://www.percona.com/downloads/percona-release/percona-release-0.0-1.x86_64.rpm"
-		remote_cmd $XHOSTNAME "$HTTP_PROXY yum -y install Percona-XtraDB-Cluster-server Percona-XtraDB-Cluster-client percona-xtrabackup"
+		if [ "$GALERA_VERSION" = "3.x" ]; then
+		    remote_cmd $XHOSTNAME "$HTTP_PROXY yum -y install Percona-XtraDB-Cluster-server-56 Percona-XtraDB-Cluster-client-56 percona-xtrabackup"
+		fi
+		if [ "$GALERA_VERSION" = "2.x" ]; then
+		    remote_cmd $XHOSTNAME "$HTTP_PROXY yum -y install Percona-XtraDB-Cluster-server-55 Percona-XtraDB-Cluster-client-55 percona-xtrabackup"
+		fi
 	    else
 		remote_cmd $XHOSTNAME "$HTTP_PROXY apt-get update"
 		remote_cmd_nofail $XHOSTNAME "sed -i.bak '/repo.percona.com/d'  /etc/apt/sources.list"
@@ -630,7 +635,12 @@ function install_mysql
 		remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"deb http://repo.percona.com/apt `lsb_release -c -s` main\" >> /etc/apt/sources.list'"
 		remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"deb-src http://repo.percona.com/apt `lsb_release -c -s` main\" >> /etc/apt/sources.list'"
 		remote_cmd $XHOSTNAME "$HTTP_PROXY apt-get -q -y update"
-		remote_cmd $XHOSTNAME "LC_ALL=C DEBIAN_FRONTEND=noninteractive $HTTP_PROXY apt-get -o Dpkg::Options::='--force-confnew' -y -q install percona-xtradb-cluster-galera percona-xtradb-cluster-client-5.5 percona-xtradb-cluster-server-5.5 percona-xtrabackup"
+		if [ "$GALERA_VERSION" = "3.x" ]; then
+		    remote_cmd $XHOSTNAME "LC_ALL=C DEBIAN_FRONTEND=noninteractive $HTTP_PROXY apt-get -o Dpkg::Options::='--force-confnew' -y -q install percona-xtradb-cluster-galera-3.x percona-xtradb-cluster-client-5.6 percona-xtradb-cluster-server-5.6 percona-xtrabackup"
+		fi
+		if [ "$GALERA_VERSION" = "2.x" ]; then
+		    remote_cmd $XHOSTNAME "LC_ALL=C DEBIAN_FRONTEND=noninteractive $HTTP_PROXY apt-get -o Dpkg::Options::='--force-confnew' -y -q install percona-xtradb-cluster-galera-2.x percona-xtradb-cluster-client-5.5 percona-xtradb-cluster-server-5.5 percona-xtrabackup"
+		fi
 		remote_cmd $XHOSTNAME "sync"	
 	    fi
 	    ;;
@@ -1255,6 +1265,7 @@ function load_opts
     GALERA_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='GALERA_PORT' AND cid=$CLUSTER_ID" 2>/dev/null`
     MYSQL_BASEDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MYSQL_BASEDIR' AND cid=$CLUSTER_ID" 2>/dev/null`
     STAGING_DIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='STAGING_DIR' AND cid=$CLUSTER_ID" 2>/dev/null`
+    GALERA_VERSION=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='GALERA_VERSION' AND cid=$CLUSTER_ID" 2>/dev/null`
     MYSQL_SCRIPTDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SCRIPTDIR' AND cid=$CLUSTER_ID" 2>/dev/null`
     SSH_IDENTITY=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_IDENTITY' AND cid=$CLUSTER_ID" 2>/dev/null`
     SSH_USER=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_USER' AND cid=$CLUSTER_ID" 2>/dev/null`
@@ -1299,6 +1310,11 @@ function load_opts
 	S9S_TMPDIR="/tmp/"
 	TMPDIR="/tmp/"
     fi
+
+    if [ "$GALERA_VERSION" = "" ]; then
+	GALERA_VERSION='2.x'
+    fi
+    
     SSH_OPTS="$SSH_OPTSX -p$SSH_PORT $SSH_OPTS"    
     SSH_OPTS2="-P$SSH_PORT $SSH_OPTS2"    
     echo $MYCNF |  sed 's#\\n#\n\r#g' > $S9S_TMPDIR/my.cnf
