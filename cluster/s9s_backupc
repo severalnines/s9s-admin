@@ -192,10 +192,18 @@ function start_backup
       echo "s9s_backupc  --install -b <backupdir> missing"
       exit 1
     fi
-
+    if [ -e $LOCKFILE ]; then
+       PID=`cat $LOCKFILE`
+       PID=`ps -ef |grep $PID |grep s9s_backup |grep -v $$`
+       if [ $? -eq 0 ]; then
+          log_job_message "An instance of s9s_backup is already running." 1; echo "An instance of s9s_backup is already running.";  
+          exit 1
+       fi
+       rm $LOCKFILE
+    fi
     if [ ! -e $LOCKFILE ]; then
 	trap "rm -f $LOCKFILE; killall -9 s9s_backupc_wd nc; rm -rf /tmp/xtrabackup_pid; exit" INT TERM EXIT
-	touch $LOCKFILE	
+	echo $$ $LOCKFILE	
 	if which pv &> /dev/null; then
             #THROTTLE="--throttle=30"
 	    HAS_PV=1
@@ -272,13 +280,11 @@ function start_backup
 	curr_time=`date +%Y-%m-%d-%H-%M-%S`;
 	case $TYPE in
 	    full)
-		BACKUPDIR=$BACKUPDIR/$BACKUP_HOSTNAME/full
 		FILENAME="backup-full-${curr_time}.tar.gz"
 		PARENTID=0
 		log_job_message "Starting a FULL backup of $BACKUP_HOSTNAME" 0
 		;;      
 	    incr|incremental)
-		BACKUPDIR=$BACKUPDIR/$BACKUP_HOSTNAME/incremental
 		TYPE="incremental"
 		FILENAME="backup-incr-${curr_time}.tar.gz"
 		PARENTID=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select backupid from mysql_backup where backup_type='full' and hostname='$BACKUP_HOSTNAME' and cid=$CLUSTER_ID and lsn>0 order by report_ts desc limit 1"`
@@ -320,15 +326,15 @@ function start_backup
 	    echo "$MYCNF could not be found!"
 	    exit 1
 	fi
-	
-	mkdir -p $BACKUPDIR
-	chown -R $SSH_USER:$SSH_USER $BACKUPDIR
-	
 	DATADIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --host=127.0.0.1 --port=$CMON_DB_PORT -e "SHOW GLOBAL VARIABLES LIKE 'datadir'" | awk '{print $2;}'`
 	ID=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select ifnull(max(backupid)+1,1) from mysql_backup"`
 	CLUSTER_TYPE=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select type from cluster where id=$CLUSTER_ID"`
 	GALERA_INFO=""
+	BACKUPDIR=${BACKUPDIR}/${BACKUP_HOSTNAME}/BACKUP-${ID}
+	mkdir -p $BACKUPDIR
+	chown -R $SSH_USER:$SSH_USER $BACKUPDIR
 	
+
 	if [ $? -ne 0 ]; then
 	    log_job_message "Failed to retrieve next backup id" 1
 	    log_job 'FAILED' 'backup failed' 1	    
