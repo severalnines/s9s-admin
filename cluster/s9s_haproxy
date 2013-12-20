@@ -47,7 +47,7 @@ function init
     PREFIX="s9s"
     HAPROXY_OPTS="-f /etc/haproxy/haproxy.cfg -p /var/run/haproxy.pid -st \$(cat /var/run/haproxy.pid)"
     LB_ADMIN_USER='admin'
-    LB_ADMIN_PORT="9800"
+    LB_ADMIN_PORT="9600"
     LB_ADMIN_PASSWORD='admin'
 
     if [ "$OSUSER" != "root" ]; then
