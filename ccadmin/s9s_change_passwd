@@ -7,7 +7,7 @@
 # Also see CREDITS, many thanks to Timothy Der (randomorzero.wordpress.com)
 # for the work on the makecfg, mysqlckk, and haproxy.cfg.tmpl
 
-LOCKFILE="/tmp/s9s_create.lock"
+LOCKFILE="/tmp/s9s_change_passwd.lock"
 
 function init
 {    
@@ -498,8 +498,6 @@ function change_root_password
     exit 0
     
 }
-
-LOCKFILE="/tmp/s9s_create.lock"
 
 if [ ! -e $LOCKFILE ]; then
     trap "rm -f $LOCKFILE; exit" INT TERM EXIT
