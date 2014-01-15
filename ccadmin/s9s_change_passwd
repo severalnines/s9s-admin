@@ -499,7 +499,7 @@ function change_root_password
     
 }
 
-
+LOCKFILE="/tmp/s9s_create.lock"
 
 if [ ! -e $LOCKFILE ]; then
     trap "rm -f $LOCKFILE; exit" INT TERM EXIT
