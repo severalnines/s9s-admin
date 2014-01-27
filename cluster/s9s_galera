@@ -985,7 +985,16 @@ EOF
 		remote_cmd $XHOSTNAME "mv -f ${S9S_TMPDIR}/MariaDB.${OS2}${RHEL}.tmp /etc/yum.repos.d/MariaDB.repo"
                 remote_cmd $XHOSTNAME "yum -y install galera"
 	    else
-		echo "debian/ubuntu not supported yet"
+		wget --no-check-certificate --tries=5  -O ${S9S_TMPDIR}/RPM-GPG-KEY-percona http://www.percona.com/redir/downloads/RPM-GPG-KEY-percona	
+		remote_copy ${S9S_TMPDIR}/RPM-GPG-KEY-percona ${XHOSTNAME} ${S9S_TMPDIR}/RPM-GPG-KEY-percona
+		remote_cmd $XHOSTNAME "gpg --import ${S9S_TMPDIR}/RPM-GPG-KEY-percona"
+		remote_cmd $XHOSTNAME "/bin/sh -c 'gpg -a --export CD2EFD2A | apt-key add -'"
+		remote_cmd $XHOSTNAME "apt-key adv --recv-keys --keyserver keyserver.ubuntu.com 0xcbcb082a1bb943db"
+		remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"deb http://ftp.osuosl.org/pub/mariadb/repo/5.5/`lsb_release -i -s | tr '[A-Z]' '[a-z]'` `lsb_release -c -s` main\" > /etc/apt/sources.list.d/MariaDB.list'"
+		remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"deb-src http://ftp.osuosl.org/pub/mariadb/repo/5.5/`lsb_release -i -s | tr '[A-Z]' '[a-z]'` `lsb_release -c -s` main\" >> /etc/apt/sources.list.d/MariaDB.list'"
+		remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"Package: *\nPin: origin osuosl.org\nPin-Priority: 1000\n\nPackage: *\nPin: origin ftp.osuosl.org\nPin-Priority: 1000\n\nPackage: libmysqlclient18\nPin: origin ftp.osuosl.org\nPin-Priority: 1000\" > /etc/apt/preferences.d/00MariaDB.pref'"
+		remote_cmd $XHOSTNAME "apt-get -q -y update"
+		remote_cmd $XHOSTNAME "LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::='--force-confnew' --force-yes -y -q install  galera "
 	    fi
 	    ;;
 	*)
