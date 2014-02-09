@@ -484,9 +484,13 @@ function install_mysql
             RHEL=5
             EPEL_REL="5-4"
         fi
+        if  remote_cmd_getretcode $XHOSTNAME "grep -q -i 'Amazon Linux AMI' /etc/issue" ; then
+            RHEL=6
+            EPEL_REL="6-8"
+        fi
 	$HTTP_PROXY wget  -c --no-check-certificate --tries=5 -O$S9S_TMPDIR/epel-release-${EPEL_REL}.noarch.rpm  http://dl.fedoraproject.org/pub/epel/$RHEL/x86_64/epel-release-${EPEL_REL}.noarch.rpm
 	if [ $? -ne 0 ]; then
-	    log_job_message "FAILED : download failed - check link and/or that EPEL version. EPEL is needed for socat."
+	    log_job_message "FAILED : download failed - check link and/or that EPEL version. EPEL is needed for socat." 1
 	    log_job 'FAILED' 'job failed' 1	   
 	    exit 1
 	else
@@ -508,18 +512,18 @@ function install_mysql
 	remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY yum -y install nc"	
 	remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY yum -y install perl"	
     else
+	remote_cmd_nofail $XHOSTNAME "touch /etc/init.d/mysql"	
 	remote_cmd_nofail $XHOSTNAME "LC_ALL=C DEBIAN_FRONTEND=noninteractive $HTTP_PROXY apt-get -y -f install"
-	remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY apt-get -y purge MySQL* mysql* libmailutils2* Percona* percona* MariaDB* mariadb* galera*"	
-	remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY apt-get -y purge MySQL*"
-	remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY apt-get -y purge mysql*"
-	remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY apt-get -y purge libmailutils2"
-	remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY apt-get -y purge percona*"
-	remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY apt-get -y purge Percona*"
-	remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY apt-get -y purge mariadb*"
-	remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY apt-get -y purge MySQL-Cluster*"
-	remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY apt-get -y purge galera*"
-	remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY apt-get -y purge mysql-cluster*"
+	remote_cmd_nofail $XHOSTNAME "LC_ALL=C DEBIAN_FRONTEND=noninteractive $HTTP_PROXY apt-get autoremove -y  maria-common"	
+	remote_cmd_nofail $XHOSTNAME "LC_ALL=C DEBIAN_FRONTEND=noninteractive $HTTP_PROXY apt-get autoremove -y --purge percona-xtradb-cluster-*"
+	remote_cmd_nofail $XHOSTNAME "LC_ALL=C DEBIAN_FRONTEND=noninteractive $HTTP_PROXY apt-get autoremove -y --purge percona-server-*"    
+	remote_cmd_nofail $XHOSTNAME "LC_ALL=C DEBIAN_FRONTEND=noninteractive $HTTP_PROXY apt-get autoremove -y --purge mysql*"	
+	remote_cmd_nofail $XHOSTNAME "LC_ALL=C DEBIAN_FRONTEND=noninteractive $HTTP_PROXY apt-get autoremove -y --purge galera*"	
+	remote_cmd_nofail $XHOSTNAME "LC_ALL=C DEBIAN_FRONTEND=noninteractive $HTTP_PROXY apt-get autoremove -y --purge mariadb*"	
+	remote_cmd_nofail $XHOSTNAME "LC_ALL=C DEBIAN_FRONTEND=noninteractive $HTTP_PROXY apt-get autoremove -y --purge MariaDB*"	
+	remote_cmd_nofail $XHOSTNAME "LC_ALL=C DEBIAN_FRONTEND=noninteractive $HTTP_PROXY apt-get autoremove -y --purge mysql-cluster*"	
 	remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY apt-get -y autoremove"	
+	remote_cmd_nofail $XHOSTNAME "LC_ALL=C DEBIAN_FRONTEND=noninteractive dpkg --configure -a"
 	remote_cmd_nofail $XHOSTNAME "rm -rf /etc/my.cnf"
 	remote_cmd_nofail $XHOSTNAME "rm -rf /etc/mysql/"
 	remote_cmd_nofail $XHOSTNAME "rm -rf /var/lib/mysql"
@@ -530,11 +534,7 @@ function install_mysql
 	remote_cmd_nofail $XHOSTNAME "rm -rf /etc/init.d/mysql"
 	remote_cmd_nofail $XHOSTNAME "sed -i.bak '/repo.percona.com/d'  /etc/apt/sources.list"
 	remote_cmd_nofail $XHOSTNAME "sed -i.bak '/mariadb/d'  /etc/apt/sources.list"
-	remote_cmd_nofail $XHOSTNAME "dpkg -P galera"	
-	remote_cmd_nofail $XHOSTNAME "LC_ALL=C DEBIAN_FRONTEND=noninteractive dpkg -P galera percona-xtradb-cluster-galera-2.x percona-server-server percona-server-server-5.1 percona-server-server-5.5 percona-server-client percona-server-client-5.1 percona-server-client-5.5 percona-server-common percona-server-common-5.5 percona-xtradb-cluster-galera percona-xtradb-cluster-client-5.5 percona-xtradb-cluster-server-5.5 percona-xtrabackup mysql-server mysql-libs mysql-client-core-5.5 mysql-server-core-5.5"			
-	remote_cmd_nofail $XHOSTNAME "LC_ALL=C DEBIAN_FRONTEND=noninteractive dpkg --configure -a"
 	remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY apt-get -y update"
-	remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY apt-get -y purge MySQL* mysql* libmailutils2* Percona* percona* MariaDB* mariadb*  galera*"	
 	remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY wget -O${S9S_TMPDIR}/libssl0.9.8_0.9.8o-4squeeze14_amd64.deb  http://ftp.us.debian.org/debian/pool/main/o/openssl/libssl0.9.8_0.9.8o-4squeeze14_amd64.deb"
 	remote_cmd_nofail $XHOSTNAME "dpkg -i ${S9S_TMPDIR}/libssl0.9.8_0.9.8o-4squeeze14_amd64.deb"
 	remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY apt-get -y install libssl0.9.8"
@@ -614,10 +614,10 @@ function install_mysql
 		#remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY yum -y install perl-DBD-MySQL.x86_64"	
 		remote_cmd $XHOSTNAME "$HTTP_PROXY rpm -Uhv --force http://www.percona.com/downloads/percona-release/percona-release-0.0-1.x86_64.rpm"
 		if [ "$GALERA_VERSION" = "3.x" ]; then
-		    remote_cmd $XHOSTNAME "$HTTP_PROXY yum -y install Percona-XtraDB-Cluster-server-56 Percona-XtraDB-Cluster-client-56 percona-xtrabackup"
+		    remote_cmd $XHOSTNAME "$HTTP_PROXY yum -y install Percona-XtraDB-Cluster-server-56 Percona-XtraDB-Cluster-client-56 Percona-XtraDB-Cluster-galera-3 percona-xtrabackup"
 		fi
 		if [ "$GALERA_VERSION" = "2.x" ]; then
-		    remote_cmd $XHOSTNAME "$HTTP_PROXY yum -y install Percona-XtraDB-Cluster-server-55 Percona-XtraDB-Cluster-client-55 percona-xtrabackup"
+		    remote_cmd $XHOSTNAME "$HTTP_PROXY yum -y install Percona-XtraDB-Cluster-server-55 Percona-XtraDB-Cluster-client-55 Percona-XtraDB-Cluster-galera-2 percona-xtrabackup"
 		fi
 	    else
 		remote_cmd $XHOSTNAME "$HTTP_PROXY apt-get update"
@@ -642,6 +642,8 @@ function install_mysql
 		    remote_cmd $XHOSTNAME "LC_ALL=C DEBIAN_FRONTEND=noninteractive $HTTP_PROXY apt-get -o Dpkg::Options::='--force-confnew' -y -q install percona-xtradb-cluster-galera-2.x percona-xtradb-cluster-client-5.5 percona-xtradb-cluster-server-5.5 percona-xtrabackup"
 		fi
 		remote_cmd $XHOSTNAME "sync"	
+		remote_cmd $XHOSTNAME "test -f /usr/sbin/mysqld"
+		remote_cmd $XHOSTNAME "test -f /etc/init.d/mysql"
 	    fi
 	    ;;
 	internal_pkg | codership | percona_nonet | mariadb_tgz | percona_tgz)	    
@@ -711,7 +713,8 @@ function install_mysql
 	    fi
 	    if [ -n "$DEBLIST" ]; then
 		remote_cmd $XHOSTNAME "LC_ALL=C DEBIAN_FRONTEND=noninteractive /usr/bin/dpkg -i $DEBLIST"
-	    fi	    
+	    fi
+	    remote_cmd $XHOSTNAME "test -f ${MYSQL_BASEDIR}/bin/mysql"	    
 	    ;;
 	mariadb)
 	    if [ "$OS" = "redhat" ]; then
@@ -779,6 +782,8 @@ EOF
 		remote_cmd $XHOSTNAME  "sed -i.bak 's#MYSQLD_STARTUP_TIMEOUT:-30#MYSQLD_STARTUP_TIMEOUT:-3600#g' /etc/init.d/mysql"
 		remote_cmd $XHOSTNAME  "/usr/sbin/update-rc.d mysql defaults"
 	    fi
+	    remote_cmd $XHOSTNAME "test -f /usr/sbin/mysqld"
+	    remote_cmd $XHOSTNAME "test -f /etc/init.d/mysql"
 	    ;;
 	*)
 	    log_job_message "Not a supported vendor" 1
@@ -836,8 +841,10 @@ EOF
 		fi
 		remote_cmd $XHOSTNAME "/usr/bin/s9s_backup --install -i $CLUSTER_ID -b /tmp/"
 	    fi
-	    bash /usr/bin/s9s_galera --install-notifycc -i${CLUSTER_ID} -h${XHOSTNAME}
-	    bash /usr/bin/s9s_galera --install-notifycc -i${CLUSTER_ID}
+	    log_job_message "Installing s9s_notify_cc on $XHOSTNAME"
+	    bash /usr/bin/s9s_galera --install-notifycc -i${CLUSTER_ID} -h${XHOSTNAME} -j${JOBID}
+	    log_job_message "Installing s9s_notify_cc the rest of the cluster"
+	    bash /usr/bin/s9s_galera --install-notifycc -i${CLUSTER_ID} -j${JOBID}
 	    ;;
 	*)
 	    ;;
@@ -904,6 +911,7 @@ EOF
 	    log_job 'FAILED' 'job failed' 1
 	    exit 1;	           	     
     esac    
+    exit 0
 }
 
 function install_mysql_pkg

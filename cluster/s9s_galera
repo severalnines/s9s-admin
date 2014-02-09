@@ -26,7 +26,7 @@ function init
     
     source $configfile   
 
-    CMON_DB_HOST=127.0.0.1
+    CMON_DB_HOST=$mysql_hostname
     CMON_DB_PORT=$mysql_port
     CMON_USER=cmon
     CMON_DB_DB=cmon
@@ -262,6 +262,7 @@ function load_opts
     CONFIGDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='CONFIGDIR' AND cid=$CLUSTER_ID" 2>/dev/null`
     MYSQL_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MYSQL_PORT' AND cid=$CLUSTER_ID" 2>/dev/null`
     GALERA_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='GALERA_PORT' AND cid=$CLUSTER_ID" 2>/dev/null`
+    GALERA_VERSION=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='GALERA_VERSION' AND cid=$CLUSTER_ID" 2>/dev/null`
     MYSQL_BASEDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MYSQL_BASEDIR' AND cid=$CLUSTER_ID" 2>/dev/null`
     MYSQL_SCRIPTDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SCRIPTDIR' AND cid=$CLUSTER_ID" 2>/dev/null`
     SSH_IDENTITY=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_IDENTITY' AND cid=$CLUSTER_ID" 2>/dev/null`
@@ -287,6 +288,14 @@ function load_opts
 	SSH_IDENTITY="-oIdentityFile=$SSH_IDENTITY"
     fi
 
+    if [ "$GALERA_VERSION" = "" ]; then
+	GALERA_VERSION='2.x'
+    fi
+
+    if [ -z "$GALERA_VERSION" ]; then
+	GALERA_VERSION='2.x'
+    fi
+    
     SSH_OPTS="-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY"
     SSH_OPTS2="-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY"
     if [ "$SSH_USER" != "root" ]; then
@@ -515,23 +524,15 @@ function install_notifycc
 cat << 'EOF' > $S9S_TMPDIR/wsrep_notify_cc
 #!/bin/bash
 
-if [ ! -e /etc/cmon.cnf ] ; then
-    echo "Could not find /etc/cmon.cnf"
-    exit 1
-else
-    source /etc/cmon.cnf
-fi
-
-
-CMON_DB_HOST=$mysql_hostname
-CMON_DB_PORT=$mysql_port
+CMON_DB_HOST=CMON_MYSQL_HOSTNAME
+CMON_DB_PORT=CMOM_MYSQL_PORT
 CMON_USER=cmon
 CMON_DB_DB=cmon
-CMON_PASSWORD=$mysql_password
-MYSQL_BIN=$mysql_basedir/bin/mysql
+CMON_PASSWORD=CMON_MYSQL_PASSWORD
+MYSQL_BIN=MYSQL_BINDIR
 CONNECT_TIMEOUT=10
-MYSQL_HOSTNAME=$hostname
-CLUSTER_ID=$cluster_id
+MYSQL_HOSTNAME=MANAGED_MYSQL_HOSTNAME
+CLUSTER_ID=CMON_CLUSTERID
 
 
 while [ $# -gt 0 ] 
@@ -619,11 +620,16 @@ EOF
 	    remote_cmd_nofail $HNAME "mkdir -p $S9S_TMPDIR"
 	    remote_cmd $HNAME "chown -R $SSH_USER:$SSH_USER $S9S_TMPDIR"
 	    remote_copy $S9S_TMPDIR/wsrep_notify_cc ${HNAME} ${S9S_TMPDIR}/wsrep_notify_cc
+	    remote_cmd $HNAME "sed -i.bak 's#.*CMON_DB_HOST=.*#CMON_DB_HOST=$CMON_DB_HOST#g' ${S9S_TMPDIR}/wsrep_notify_cc"
+	    remote_cmd $HNAME "sed -i.bak 's#.*CMON_DB_PORT=.*#CMON_DB_PORT=$CMON_DB_PORT#g' ${S9S_TMPDIR}/wsrep_notify_cc"
+	    remote_cmd $HNAME "sed -i.bak 's#.*CMON_PASSWORD=.*#CMON_PASSWORD=$CMON_PASSWORD#g' ${S9S_TMPDIR}/wsrep_notify_cc"
+	    remote_cmd $HNAME "sed -i.bak 's#.*CLUSTER_ID=.*#CLUSTER_ID=$CLUSTER_ID#g' ${S9S_TMPDIR}/wsrep_notify_cc"
+	    remote_cmd $HNAME "sed -i.bak 's#.*MYSQL_BIN=.*#MYSQL_BIN=$MYSQL_BIN#g' ${S9S_TMPDIR}/wsrep_notify_cc"
+	    remote_cmd $HNAME "sed -i.bak 's#.*MYSQL_HOSTNAME=.*#MYSQL_HOSTNAME=$HNAME#g' ${S9S_TMPDIR}/wsrep_notify_cc"
 	    remote_cmd $HNAME "mv -f ${S9S_TMPDIR}/wsrep_notify_cc /usr/bin"
 	    remote_cmd $HNAME "chown mysql:mysql /usr/bin//wsrep_notify_cc"
 	    remote_cmd $HNAME "chmod u+x /usr/bin/wsrep_notify_cc"
 	    remote_cmd $HNAME "chmod 755 /usr/bin/wsrep_notify_cc"
-	    remote_cmd $HNAME "chown mysql.mysql /etc/cmon.cnf"
 	    remote_cmd $HNAME "sed -i.bak 's#.*wsrep_notify_cmd=.*#wsrep_notify_cmd=/usr/bin/wsrep_notify_cc#g' $CONFIGDIR/my.cnf"
 	done
     fi
@@ -882,7 +888,12 @@ function install_garbd
 	percona)
 	    if [ "$OS" = "redhat" ]; then
 		remote_cmd $XHOSTNAME "rpm -Uhv --force http://www.percona.com/downloads/percona-release/percona-release-0.0-1.x86_64.rpm"
-		remote_cmd $XHOSTNAME "yum -y install Percona-XtraDB-Cluster-galera"
+		if [ "$GALERA_VERSION" = "3.x" ]; then
+		    remote_cmd $XHOSTNAME "yum -y install Percona-XtraDB-Cluster-galera"
+		fi
+		if [ "$GALERA_VERSION" = "2.x" ]; then
+		    remote_cmd $XHOSTNAME "yum -y install Percona-XtraDB-Cluster-galera"
+		fi
 	    else
 		remote_cmd $XHOSTNAME "apt-get update"
 		remote_cmd_nofail $XHOSTNAME "apt-get -y install  libssl0.9.8  wget rsync psmisc"
@@ -900,7 +911,14 @@ function install_garbd
 		remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"deb http://repo.percona.com/apt `lsb_release -c -s` main\" >> /etc/apt/sources.list'"
 		remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"deb-src http://repo.percona.com/apt `lsb_release -c -s` main\" >> /etc/apt/sources.list'"
 		remote_cmd $XHOSTNAME "apt-get -q -y update"
-		remote_cmd $XHOSTNAME "LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::='--force-confnew' -y -q install  percona-xtradb-cluster-galera-2.x"
+
+		if [ "$GALERA_VERSION" = "3.x" ]; then
+		    remote_cmd $XHOSTNAME "$HTTP_PROXY LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::='--force-confnew' -y -q install percona-xtradb-cluster-garbd-3.x"
+		fi
+		if [ "$GALERA_VERSION" = "2.x" ]; then
+		    remote_cmd $XHOSTNAME "$HTTP_PROXY LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::='--force-confnew' -y -q install  percona-xtradb-cluster-galera-2.x"
+		fi
+
 		remote_cmd $XHOSTNAME "sync"
 	    fi
 	    ;;
