@@ -889,10 +889,10 @@ function install_garbd
 	    if [ "$OS" = "redhat" ]; then
 		remote_cmd $XHOSTNAME "rpm -Uhv --force http://www.percona.com/downloads/percona-release/percona-release-0.0-1.x86_64.rpm"
 		if [ "$GALERA_VERSION" = "3.x" ]; then
-		    remote_cmd $XHOSTNAME "yum -y install Percona-XtraDB-Cluster-galera"
+		    remote_cmd $XHOSTNAME "yum -y install Percona-XtraDB-Cluster-galera-3"
 		fi
 		if [ "$GALERA_VERSION" = "2.x" ]; then
-		    remote_cmd $XHOSTNAME "yum -y install Percona-XtraDB-Cluster-galera"
+		    remote_cmd $XHOSTNAME "yum -y install Percona-XtraDB-Cluster-galera-2"
 		fi
 	    else
 		remote_cmd $XHOSTNAME "apt-get update"
