@@ -5,7 +5,7 @@
 
 
 DEBUG=1
-TEMP=`getopt -o h,l,f,t:,b:,d:,r:,n --long help,latest,force,topdir:,backup:,backupdir:,restore:,skip-backup-db  -n 's9s_upgrade_cmon' -- "$@"`
+TEMP=`getopt -o h,l,f,i:,t:,b:,d:,r:,n,a --long help,latest,force,id:,topdir:,backup:,backupdir:,restore:,skip-backup-db,agent-based -n 's9s_upgrade_cmon' -- "$@"`
 eval set -- "$TEMP"
 
 
@@ -14,11 +14,13 @@ while true ; do
 		-h|--help) help="1" ; shift ;;
 		-l|--latest) latest="1" ; shift ;;
 		-f|--force) force="1" ; shift ;;
+		-i|--id) cluster_id="$2"; shift 2 ;;
 		-t|--topdir) top_dir="$2" ; shift 2 ;;
 		-b|--backup) backup="$2" ; shift 2 ;;
 		-n|--skip-backup-db) skip_backup_db="1" ; shift ;;
 		-d|--backupdir) backup_dir="$2" ; shift 2 ;;
 		-r|--restore) restore="$2" ; shift 2 ;;
+		-a|--agent-based) agent_based="1"; shift ;;
 		--) shift ; break ;;
 		*) echo "$0: error - unrecognized option -$OPTARG" 1>&2; exit 1;;
 	esac
@@ -37,6 +39,7 @@ helpMenu()
         echo "-n, --skip-backup-db      : Skip backing up cmon db and dcps db (saves disk space, not recommended)"
         echo '-d, --backupdir           : Custom path for ClusterControl backup directory (default: /tmp/s9s_backup_{time})'
         echo "-r, --restore             : Restore from ClusterControl backup (all|controller|agent)"
+	echo "-a, --agent-based         : Remain the agent-based deployment upgrade (default: agentless)"
         echo "-h, --help                : Print help"
         echo ""
 	echo "For more information, kindly go to http://support.severalnines.com/entries/24053181-Upgrade-ClusterControl-to-Latest-Version"
@@ -74,6 +77,8 @@ fi
 
 arch=`uname -m`
 [ "$arch" == "i686" ] && echo "Architecture not supported. Kindly use OS with x86_64 architecture." && exit 1
+
+[ -z "$cluster_id" ] && CLUSTER_ID=1 || CLUSTER_ID=$cluster_id
 
 FILES=`ls /etc/cmon.cnf 2>&1`
 FILES2=`ls /etc/cmon.d/*.cnf 2>&1`
@@ -137,7 +142,8 @@ root_dir=`cd $rel_dir;pwd`
 repo_dir_name=s9s_repo
 repo_dir=$root_dir/$repo_dir_name
 now=`date +%Y-%m-%d-%H_%M_%S`
-tmp_dir=/tmp/s9s_backup_${now}
+tmp_dir=~/s9s_backup/s9s_backup_${now}
+[ "$OSUSER" != "root" ] && tmp_dir=/home/$OSUSER/s9s_backup/s9s_backup_${now}
 [ ! -z "$backup_dir" ] && tmp_dir=$backup_dir
 
 install_config_path=/etc
@@ -178,9 +184,14 @@ commandStatus()
 {
 	com="$2"
 	label=$1
+	nofail=0
+	[ "$3" == "nofail" ] && nofail=1
 	printf "%-70s" "$label"
-	$com 2>&1 >> s9s_upgrade_log
-	[ $? -ne 0 ] && printf "[\e[00;31m %s\e[00m ]\n" "$label" ERROR && adviseRestore && exit 1
+	$com &>> s9s_upgrade_log
+	ret_val=$?
+	if [ $nofail -ne 1 ]; then
+		[ $ret_val -ne 0 ] && printf "[\e[00;31m %s\e[00m ]\n" "$label" ERROR && adviseRestore && exit 1
+	fi
 	printf "[\e[00;32m %s\e[00m ]\n" OK
 }
 
@@ -281,18 +292,29 @@ diffVersion()
         b1=`echo $vers | awk -F. -v OFS=. '{print $2}'`
         c1=`echo $vers | awk -F. -v OFS=. '{print $3}'`
         v1=`echo $[a1*1000+b1*100+c1]`
+	# <1.2.4 file naming is using different format with >1.2.5.buildnumber
+	if [ $v1 -gt 1204 ]; then
+		c1=`echo $vers | awk -F. -v OFS=. '{print $3}'`
+		d1=`echo $vers | awk -F. -v OFS=. '{print $4}'`
+		buildnumber=$d1
+		v1=`echo $[a1*1000+b1*100+c1]`
+	fi
         if [ "$c_type" == "mongodb" ]; then
                 [ $b1 -eq 0 ] && v1=`echo $[a1*1000+200+c1]` || v1=`echo $[a1*1000+b1*100+c1]`
         fi
+	#echo $a1 $b1 $c1 $d1
 
+	#new version 1.2.5 and above
         la1=`echo $latest_vers | awk -F. -v OFS=. '{print $1}'`
         lb1=`echo $latest_vers | awk -F. -v OFS=. '{print $2}'`
-        lc1=`echo $latest_vers | awk -F. -v OFS=. '{print $3}'`
+        lc1=`echo $latest_vers | awk -F. -v OFS=. '{print $3}' | sed 's|-.*||g'`
+	ld1=`echo $latest_vers | awk -F. -v OFS=- '{print $3}' | sed 's|.*-||g'`
+	#echo $la1 $lb1 $lc1 $ld1
+	lbuildnumber=$ld1
         lv1=`echo $[la1*1000+lb1*100+lc1]`
         if [ "$c_type" == "mongodb" ]; then
                 [ $lb1 -eq 0 ] && lv1=`echo $[la1*1000+200+lc1]` || lv1=`echo $[la1*1000+lb1*100+lc1]`
         fi
-
 
 }
 
@@ -308,13 +330,13 @@ collectInfo()
 	echo "      Collecting Information"
 	echo "==================================="
 	
-	query_cmon_version="SELECT DISTINCT cmon_version FROM cmon.hosts WHERE cid=$cluster_id ORDER BY cmon_version ASC;"
-	query_cmon_install_method="SELECT value FROM cmon.cmon_configuration WHERE param='INSTALL_METHOD' AND cid=$cluster_id;"
+	query_cmon_version="SELECT DISTINCT cmon_version FROM cmon.hosts WHERE cid=$CLUSTER_ID ORDER BY cmon_version ASC;"
+	query_cmon_install_method="SELECT value FROM cmon.cmon_configuration WHERE param='INSTALL_METHOD' AND cid=$CLUSTER_ID;"
 	query_cmon_tables="SET group_concat_max_len=20480;SELECT group_concat(table_name SEPARATOR ' ') FROM information_schema.tables WHERE table_schema='cmon' AND (table_name NOT LIKE '%history%' OR table_name NOT LIKE 'mysql_statistics_tm');"
-	query_cmon_httpproxy="SELECT value FROM cmon.cmon_configuration WHERE param='HTTP_PROXY' AND cid=$cluster_id;"
-	query_cmon_monitor_address="SELECT value FROM cmon.cmon_configuration WHERE param='CMON_HOSTNAME1' AND cid=$cluster_id;"
+	query_cmon_httpproxy="SELECT value FROM cmon.cmon_configuration WHERE param='HTTP_PROXY' AND cid=$CLUSTER_ID;"
+	query_cmon_monitor_address="SELECT value FROM cmon.cmon_configuration WHERE param='CMON_HOSTNAME1' AND cid=$CLUSTER_ID;"
 	cmon_monitor_address=`$MYSQL_BIN -ucmon -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT -A -Bse "$query_cmon_monitor_address" 2>/dev/null`
-	query_cmon_agent_hosts="SELECT hostname FROM cmon.hosts WHERE (hostname<>'$cmon_monitor_address' OR ip<>'$cmon_monitor_address') AND cid=$cluster_id;"
+	query_cmon_agent_hosts="SELECT hostname FROM cmon.hosts WHERE (hostname<>'$cmon_monitor_address' OR ip<>'$cmon_monitor_address') AND cid=$CLUSTER_ID;"
 	version_url="$DOWNLOAD_URL/version.txt"
 	CMON_VERSION_DB=`$MYSQL_BIN -ucmon -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT -A -Bse "$query_cmon_version" 2>/dev/null`
 	INSTALL_METHOD=`$MYSQL_BIN -ucmon -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT -A -Bse "$query_cmon_install_method" 2>/dev/null`
@@ -383,7 +405,7 @@ collectInfo()
 	FULL_CMON_VERSION=$CMON_VERSION
 	echo "** Current CMON version: $CMON_VERSION"
 	echo "** Latest CMON version: $LATEST_CMON_VERSION"
-	echo "** Latest CCUI version: $LATEST_CCUI_VERSION"
+	echo "** Latest ClusterControl UI version: $LATEST_CCUI_VERSION"
 
         CMON_VERSION=${CMON_VERSION//[a-z]/}
         LATEST_CMON_VERSION_SCHEMA=${LATEST_CMON_VERSION//[a-z]/}
@@ -392,14 +414,14 @@ collectInfo()
 
         if [ "$cluster_type" == "mongodb" ]; then
                 cmon_package="cmon-$LATEST_CMON_VERSION-64bit-glibc23-mongodb.tar.gz"
-                rpm_controller="cmon-mongodb-controller-$LATEST_CMON_VERSION-1.x86_64.rpm"
-                rpm_www="cmon-mongodb-www-$LATEST_CMON_VERSION-1.noarch.rpm"
-                rpm_agent="cmon-mongodb-agent-$LATEST_CMON_VERSION-1.x86_64.rpm"
+                rpm_controller="cmon-mongodb-controller-$LATEST_CMON_VERSION-x86_64.rpm"
+                #rpm_www="cmon-mongodb-www-$LATEST_CMON_VERSION-1.noarch.rpm"
+                rpm_agent="cmon-mongodb-agent-$LATEST_CMON_VERSION-x86_64.rpm"
         else
                 cmon_package="cmon-$LATEST_CMON_VERSION-64bit-glibc23-mc70.tar.gz"
-                rpm_controller="cmon-controller-$LATEST_CMON_VERSION-1.x86_64.rpm"
-                rpm_www="cmon-www-$LATEST_CMON_VERSION-1.noarch.rpm"
-                rpm_agent="cmon-agent-$LATEST_CMON_VERSION-1.x86_64.rpm"
+                rpm_controller="cmon-controller-$LATEST_CMON_VERSION-x86_64.rpm"
+                #rpm_www="cmon-www-$LATEST_CMON_VERSION-1.noarch.rpm"
+                rpm_agent="cmon-agent-$LATEST_CMON_VERSION-x86_64.rpm"
         fi
         cc_package="s9s-clustercontrol-$LATEST_CCUI_VERSION.tar.gz"
 
@@ -414,10 +436,12 @@ collectInfo()
 	[ "$os" == "redhat" ] && echo "rpm_agent=$rpm_agent" >> $AGENT_CONFIG
 	echo "install_dir_cmon=$install_dir_cmon" >> $AGENT_CONFIG
 	echo "tmp_dir=$tmp_dir" >> $AGENT_CONFIG
-	echo "INSTALL_METHOD=$INSTALL_METHOD" >> $AGENT_CONFIG	
+	echo "INSTALL_METHOD=$INSTALL_METHOD" >> $AGENT_CONFIG
 
 	if [ $lv1 -gt $v1 ]; then
 		return 0
+	elif [ $lv1 -eq $v1 ]; then
+		[ $lbuildnumber -gt $buildnumber ] && return 0
 	else
 		return 1
 	fi
@@ -431,6 +455,7 @@ stopCmon()
 	else
 		echo "** CMON service is not running"
 	fi
+
 }
 
 startCmon()
@@ -457,7 +482,8 @@ getModDatabase()
 	[ ! -z $1 ] && vers=$1
 	latest_vers=$LATEST_CMON_VERSION_SCHEMA
 	[ ! -z $2 ] && latest_vers=$2
-	cmon_sql_path=$install_dir_cmon/sql
+#	cmon_sql_path=$install_dir_cmon/sql
+	cmon_sql_path=$install_dir_cmon/share/cmon
 	[ "$os" == "redhat" ] && cmon_sql_path=/usr/share/cmon
 
 	[ ! -d $cmon_sql_path ] && echo "Error: Could not found the cmon_sql_path." && exit 1
@@ -512,7 +538,8 @@ upgradeCmonDatabase()
 
 	checkMysqlBin
 	getModDatabase
-	cmon_sql_path=$install_dir_cmon/sql
+#	cmon_sql_path=$install_dir_cmon/sql
+	cmon_sql_path=$install_dir_cmon/share/cmon
 	[ "$os" == "redhat" ] && cmon_sql_path=/usr/share/cmon
 
 	[ ! -d $cmon_sql_path ] && echo "Error: Could not found the cmon_sql_path." && exit 1
@@ -676,7 +703,7 @@ upgradeCmon()
         rm -Rf /usr/local/cmon*
         rm -Rf /etc/init.d/cmon
         rm -Rf /etc/cron.d/cmon
-        rm -Rf $wwwroot/cmon
+#        rm -Rf $wwwroot/cmon
 
         if [ "$os" == "debian" ]; then
 		install_dir=`echo $install_dir_cmon | sed "s|cmon||g"`
@@ -686,7 +713,7 @@ upgradeCmon()
 		progressStatus "Extracting $cmon_package" $!
 		cmon_name=`ls -1 $install_dir | grep cmon- | tail -1`
                 ln -sf $install_dir/$cmon_name $install_dir_cmon
-                commandStatus "Upgrading CMON binary" "cp -rf $install_dir_cmon/bin/cmon_* /usr/bin/"
+                #commandStatus "Upgrading CMON binary" "cp -rf $install_dir_cmon/bin/cmon_* /usr/bin/"
 		commandStatus "Upgrading S9S binary" "cp -rf $install_dir_cmon/bin/s9s_* /usr/bin/"
 		commandStatus "Upgrading CMON sbin binary" "cp -rf $install_dir_cmon/sbin/* /usr/sbin/"
                 commandStatus "Upgrading CMON init.d script" "cp $install_dir_cmon/etc/init.d/cmon /etc/init.d/"
@@ -694,8 +721,8 @@ upgradeCmon()
                 commandStatus "Applying user permission (init.d)" "chmod u+x /etc/init.d/cmon"
                 if [ "$mode" == "controller" ] || [ "$mode" == "dual" ]; then
                         commandStatus "Upgrading CMON cron file" "cp $install_dir_cmon/etc/cron.d/cmon /etc/cron.d/cmon"
-                        commandStatus 'Upgrading CMON web app' "cp -rf $install_dir_cmon/www/*  $wwwroot/"
-                        commandStatus "Applying user permission (web)" "chown -R www-data:www-data $wwwroot/cmon"
+                        #commandStatus 'Upgrading CMON web app' "cp -rf $install_dir_cmon/www/*  $wwwroot/"
+                        #commandStatus "Applying user permission (web)" "chown -R www-data:www-data $wwwroot/cmon"
                 fi
         else
 		rpm_name=cmon-$mode
@@ -706,16 +733,17 @@ upgradeCmon()
 			[ "$mode" == "dual" ] && rpm_name=cmon-mongodb-controller
 		fi
 		check_installed=`rpm -qa | grep -e $rpm_name`
-		[ $check_installed ] && rpm -e $rpm_name
+		[ $check_installed ] && rpm -e $rpm_name &> /dev/null
                 if [ "$mode" == "controller" ] || [ "$mode" == "dual" ]; then
-			check_installed_www=`rpm -qa | grep -e $rpm_name_www`
-	                [ $check_installed_www ] && rpm -e $rpm_name_www
+			#check_installed_www=`rpm -qa | grep -e $rpm_name_www`
+	                #[ $check_installed_www ] && rpm -e $rpm_name_www
                         commandStatus 'Upgrading CMON controller' "rpm -Uh $repo_dir/$rpm_controller"
-                        commandStatus 'Upgrading CMON web app' "rpm -Uh $repo_dir/$rpm_www"
-                        commandStatus "Applying user permission (web)" "chown -R apache:apache $wwwroot/cmon"
+                        #commandStatus 'Upgrading CMON web app' "rpm -Uh $repo_dir/$rpm_www"
+                        #commandStatus "Applying user permission (web)" "chown -R apache:apache $wwwroot/cmon"
                 else
                         commandStatus 'Upgrading CMON agent' "rpm -Uh $repo_dir/$rpm_agent"
                 fi
+		commandStatus 'Applying permission' "chmod 755 /etc/init.d/cmon"
         fi
 
         if [ "$mode" == "controller" ] || [ "$mode" == "dual" ]; then
@@ -723,33 +751,36 @@ upgradeCmon()
 	        [ ! -e $upgrade_details ] && echo "** Backup status not found at $upgrade_details" exit 1
         	source $upgrade_details
 
-                mkdir -p $wwwroot/cmon/graphs
-                commandStatus "Creating CMON upload directory" "mkdir -p $wwwroot/cmon/upload"
-                mkdir -p $wwwroot/cmon/upload/schema
-                commandStatus "Copying new packages to upload directory" "cp $repo_dir/* $wwwroot/cmon/upload/"
-		commandStatus "Restoring older packages to upload directory" "cp -rf $tmp_dir/wwwroot/cmon/upload/* $wwwroot/cmon/upload/"
+                #mkdir -p $wwwroot/cmon/graphs
+                #commandStatus "Creating CMON upload directory" "mkdir -p $wwwroot/cmon/upload"
+                #mkdir -p $wwwroot/cmon/upload/schema
+		if [ -d $wwwroot/cmon/upload/ ]; then
+	                commandStatus "Copying new packages to upload directory" "cp $repo_dir/* $wwwroot/cmon/upload/"
+			#commandStatus "Restoring older packages to upload directory" "cp -rf $tmp_dir/wwwroot/cmon/upload/* $wwwroot/cmon/upload/"
+		fi
 
-		cmon_agent_file=$repo_dir/$rpm_agent &&	fname=$rpm_agent
-		[ "$os" == "debian" ] && cmon_agent_file=$repo_dir/$cmon_package && fname=$cmon_package
+		if [ "$agentless" == 1 ]; then
+			cmon_agent_file=$repo_dir/$rpm_agent &&	fname=$rpm_agent
+			[ "$os" == "debian" ] && cmon_agent_file=$repo_dir/$cmon_package && fname=$cmon_package
 
-		sum_agent=`md5sum $cmon_agent_file | awk '{print $1;}'`
-		filesize=`stat --printf='%s' $cmon_agent_file`
+			sum_agent=`md5sum $cmon_agent_file | awk '{print $1;}'`
+			filesize=`stat --printf='%s' $cmon_agent_file`
 
-		CID=1
-		QUERY="BEGIN; DELETE FROM cmon_uploads WHERE cid=$CID AND packageid=(SELECT packageid FROM cmon.cmon_sw_package WHERE name='CMON_DEFAULT' AND cid=$CID);\
-                INSERT IGNORE INTO cmon.cmon_uploads (cid, packageid, filename,path,cluster_type,version_tag,md5sum,filesize,selected) VALUES (1,1,'$fname','$wwwroot/cmon/upload/','$type','','$sum_agent', $filesize ,1); COMMIT"
-		$MYSQL_BIN -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT $CMON_DB_DB -e "$QUERY"
-	        if [ $? -ne 0 ]; then
-			echo "FAILED: $QUERY"
-			echo "Copying package failed."
-			exit 1
-        	fi
+			QUERY="BEGIN; DELETE FROM cmon_uploads WHERE cid=${CLUSTER_ID} AND packageid=(SELECT packageid FROM cmon.cmon_sw_package WHERE name='CMON_DEFAULT' AND cid=${CLUSTER_ID});\
+                	INSERT IGNORE INTO cmon.cmon_uploads (cid,packageid,filename,path,cluster_type,version_tag,md5sum,filesize,selected) VALUES (${CLUSTER_ID},1,'$fname','$wwwroot/cmon/upload/','$type','','$sum_agent', $filesize ,1); COMMIT"
+			$MYSQL_BIN -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT $CMON_DB_DB -e "$QUERY"
+		        if [ $? -ne 0 ]; then
+				echo "FAILED: $QUERY"
+				echo "Copying package failed."
+				exit 1
+        		fi
+		fi
 
-                commandStatus 'Restoring CMON RRD config file' "cp -f $tmp_dir/cmon_rrd.cnf /etc/"
-		sed -i "s|^\$DB_PASSWORD1=.*|\$DB_PASSWORD1=\"$CMON_PASSWORD\"\;|g" $wwwroot/cmon/config/config_db1.php
-		commandStatus 'Restoring CMON MySQL password' ""
-		sed -i "s|^\$DB_PORT1=.*|\$DB_PORT1=\"$CMON_DB_PORT\"\;|g" $wwwroot/cmon/config/config_db1.php
-                commandStatus 'Restoring CMON MySQL port' ""
+                #commandStatus 'Restoring CMON RRD config file' "cp -f $tmp_dir/cmon_rrd.cnf /etc/"
+		#sed -i "s|^\$DB_PASSWORD1=.*|\$DB_PASSWORD1=\"$CMON_PASSWORD\"\;|g" $wwwroot/cmon/config/config_db1.php
+		#commandStatus 'Restoring CMON MySQL password' ""
+		#sed -i "s|^\$DB_PORT1=.*|\$DB_PORT1=\"$CMON_DB_PORT\"\;|g" $wwwroot/cmon/config/config_db1.php
+                #commandStatus 'Restoring CMON MySQL port' ""
 
                 upgradeCmonDatabase
                 if [ "$NEW_UI" == "NO" ]; then
@@ -757,8 +788,19 @@ upgradeCmon()
 		else
 			upgradeCcUi $LATEST_CCUI_VERSION
 		fi
+		[ -d $tmp_dir/cmon.d ] && commandStatus 'Restoring CMON config directory' "cp -f $tmp_dir/cmon.d/* /etc/cmon.d/"
         fi
 	commandStatus 'Restoring CMON config file' "cp -f $tmp_dir/cmon.cnf /etc/"
+	if [ "$mode" == "controller" ] || [ "$mode" == "dual" ]; then
+		if [ -z "$agent_based" ]; then
+			grep "^agentless=1" $CMON_CONFIG
+			if [ $? -ne 0 ]; then
+				commandStatus "Enabling agentless option in $CMON_CONFIG" ""
+				echo "agentless=1" >> $CMON_CONFIG
+				agentless=1
+			fi
+		fi
+	fi
 	startCmon
 	echo "** ClusterControl $mode upgrade for this host has been completed!"
 }
@@ -786,10 +828,12 @@ downloadLatest(){
 	else
 		($wget -q -O $repo_dir/$rpm_controller $DOWNLOAD_URL/$rpm_controller) &
 		progressStatus "Downloading $rpm_controller to $repo_dir " $!
-		($wget -q -O $repo_dir/$rpm_www $DOWNLOAD_URL/$rpm_www) &
-		progressStatus "Downloading $rpm_www to $repo_dir " $!
-		($wget -q -O $repo_dir/$rpm_agent $DOWNLOAD_URL/$rpm_agent) &
-		progressStatus "Downloading $rpm_agent to $repo_dir " $!
+#		($wget -q -O $repo_dir/$rpm_www $DOWNLOAD_URL/$rpm_www) &
+#		progressStatus "Downloading $rpm_www to $repo_dir " $!
+		if [ ! -z "$agent_based" ] || [ "$agentless" == 1 ] ; then
+			($wget -q -O $repo_dir/$rpm_agent $DOWNLOAD_URL/$rpm_agent) &
+			progressStatus "Downloading $rpm_agent to $repo_dir " $!
+		fi
 	fi
 
 	$wget --spider -q $DOWNLOAD_URL/$cc_package
@@ -908,6 +952,7 @@ backupCmon()
 	echo "MODE=$mode"  >> $upgrade_details
 
 	if [ "$mode" == "controller" ] || [ "$mode" == "dual" ]; then
+		echo "CLUSTER_ID=$CLUSTER_ID" >> $upgrade_details
                 if [ -z "$skip_backup_db" ]; then
 			($MYSQLDUMP_BIN -f  -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT  $CMON_DB_DB $CMON_DB_TABLES -r $tmp_dir/cmon_dump.sql) &
 			progressStatus "Backup CMON schema" $!
@@ -917,7 +962,7 @@ backupCmon()
 		fi
 	        commandStatus 'Backup CMON cron' "cp -pfR /etc/cron.d/cmon $tmp_dir/cmon_crond"
 		mkdir -p $tmp_dir/wwwroot
-	        commandStatus 'Backup CMON web app' "cp -pfR $wwwroot/cmon $tmp_dir/wwwroot"
+	        #commandStatus 'Backup CMON web app' "cp -pfR $wwwroot/cmon $tmp_dir/wwwroot"
 		if [ -e $wwwroot/clustercontrol ]; then
 			CC_DB_DB=dcps
 			commandStatus 'Backup ClusterControl web app' "cp -pfR $wwwroot/cc-* $wwwroot/cmona* $wwwroot/clustercontrol $tmp_dir/wwwroot"
@@ -961,6 +1006,10 @@ backupCmon()
 sshOptions()
 {
 	[ -z "$ssh_port" ] && ssh_port=22
+	if [ -z "$ssh_key" ]; then
+		[ "$os_user" != "root" ] && ssh_key=/home/$os_user/.ssh/id_rsa || ssh_key=/root/.ssh/id_rsa
+	fi
+
         SSH_OPTS="-t -q -oUserKnownHostsFile=/dev/null -oStrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 -i $ssh_key -p $ssh_port"
         SCP_OPTS="-q -oUserKnownHostsFile=/dev/null -oStrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 -i $ssh_key -P $ssh_port"
 }
@@ -985,7 +1034,6 @@ restoreAgent()
                 ssh $SSH_OPTS $os_user@$h "$sudo cc/`basename $0` $options"
                 ssh $SSH_OPTS $os_user@$h "rm -rf ~/cc"
         done
-
 }
 
 
@@ -1010,6 +1058,41 @@ upgradeAgent()
 		ssh $SSH_OPTS $os_user@$h "rm -rf ~/cc"
 	done
 
+}
+
+disableAgents()
+{
+	echo ""
+	echo "=================================="
+        echo "  Disabling CMON Agents (if any)"
+        echo "=================================="
+
+        sshOptions
+
+        for h in $AGENT_HOSTS
+        do
+		echo "$h: Killing CMON agent process .."
+		ssh $SSH_OPTS $os_user@$h "$sudo killall -q -9 cmon"
+		if [ "$os" == "debian" ]; then
+			echo "$h: Removing CMON from runlevel .."
+			ssh $SSH_OPTS $os_user@$h "$sudo update-rc.d -f cmon remove"
+		elif [ "$os" == "redhat" ]; then
+			echo "$h: Removing CMON from runlevel .."
+			ssh $SSH_OPTS $os_user@$h "$sudo chkconfig --del cmon"
+		fi
+		echo "$h: Disabling /etc/cmon.cnf .."
+		ssh $SSH_OPTS $os_user@$h "[ -f /etc/cmon.cnf ] && $sudo mv /etc/cmon.cnf /etc/cmon.cnf.disabled"
+		echo "$h: Disabling /etc/init.d/cmon .."
+		ssh $SSH_OPTS $os_user@$h "[ -f /etc/init.d/cmon ] && $sudo mv /etc/init.d/cmon /etc/init.d/cmon.disabled"
+		echo "$h: Disabling /usr/local/cmon .."
+		ssh $SSH_OPTS $os_user@$h "[ -e /usr/local/cmon ] && $sudo mv /usr/local/cmon /usr/local/cmon.disabled"
+		echo "$h: Disabling /usr/sbin/cmon .."
+		ssh $SSH_OPTS $os_user@$h "[ -e /usr/sbin/cmon ] && $sudo mv /usr/sbin/cmon /usr/sbin/cmon.disabled"
+		echo "$h: Disabling /var/log/cmon.log .."
+		ssh $SSH_OPTS $os_user@$h "[ -e /var/log/cmon.log ] && $sudo mv /var/log/cmon.log /var/log/cmon.log.disabled"
+		echo ""
+        done
+	
 }
 
 backupAgent()
@@ -1065,7 +1148,9 @@ performUpgrade()
 		backupCmon
 		([ "$mode" == "controller" ] || [ "$mode" == "dual" ]) && downloadLatest
 		upgradeCmon
-		([ "$mode" == "controller" ] || [ "$mode" == "dual" ]) && upgradeAgent
+		if [ "$mode" == "controller" ] || [ "$mode" == "dual" ]; then
+			[ ! -z "$agent_based" ] && upgradeAgent || disableAgents
+		fi
 		echo ""
 		echo "========================================="
 		echo " Upgrade Has Been Successfully Completed"
@@ -1154,4 +1239,5 @@ else
 	helpMenu
 	exit 1
 fi
+
 
