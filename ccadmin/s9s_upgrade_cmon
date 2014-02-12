@@ -5,7 +5,7 @@
 
 
 DEBUG=1
-TEMP=`getopt -o h,l,f,i:,t:,b:,d:,r:,n,a --long help,latest,force,id:,topdir:,backup:,backupdir:,restore:,skip-backup-db,agent-based -n 's9s_upgrade_cmon' -- "$@"`
+TEMP=`getopt -o h,l,f,i:,t:,b:,d:,r:,n,a --long help,latest,force,id:,topdir:,backup:,backupdir:,restore:,backup-db,agent-based -n 's9s_upgrade_cmon' -- "$@"`
 eval set -- "$TEMP"
 
 
@@ -17,7 +17,7 @@ while true ; do
 		-i|--id) cluster_id="$2"; shift 2 ;;
 		-t|--topdir) top_dir="$2" ; shift 2 ;;
 		-b|--backup) backup="$2" ; shift 2 ;;
-		-n|--skip-backup-db) skip_backup_db="1" ; shift ;;
+		-n|--backup-db) backup_db="1" ; shift ;;
 		-d|--backupdir) backup_dir="$2" ; shift 2 ;;
 		-r|--restore) restore="$2" ; shift 2 ;;
 		-a|--agent-based) agent_based="1"; shift ;;
@@ -36,7 +36,7 @@ helpMenu()
 	echo "-f, --force               : Force upgrade"
         echo "-t, --topdir              : Non-default path for CMON installation"
         echo "-b, --backup              : Perform ClusterControl backup (all|controller|agent)"
-        echo "-n, --skip-backup-db      : Skip backing up cmon db and dcps db (saves disk space, not recommended)"
+        echo "-n, --backup-db           : Backup CMON and dcps DB during the upgrade"
         echo '-d, --backupdir           : Custom path for ClusterControl backup directory (default: /tmp/s9s_backup_{time})'
         echo "-r, --restore             : Restore from ClusterControl backup (all|controller|agent)"
 	echo "-a, --agent-based         : Remain the agent-based deployment upgrade (default: agentless)"
@@ -955,7 +955,7 @@ backupCmon()
 
 	if [ "$mode" == "controller" ] || [ "$mode" == "dual" ]; then
 		echo "CLUSTER_ID=$CLUSTER_ID" >> $upgrade_details
-                if [ -z "$skip_backup_db" ]; then
+                if [ ! -z "$backup_db" ]; then
 			($MYSQLDUMP_BIN -f  -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT  $CMON_DB_DB $CMON_DB_TABLES -r $tmp_dir/cmon_dump.sql) &
 			progressStatus "Backup CMON schema" $!
 		else
@@ -968,7 +968,7 @@ backupCmon()
 		if [ -e $wwwroot/clustercontrol ]; then
 			CC_DB_DB=dcps
 			commandStatus 'Backup ClusterControl web app' "cp -pfR $wwwroot/cc-* $wwwroot/cmona* $wwwroot/clustercontrol $tmp_dir/wwwroot"
-			if [ -z "$skip_backup_db" ]; then
+			if [ ! -z "$backup_db" ]; then
 				($MYSQLDUMP_BIN -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT $CC_DB_DB -r $tmp_dir/dcps_dump.sql) &
 				progressStatus "Backup ClusterControl schema" $!
 			else
