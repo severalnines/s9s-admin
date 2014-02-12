@@ -889,7 +889,7 @@ restoreCmon()
 			rm -Rf $wwwroot/clustercontrol
 			rm -Rf $wwwroot/cmon
                         commandStatus 'Restoring CMON web app' "cp -pfR $backup_dir/wwwroot/* $wwwroot/"
-			commandStatus 'Restoring CMON configuration files' "cp -pfR $backup_dir/cmon_rrd.cnf /etc"
+			[ -e $backup_dir/cmon_rrd.cnf ] && commandStatus 'Restoring CMON configuration files' "cp -pfR $backup_dir/cmon_rrd.cnf /etc"
 	                if [ "$os" == "redhat" ]; then
 				share_dir_cmon=/usr/share
 				rm -Rf $share_dir_cmon/cmon*
