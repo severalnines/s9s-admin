@@ -438,7 +438,9 @@ collectInfo()
 	echo "tmp_dir=$tmp_dir" >> $AGENT_CONFIG
 	echo "INSTALL_METHOD=$INSTALL_METHOD" >> $AGENT_CONFIG
 
+	same_version=0
 	if [ $lv1 -gt $v1 ]; then
+		same_version=1
 		return 0
 	elif [ $lv1 -eq $v1 ]; then
 		[ $lbuildnumber -gt $buildnumber ] && return 0
@@ -759,7 +761,7 @@ upgradeCmon()
 			#commandStatus "Restoring older packages to upload directory" "cp -rf $tmp_dir/wwwroot/cmon/upload/* $wwwroot/cmon/upload/"
 		fi
 
-		if [ "$agentless" == 1 ]; then
+		if [ "$agentless" != 1 ]; then
 			cmon_agent_file=$repo_dir/$rpm_agent &&	fname=$rpm_agent
 			[ "$os" == "debian" ] && cmon_agent_file=$repo_dir/$cmon_package && fname=$cmon_package
 
@@ -830,7 +832,7 @@ downloadLatest(){
 		progressStatus "Downloading $rpm_controller to $repo_dir " $!
 #		($wget -q -O $repo_dir/$rpm_www $DOWNLOAD_URL/$rpm_www) &
 #		progressStatus "Downloading $rpm_www to $repo_dir " $!
-		if [ ! -z "$agent_based" ] || [ "$agentless" == 1 ] ; then
+		if [ ! -z "$agent_based" ] || [ "$agentless" != 1 ] ; then
 			($wget -q -O $repo_dir/$rpm_agent $DOWNLOAD_URL/$rpm_agent) &
 			progressStatus "Downloading $rpm_agent to $repo_dir " $!
 		fi
@@ -1149,7 +1151,11 @@ performUpgrade()
 		([ "$mode" == "controller" ] || [ "$mode" == "dual" ]) && downloadLatest
 		upgradeCmon
 		if [ "$mode" == "controller" ] || [ "$mode" == "dual" ]; then
-			[ ! -z "$agent_based" ] && upgradeAgent || disableAgents
+			if [ ! -z "$agent_based" ]; then
+				upgradeAgent
+			else
+				[ $same_version -ne 1 ] && disableAgents
+			fi
 		fi
 		echo ""
 		echo "========================================="
