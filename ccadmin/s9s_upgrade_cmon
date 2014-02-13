@@ -412,18 +412,23 @@ collectInfo()
 
 	diffVersion $CMON_VERSION $LATEST_CMON_VERSION_SCHEMA
 
-        if [ "$cluster_type" == "mongodb" ]; then
-                cmon_package="cmon-$LATEST_CMON_VERSION-64bit-glibc23-mongodb.tar.gz"
-                rpm_controller="cmon-mongodb-controller-$LATEST_CMON_VERSION-x86_64.rpm"
+	cmon_package="cmon-$LATEST_CMON_VERSION-64bit-glibc23-mc70.tar.gz"
+	rpm_controller="cmon-controller-$LATEST_CMON_VERSION-x86_64.rpm"
+        rpm_agent="cmon-agent-$LATEST_CMON_VERSION-x86_64.rpm"
+	cc_package="s9s-clustercontrol-$LATEST_CCUI_VERSION.tar.gz"
+
+        #if [ "$cluster_type" == "mongodb" ]; then
+        #        cmon_package="cmon-$LATEST_CMON_VERSION-64bit-glibc23-mongodb.tar.gz"
+        #        rpm_controller="cmon-mongodb-controller-$LATEST_CMON_VERSION-x86_64.rpm"
                 #rpm_www="cmon-mongodb-www-$LATEST_CMON_VERSION-1.noarch.rpm"
-                rpm_agent="cmon-mongodb-agent-$LATEST_CMON_VERSION-x86_64.rpm"
-        else
-                cmon_package="cmon-$LATEST_CMON_VERSION-64bit-glibc23-mc70.tar.gz"
-                rpm_controller="cmon-controller-$LATEST_CMON_VERSION-x86_64.rpm"
+        #        rpm_agent="cmon-mongodb-agent-$LATEST_CMON_VERSION-x86_64.rpm"
+        #else
+        #        cmon_package="cmon-$LATEST_CMON_VERSION-64bit-glibc23-mc70.tar.gz"
+        #        rpm_controller="cmon-controller-$LATEST_CMON_VERSION-x86_64.rpm"
                 #rpm_www="cmon-www-$LATEST_CMON_VERSION-1.noarch.rpm"
-                rpm_agent="cmon-agent-$LATEST_CMON_VERSION-x86_64.rpm"
-        fi
-        cc_package="s9s-clustercontrol-$LATEST_CCUI_VERSION.tar.gz"
+        #        rpm_agent="cmon-agent-$LATEST_CMON_VERSION-x86_64.rpm"
+        #fi
+        #cc_package="s9s-clustercontrol-$LATEST_CCUI_VERSION.tar.gz"
 
 	AGENT_CONFIG=$repo_dir/../agent.config
 
