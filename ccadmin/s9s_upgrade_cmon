@@ -733,9 +733,8 @@ upgradeCmon()
         else
 		rpm_name=cmon-$mode
 		[ "$mode" == "dual" ] && rpm_name=cmon-controller
-		rpm_name_www=cmon-www
-		if [ "$type" == "mongodb" ]; then
-			rpm_name=cmon-mongodb-$mode && rpm_name_www=cmon-mongodb-www
+		if [ "$type" == "mongodb" ] && [ $same_version -ne 1 ]; then
+			rpm_name=cmon-mongodb-$mode
 			[ "$mode" == "dual" ] && rpm_name=cmon-mongodb-controller
 		fi
 		check_installed=`rpm -qa | grep -e $rpm_name`
