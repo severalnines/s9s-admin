@@ -447,7 +447,8 @@ collectInfo()
 	if [ $lv1 -gt $v1 ]; then
 		return 0
 	elif [ $lv1 -eq $v1 ]; then
-		[ ! -z "$buildnumber" ] && [ $lbuildnumber -gt $buildnumber ] && same_version=1 && return 0
+		same_version=1
+		[ ! -z "$buildnumber" ] && [ $lbuildnumber -gt $buildnumber ] && return 0
 	else
 		return 1
 	fi
