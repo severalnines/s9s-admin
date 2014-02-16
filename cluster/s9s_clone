@@ -255,6 +255,7 @@ function load_opts
     local CLUSTER_ID=$1
     echo "load opts $CLUSTER_ID"
     OS=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='OS' AND cid=$CLUSTER_ID"`
+    AGENTLESS=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='AGENTLESS' AND cid=$CLUSTER_ID"`
     CONFIGDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='CONFIGDIR' AND cid=$CLUSTER_ID"`
     MYSQL_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MYSQL_PORT' AND cid=$CLUSTER_ID"`
     GALERA_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='GALERA_PORT' AND cid=$CLUSTER_ID"`
@@ -288,6 +289,9 @@ function load_opts
     fi
     if [ "$SSH_PORT" = "" ] || [ "$SSH_PORT" = "NULL" ];  then
         SSH_PORT="22"
+    fi
+    if [ "AGENTLESS" = "" ] || [ "$AGENTLESS" = "NULL" ];  then
+        AGENTLESS="0"
     fi
     SSH_OPTS="$SSH_OPTSX -p$SSH_PORT $SSH_OPTS"    
     SSH_OPTS2="-P$SSH_PORT $SSH_OPTS"    
@@ -463,9 +467,6 @@ function create_cluster
 	exit 1
     fi
 
-    
-##    CMON_DB_DB="cmon_${CLUSTER_ID}"
-    
     case $CLUSTER_TYPE in
 	galera)
 	    ;;
@@ -521,7 +522,7 @@ function create_cluster
     QUERY="DELETE FROM hosts WHERE cid=$TARGET_CLUSTER_ID;DELETE FROM hosts WHERE cid=0"
     `$MYSQL_BIN $MYSQL_OPTS -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"`    
     if [ $? -ne 0 ]; then
-	log_job_message "Failed to clear" 1
+	log_job_message "Failed to clear (1)" 1
 	log_job 'FAILED' 's9s_clone --create failed' 1
 	exit 1
     fi
@@ -529,7 +530,7 @@ function create_cluster
     QUERY="DELETE FROM hosts WHERE cid=$TARGET_CLUSTER_ID;DELETE FROM processes WHERE cid=0"
     `$MYSQL_BIN $MYSQL_OPTS -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"`    
     if [ $? -ne 0 ]; then
-	log_job_message "Failed to clear" 1
+	log_job_message "Failed to clear (2)" 1
 	log_job 'FAILED' 's9s_clone --create failed' 1
 	exit 1
     fi
@@ -537,7 +538,7 @@ function create_cluster
     QUERY="DELETE FROM mysql_server WHERE cid=$TARGET_CLUSTER_ID"    
     `$MYSQL_BIN $MYSQL_OPTS -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"`    
     if [ $? -ne 0 ]; then
-	log_job_message "Failed to clear" 1
+	log_job_message "Failed to clear (3)" 1
 	log_job 'FAILED' 's9s_clone --create failed' 1
 	exit 1
     fi
@@ -560,33 +561,34 @@ function create_cluster
     
     log_job 'RUNNING' 's9s_clone --create is running' 0
     ## install config files
-    cp /etc/cmon.cnf /etc/cmon_${TARGET_CLUSTER_ID}.cnf
-    sed -i.bak "s#cluster_id=.*#cluster_id=${TARGET_CLUSTER_ID}#g" /etc/cmon_${TARGET_CLUSTER_ID}.cnf
-    sed -i.bak "s#logfile=.*#logfile=/var/log/cmon_${TARGET_CLUSTER_ID}.log#g" /etc/cmon_${TARGET_CLUSTER_ID}.cnf
-    sed -i.bak "s#mysql_server_addresses=.*#mysql_server_addresses=${TARGET_HOSTNAME}#g" /etc/cmon_${TARGET_CLUSTER_ID}.cnf
+    SOURCE_CNF=""
+    mkdir -p /etc/cmon.d
+    if [ -f /etc/cmon.d/cmon_${SOURCE_CLUSTER_ID}.cnf ]; then
+	cp /etc/cmon.d/cmon_${SOURCE_CLUSTER_ID}.cnf /etc/cmon.d/cmon_${TARGET_CLUSTER_ID}.cnf
+	SOURCE_CNF=/etc/cmon.d/cmon_${SOURCE_CLUSTER_ID}.cnf
+    fi
+    if [ -f /etc/cmon.cnf ]; then
+	cp /etc/cmon.cnf /etc/cmon.d/cmon_${TARGET_CLUSTER_ID}.cnf
+	SOURCE_CNF=/etc/cmon.cnf
+    fi
     
-    echo "cmon_multi_tenant=1" | tee --append /etc/cmon_${TARGET_CLUSTER_ID}.cnf
-    
-    ## init.d
-    cp /etc/init.d/cmon /etc/init.d/cmon_${TARGET_CLUSTER_ID}
-    sed -i.bak 's#MULTI_TENANT=.*#MULTI_TENANT=1#g' /etc/init.d/cmon_${TARGET_CLUSTER_ID}
-    sed -i.bak "s#CMON_CNF=.*#CMON_CNF=/etc/cmon_${TARGET_CLUSTER_ID}.cnf#g" /etc/init.d/cmon_${TARGET_CLUSTER_ID}
-    sed -i.bak "s#CLUSTERID=.*#CLUSTERID=${TARGET_CLUSTER_ID}#g" /etc/init.d/cmon_${TARGET_CLUSTER_ID}
+    sed -i.bak "s#cluster_id=.*#cluster_id=${TARGET_CLUSTER_ID}#g" /etc/cmon.d/cmon_${TARGET_CLUSTER_ID}.cnf
+    sed -i.bak "s#logfile=.*#logfile=/var/log/cmon_${TARGET_CLUSTER_ID}.log#g" /etc/cmon.d/cmon_${TARGET_CLUSTER_ID}.cnf
+    sed -i.bak "s#mysql_server_addresses=.*#mysql_server_addresses=${TARGET_HOSTNAME}#g" /etc/cmon.d/cmon_${TARGET_CLUSTER_ID}.cnf
     
     
-    remote_cmd $TARGET_HOSTNAME "sed -i.bak 's#cluster_id=.*#cluster_id=${TARGET_CLUSTER_ID}#g' /etc/cmon.cnf"
-    remote_cmd $TARGET_HOSTNAME "/etc/init.d/cmon restart"
+#    remote_cmd $TARGET_HOSTNAME "sed -i.bak 's#cluster_id=.*#cluster_id=${TARGET_CLUSTER_ID}#g' /etc/cmon.cnf"
+    if [ "$AGENTLESS" = "0" ]; then
+	remote_cmd $TARGET_HOSTNAME "/etc/init.d/cmon restart"
+    fi
     
         
-    pkill -9 -xf "cmon.*--config-file=/etc/cmon_${TARGET_CLUSTER_ID}.cnf"
     case $OS in
 	redhat)
-	    /sbin/chkconfig --add cmon_${TARGET_CLUSTER_ID}
-	    /sbin/service cmon_${TARGET_CLUSTER_ID} start	    
+	    echo "killall -HUP cmon"
 	    ;;
 	debian)
-	    /usr/sbin/update-rc.d cmon_${TARGET_CLUSTER_ID} defaults
-	    /usr/sbin/service cmon_${TARGET_CLUSTER_ID} start	    
+	    echo "killall -HUP cmon"
 	    ;;
 	*)
 	    log_job_message "./s9s_create -- invalid OS (found: $OS)" 1
@@ -601,11 +603,8 @@ function create_cluster
 	exit 1
     fi
     
-    if [ $SOURCE_CLUSTER_ID -eq 1 ]; then
-	 sed -i.bak "s#mysql_server_addresses=.*#mysql_server_addresses=${SERVERS}#g" /etc/cmon.cnf
-    else
-	 sed -i.bak "s#mysql_server_addresses=.*#mysql_server_addresses=${SERVERS}#g" /etc/cmon_${SOURCE_CLUSTER_ID}.cnf
-    fi
+    sed -i.bak "s#mysql_server_addresses=.*#mysql_server_addresses=${SERVERS}#g" $SOURCE_CNF
+
     echo ""
     if [ $DETACH -eq 1 ]; then
 	CLUSTER_ID=$TARGET_CLUSTER_ID
@@ -739,43 +738,11 @@ function delete_cluster
     if [ "$SERVER_LIST" != "NULL" ]; then
 	for host in $SERVER_LIST
 	do
-	    remote_cmd_nofail $host "killall -9 mysqld mysqld_safe cmon"
 	    remote_cmd_nofail $host "rm -rf $DATADIR"
-	    
-	    case $OS in
-		redhat)
-		    remote_cmd_nofail $host "/sbin/chkconfig --del mysql"
-		    remote_cmd_nofail $host "/sbin/chkconfig --del cmon"
-		    ;;
-		debian)
-		    remote_cmd_nofail $host "/usr/sbin/update-rc.d -f mysql remove"
-		    remote_cmd_nofail $host "/usr/sbin/update-rc.d -f cmon remove"
-		    ;;
-		*)
-		    log_job_message "./s9s_clone -- invalid OS found - cannot uninstall cmon initd" 1
-		    log_job 'FAILED' 's9s_clone --delete failed' 1
-		    exit 1
-	    esac	
-	    remote_cmd_nofail $host "rm -rf /etc/init.d/cmon"
-	    remote_cmd_nofail $host "rm -rf /etc/cmon.cnf"
-	    remote_cmd_nofail $host "rm -rf /var/log/cmon.*"
+	    remote_cmd_nofail $host "rm -rf /var/log/cmon_*"
 	done
     fi
-    case $OS in
-	redhat)
-	    /sbin/service cmon_${CLUSTER_ID} stop
-	    /sbin/chkconfig --del cmon_${CLUSTER_ID}
-	    ;;
-	debian)
-	    /usr/sbin/service cmon_${CLUSTER_ID} stop
-	    /usr/sbin/update-rc.d -f cmon_${CLUSTER_ID} remove
-	    ;;
-	*)
-	    log_job_message "./s9s_clone -- invalid OS found - cannot uninstall cmon initd" 1
-	    log_job 'FAILED' 's9s_clone --delete failed' 1
-	    exit 1;	           	     
-    esac	        
-    rm -rf /etc/init.d/cmon_${CLUSTER_ID}
+    remote_cmd_nofail $host "rm -rf /etc/cmon.d/{CLUSTER_ID}.cnf*"
     log_job 'FINISHED' 's9s_clone --delete finished successfully' 0
 }
 function list_cluster
@@ -920,8 +887,11 @@ function move_node
 	log_job_message "Stopping mysql server on $SOURCE_HOSTNAME - ClusterControl will resync it" 0
 	remote_cmd_nofail $SOURCE_HOSTNAME "killall -q -15 mysqld mysqld_safe"
     fi
-    remote_cmd $SOURCE_HOSTNAME "sed -i.bak 's#cluster_id=.*#cluster_id=${TARGET_CLUSTER_ID}#g' /etc/cmon.cnf"
-    remote_cmd $SOURCE_HOSTNAME "/etc/init.d/cmon restart"
+
+    if [ "$AGENTLESS" = "0" ]; then
+	remote_cmd $SOURCE_HOSTNAME "sed -i.bak 's#cluster_id=.*#cluster_id=${TARGET_CLUSTER_ID}#g' /etc/cmon.cnf"
+	remote_cmd $SOURCE_HOSTNAME "/etc/init.d/cmon restart"
+    fi
 
     QUERY="SELECT GROUP_CONCAT(hostname) FROM mysql_server WHERE cid=$TARGET_CLUSTER_ID"
     SERVERS=`$MYSQL_BIN $MYSQL_OPTS -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"`    
@@ -930,8 +900,13 @@ function move_node
 	log_job 'FAILED' 's9s_clone --move-node failed' 1
 	exit 1
     fi
+
     if [ $TARGET_CLUSTER_ID -eq 1 ]; then
-	sed -i.bak "s#mysql_server_addresses=.*#mysql_server_addresses=${SERVERS}#g" /etc/cmon.cnf
+	if [ -f /etc/cmon.cnf ]; then 
+	    sed -i.bak "s#mysql_server_addresses=.*#mysql_server_addresses=${SERVERS}#g" /etc/cmon.cnf
+	else
+	    sed -i.bak "s#mysql_server_addresses=.*#mysql_server_addresses=${SERVERS}#g" /etc/cmon.d/cmon_${TARGET_CLUSTER_ID}.cnf
+	fi
     else
 	sed -i.bak "s#mysql_server_addresses=.*#mysql_server_addresses=${SERVERS}#g" /etc/cmon_${TARGET_CLUSTER_ID}.cnf
     fi
