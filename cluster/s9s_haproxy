@@ -392,6 +392,7 @@ function test_ssh()
   tmphost=$1
   printf "Testing ssh to $tmphost: "
   ssh $SSH_OPTS -oNumberOfPasswordPrompts=0 $SSH_USER@$tmphost "$SUDO ls -al /usr " 2>&1 > /dev/null
+  echo "ssh $SSH_OPTS -oNumberOfPasswordPrompts=0 $SSH_USER@$tmphost $SUDO ls -al /usr "
   if [ $? -eq 0 ]; then
         printf "[32m[ok][0m\n"
         return 0

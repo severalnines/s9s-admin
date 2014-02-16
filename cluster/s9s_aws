@@ -367,9 +367,9 @@ function change_ip
     echo "Changing from $OLD_HOSTNAME ($OLD_IP) --> to $NEW_HOSTNAME ($NEW_IP)"
     read -p "Is the new ip address '$NEW_IP' correct? (y/n):  " yn
     case $yn in
-        [Yy]* ) break;;
+        [Yy]* ) ;;
         [Nn]* ) exit;;
-        * ) echo "Please answer yes or no.";;
+        * ) echo "Please answer yes or no."; exit ;;
     esac
 
     echo "Pinging new host..."
