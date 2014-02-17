@@ -740,9 +740,10 @@ function delete_cluster
 	do
 	    remote_cmd_nofail $host "rm -rf $DATADIR"
 	    remote_cmd_nofail $host "rm -rf /var/log/cmon_*"
+	    remote_cmd_nofail $host "rm -rf /etc/cmon.cnf*"
 	done
     fi
-    remote_cmd_nofail $host "rm -rf /etc/cmon.d/{CLUSTER_ID}.cnf*"
+    rm -rf /etc/cmon.d/cmon*${CLUSTER_ID}.cnf*
     log_job 'FINISHED' 's9s_clone --delete finished successfully' 0
 }
 function list_cluster
