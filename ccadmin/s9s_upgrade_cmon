@@ -403,7 +403,7 @@ collectInfo()
 	fi
 
 	FULL_CMON_VERSION=$CMON_VERSION
-	echo "** Current CMON version: $CMON_VERSION"
+	echo "** Installed CMON version: $CMON_VERSION"
 	echo "** Latest CMON version: $LATEST_CMON_VERSION"
 	echo "** Latest ClusterControl UI version: $LATEST_CCUI_VERSION"
 
