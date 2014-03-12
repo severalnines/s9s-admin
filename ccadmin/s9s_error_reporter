@@ -1,0 +1,367 @@
+#!/bin/bash
+# All files in this package is subject to the GPL v2 license
+# More information is in the COPYING file in the top directory of this package.
+# Copyright (C) 2011 severalnines.com
+
+#!/bin/bash
+
+# Copyright 2012 Severalnines AB
+#
+# MODIFY THE BELOW TO SUIT YOU ENV:
+JOBID=0
+function init
+{    
+    FILES=`ls /etc/cmon.cnf 2>&1`
+    FILES2=`ls /etc/cmon.d/*.cnf 2>&1`
+    FILES="$FILES $FILES2"
+    configfile=""
+    for f in $FILES
+    do
+	X=`grep -l cluster_id=${CLUSTER_ID} $f 2>&1 `
+	if [ $? -eq 0 ]; then
+            source $f
+            configfile=$f
+        fi
+    done
+
+    if [ -z "$configfile" ]; then
+        echo "No matching configuration file found having cluster_id=${CLUSTER_ID}"
+        exit 1
+    fi
+
+    source $configfile;
+
+    CLUSTER_ID=$cluster_id
+    CMON_DB_PORT=$mysql_port
+    CLUSTER_TYPE=$type
+    CMON_USER=cmon
+    CMON_PASSWORD=$mysql_password
+    CMON_DB_HOST=$mysql_hostname
+    CMON_DB_DB=cmon
+    BACKUP_LOGFILE=/tmp/s9s_backup.log
+    LOCKFILE="/tmp/s9s_backup.lock"
+### NO MODS BELOW UNLESS YOU KNOW WHAT YOU DO:
+    
+    OSUSER=$USER
+    if [ "$USER" != "root" ]; then
+	echo "must be executed as 'root' or with 'sudo'"
+	exit 1
+    fi
+    MYSQL_BIN=$mysql_basedir/bin//mysql
+    MYSQL_BIN2=$mysql_bindir/mysql 
+    if ! test -f $MYSQL_BIN; then
+	if ! test -f $MYSQL_BIN2; then
+	    echo "Could not find mysql client binary"
+	    echo "Change MYSQL_BIN in beginning of the scipt"
+	    exit 1
+	fi
+	MYSQL_BIN=$MYSQL_BIN2
+    fi
+    if ! test -f $MYSQL_BIN; then
+	echo "Could not find mysql client binary"
+	log_job_message "Could not find mysql client binary" 1
+	log_job 'FAILED' 'backup failed' 1
+	exit 1
+    fi
+    WWWROOT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='WWWROOT' AND cid=$CLUSTER_ID"`
+
+}
+function remote_cmd_nofail()
+{
+   desthost=$1
+   xcommand=$2
+   printf "%-4s: Executing '%s'" "$desthost" "$xcommand"
+   ssh -q $SSH_OPTS $SSH_USER@$desthost "$SUDO $xcommand "  >> $HOME/s9s_deploy.log 2>&1
+   ret=$?
+   if [ $ret -ne 0 ]; then
+       log_job_message "Failed (but moving on) $desthost : $xcommand" 0
+   else
+       log_job_message "Executed $desthost : $xcommand" 0
+   fi
+   printf "\033[32m[ok]\033[0m\n"
+   return $ret
+}
+
+function remote_cmd()
+{
+   desthost=$1
+   xcommand=$2
+   MAX_RETRIES=1
+   printf "%-4s: Executing '%s' " "$desthost" "$xcommand"
+   retry=0
+   while [ $retry -lt $MAX_RETRIES ]; 
+   do
+      x=`ssh -q $SSH_OPTS $SSH_USER@$desthost "$SUDO $xcommand " >> $HOME/s9s_deploy.log 2>&1`
+      if [ $? -eq 0 ]; then
+        printf "\033[32m[ok]\033[0m\n"
+	log_job_message "Executed on $desthost : $xcommand" 0
+        return 0
+      fi
+      retry=`expr $retry + 1`
+      printf "\033[31m[failed: retrying ${retry}/${MAX_RETRIES}]\033[0m\n"
+      ssh -q $SSH_OPTS $SSH_USER@$desthost " sync " 2>&1  >> $HOME/s9s_deploy.log
+      sleep 1
+   done
+   
+   log_job_message "Command failed: $xcommand" 1
+   log_job 'FAILED' 's9s_sw_update failed' 1
+   printf "\033[31m[failed]\033[0m\n"
+   echo $x
+   echo 'The following command failed:'
+   echo "ssh -q $SSH_OPTS $SSH_USER@$desthost \" $SUDO  $xcommand \""
+   cat $HOME/s9s_cmd.log
+   echo 'Try running the command on the line above again, contact http://support.severalnines.com/ticket/new, attach the output from deploy.sh and the error from running the command to the Support issue.'
+   exit 1
+}
+
+function load_opts 
+{
+    local CLUSTER_ID=$1
+    log_job_message "load opts from $CLUSTER_ID" 0
+    OS=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='OS' AND cid=$CLUSTER_ID" 2>/dev/null`
+    HTTP_PROXY=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='HTTP_PROXY' AND cid=$CLUSTER_ID" 2>/dev/null`
+    CONFIGDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='CONFIGDIR' AND cid=$CLUSTER_ID" 2>/dev/null`
+    MYSQL_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MYSQL_PORT' AND cid=$CLUSTER_ID" 2>/dev/null`
+    GALERA_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='GALERA_PORT' AND cid=$CLUSTER_ID" 2>/dev/null`
+    MYSQL_BASEDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MYSQL_BASEDIR' AND cid=$CLUSTER_ID" 2>/dev/null`
+    STAGING_DIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='STAGING_DIR' AND cid=$CLUSTER_ID" 2>/dev/null`
+    GALERA_VERSION=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='GALERA_VERSION' AND cid=$CLUSTER_ID" 2>/dev/null`
+    MYSQL_SCRIPTDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SCRIPTDIR' AND cid=$CLUSTER_ID" 2>/dev/null`
+    SSH_IDENTITY=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_IDENTITY' AND cid=$CLUSTER_ID" 2>/dev/null`
+    SSH_USER=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_USER' AND cid=$CLUSTER_ID" 2>/dev/null`
+    SSH_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_PORT' AND cid=$CLUSTER_ID" 2>/dev/null`
+    SSH_OPTSX=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_OPTS' AND cid=$CLUSTER_ID" 2>/dev/null`
+    SUDO=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SUDO' AND cid=$CLUSTER_ID" 2>/dev/null`
+    XVENDOR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='VENDOR' AND cid=$CLUSTER_ID" 2>/dev/null`
+    OS_USER_HOME=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='OS_USER_HOME' AND cid=$CLUSTER_ID" 2>/dev/null`
+    NETWORKLESS=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='NETWORKLESS' AND cid=$CLUSTER_ID" 2>/dev/null`
+    AGENTLESS=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='AGENTLESS' AND cid=$CLUSTER_ID" 2>/dev/null`
+    RPM=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='RPM' AND cid=$CLUSTER_ID" 2>/dev/null`
+
+    if [ -z "$RPM" ]; then
+	RPM=1
+    fi
+
+    
+    SSH_OPTS="-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10"
+    if [ "$SSH_IDENTITY" = "" ]; then
+	SSH_IDENTITY="-oIdentityFile=${OS_USER_HOME}/.ssh/id_rsa"
+    else
+	SSH_IDENTITY="-oIdentityFile=$SSH_IDENTITY"
+    fi
+
+    SSH_OPTS="-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY"
+    SSH_OPTS2="-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY"
+    if [ "$SSH_USER" != "root" ]; then
+	#SSH_OPTS_EXTRA="-ft"
+	SSH_OPTS=" -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY"
+	if [ "$SUDO" = "" ] || [ "$SUDO" = "NULL" ];  then
+           SUDO="sudo"
+        fi
+    fi
+    if [ "$SSH_PORT" = "" ] || [ "$SSH_PORT" = "NULL" ];  then
+        SSH_PORT="22"
+    fi
+
+    S9S_TMPDIR=$STAGING_DIR
+    
+    if [ "$S9S_TMPDIR" = "" ] || [ "$TMPDIR" = "NULL" ];  then
+	S9S_TMPDIR="/tmp/"
+	TMPDIR="/tmp/"
+    fi
+
+    if [ "$GALERA_VERSION" = "" ]; then
+	GALERA_VERSION='2.x'
+    fi
+
+    if [ -z "$AGENTLESS" ]; then
+	AGENTLESS=0
+    fi
+
+    if [ "$AGENTLESS" = "NULL" ]; then
+	AGENTLESS=0
+    fi
+
+    SSH_OPTS="$SSH_OPTSX -p$SSH_PORT $SSH_OPTS"    
+    SSH_OPTS2="-P$SSH_PORT $SSH_OPTS2"    
+}
+
+
+
+
+
+function log_job_message
+{    
+    MSG=$1
+    EXIT_CODE=$2
+    QUERY="INSERT INTO cmon_job_message(cid, JOBID,message,exit_code,report_ts) VALUES($CLUSTER_ID,$JOBID,\"$MSG\",$EXIT_CODE,now())"
+    if [ $JOBID -ne 0 ]; then 
+	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
+    else
+	if [ $EXIT_CODE -eq 0 ]; then
+   	   echo "$MSG"
+	else
+   	   echo "Failed: $MSG"
+	fi
+    fi
+}
+
+function create_job
+{    
+    MSG=$1
+    STATUS=$2
+    EXIT_CODE=$3
+    QUERY="INSERT INTO cmon_job(cid, JOBID, jobspec,status,status_txt,exit_code,report_ts) VALUES($CLUSTER_ID,$JOBID,'internal','$STATUS',\"$MSG\",$EXIT_CODE,now())"
+    echo $QUERY >> /tmp/queries
+    if [ $JOBID -ne 0 ]; then 
+	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
+    else
+	if [ $EXIT_CODE -eq 0 ]; then
+   	   echo "$MSG"
+	else
+   	   echo "Failed: $MSG"
+	fi
+    fi
+}
+
+function log_job
+{    
+    STATUS=$1
+    STATUS_TXT=$2
+    EXIT_CODE=$3
+    QUERY="UPDATE cmon_job SET status='$STATUS', status_txt='$STATUS_TXT', exit_code=$EXIT_CODE, report_ts=NOW()  WHERE cid=$CLUSTER_ID AND JOBID=$JOBID"
+    if [ $JOBID -ne 0 ]; then 
+	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
+    fi
+}
+
+function remote_copy_from_r2()
+{
+   srcfile=$2
+   desthost=$1
+   destfile=$3
+   printf "%-4s: Copying '%s' to '%s'" "$desthost" "$srcfile" "$destfile"
+   scp $SSH_OPTS2 -r $SSH_USER@$desthost:$srcfile $destfile   2>/dev/null
+   if [ $? -eq 0 ]; then
+      printf "\033[32m[ok]\033[0m\n"
+      return 0
+   else
+      printf "\033[31m[not found, which can be ok]\033[0m\n"
+      return 0
+   fi
+}
+
+
+function collect_logs()
+{
+    printf "%s: %-80s\n" "Severalnines" "Copying logs";
+    $MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "SELECT * FROM mysql_server WHERE cid=$CLUSTER_ID" > $savedir/mysql_server
+    $MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "SELECT * FROM hosts WHERE cid=$CLUSTER_ID" > $savedir/hosts
+    $MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "SELECT * FROM cmon_job_message WHERE cid=$CLUSTER_ID" > $savedir/cmon_job_messages
+    $MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "SELECT * FROM cmon_job WHERE cid=$CLUSTER_ID" > $savedir/cmon_job
+
+    for host in $HOSTNAMES
+    do
+	mkdir $savedir/$host
+	tmpsavedir=$savedir/$host
+	$MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --port=$CMON_DB_PORT -h$host -e "SHOW GLOBAL STATUS" > $tmpsavedir/show_status
+	$MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --port=$CMON_DB_PORT -h$host -e "SHOW GLOBAL VARIABLES" > $tmpsavedir/show_variables
+	QUERY="SHOW GLOBAL VARIABLES LIKE 'datadir'"
+	DATADIR=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$host --port=$CMON_DB_PORT -A -Bse "$QUERY"`
+	if [ $? -ne 0 ]; then
+            log_job_message "Failed to get datadir" 1
+	    log_job 'FAILED' 's9s_error_reporter' 1
+            exit 1
+	fi
+	DATADIR=`echo $DATADIR | awk   '{print $2;}'`
+
+	QUERY="SHOW GLOBAL VARIABLES LIKE 'log_error'"
+	ERRLOG=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$host --port=$CMON_DB_PORT -A -Bse "$QUERY"`
+	if [ $? -ne 0 ]; then
+            log_job_message "Failed to get log-error" 1
+	    log_job 'FAILED' 's9s_error_reporter' 1
+            exit 1
+	fi
+	ERRLOG=`echo $ERRLOG | awk   '{print $2;}'`
+	remote_cmd_nofail $host "cp $ERRLOG /tmp"
+	remote_cmd_nofail $host "cp $DATADIR/GRA* /tmp"
+	remote_cmd_nofail $host "cp $DATADIR/inno*.log /tmp"
+	remote_cmd_nofail $host "cp $DATADIR/sst.err /tmp"
+
+	remote_cmd_nofail $host "chown $SSH_USER /tmp/error.log"
+	remote_cmd_nofail $host "chown $SSH_USER /tmp/mysql*.log"
+	remote_cmd_nofail $host "chown $SSH_USER /tmp/inno*.log"
+	remote_cmd_nofail $host "chown $SSH_USER /tmp/sst.err"
+	remote_copy_from_r2 $host /tmp/error.log $tmpsavedir/
+	remote_copy_from_r2 $host /tmp/mysql*.log $tmpsavedir/
+	remote_copy_from_r2 $host /tmp/innodb*.log $tmpsavedir/
+	remote_copy_from_r2 $host /tmp/sst.err $tmpsavedir/
+	remote_copy_from_r2 $host /tmp/GRA*  $tmpsavedir/
+	if [ $AGENTLESS -eq 0 ]; then 
+	   remote_cmd_nofail $host "cp /var/log/cmon.log* /tmp"
+	   remote_cmd_nofail $host "chown $SSH_USER /tmp/cmon.log*"
+	   remote_copy_from_r2 $host /tmp/cmon.log $tmpsavedir/cmon.log
+	   for i in 1 2 3 4 5 
+	   do
+               remote_copy_from_r2 $host /tmp/cmon.log.$i $tmpsavedir/cmon.log.$i
+	   done 
+	   remote_cmd_nofail $host "rm /tmp/cmon.log*"
+       fi
+       remote_cmd_nofail $host "rm /tmp/error.log"
+       remote_cmd_nofail $host "rm /tmp/innodb*.log"
+       remote_cmd_nofail $host "rm /tmp/mysql*.log"
+       remote_cmd_nofail $host "rm /tmp/sst.err"
+       remote_cmd_nofail $host "rm /tmp/GRA*"
+    done
+}
+
+
+
+function create_report
+{
+    init 
+    load_opts $CLUSTER_ID
+
+    now=$(date +"%Y%m%d-%H%M%S")
+    error_pkg_tgz=error_report_$now.tar.gz    
+    savedir=$S9S_TMPDIR/error_report_$now
+    mkdir $savedir
+
+        
+    HOSTNAMES=`$MYSQL_BIN -B -N $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$CMON_DB_HOST --port=$CMON_DB_PORT --database=$CMON_DB_DB  -e "SELECT group_concat(hostname SEPARATOR ' ') FROM $CMON_DB_DB.mysql_server WHERE cid=${CLUSTER_ID}"`
+    if [ -z "HOSTNAMES" ]; then
+	log_job_message "Could not get a cluster address" 1
+	log_job 'FAILED' 'install garbd failed' 1
+	exit 1
+    fi
+    
+    
+    collect_logs
+    currdir=`pwd`
+    cd $S9S_TMPDIR
+    tar cfz ${error_pkg_tgz} error_report_$now
+    cd $currdir
+    echo ""
+    echo "Please attach $S9S_TMPDIR/${error_pkg_tgz} to the support issue."
+    
+}
+
+
+args=`getopt p:s:P:h:i:N:n:f: $*`
+set -- $args
+for i
+do
+    case "$i" in
+        -i)
+            CLUSTER_ID="$2"; shift;
+            shift;;
+        --)
+            shift; break;;
+    esac
+done
+if [ -z "$CLUSTER_ID" ]; then
+    echo "s9s_error_report -i <clusterid>"
+    exit 1
+fi
+
+create_report
