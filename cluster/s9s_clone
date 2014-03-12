@@ -617,6 +617,7 @@ function create_cluster
     fi
     log_job 'FINISHED' 's9s_clone --create finished successfully' 0
     echo ""
+    killall -HUP cmon
 }
 
 ## end create_cluster
@@ -913,7 +914,8 @@ function move_node
     fi
 
     remote_cmd_nofail $SOURCE_HOSTNAME "rm -rf ${DATADIR}/grastate.dat"
-
+    rm /etc/cmon.cnf.bak
+    rm /etc/cmon_${TARGET_CLUSTER_ID}.cnf.bak
     
     log_job_message "Node moved - follow recovery progress in GUI" 0
     log_job 'FINISHED' 's9s_clone --move-node finished successfully' 0
