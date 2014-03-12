@@ -176,7 +176,7 @@ function write_logfile
 
 function start_backup
 {        
-    args=`getopt u:P:p:h:i:b:t:j:B: $*`
+    args=`getopt u:P:p:h:i:b:t:j:B:CT $*`
     set -- $args
     for i
     do
@@ -205,6 +205,13 @@ function start_backup
             -j)
 		jobid="$2"; shift;
 		shift;;
+            -C)
+		DISABLE_COMPRESSION="1"; 
+		COMPRESSION=0
+		shift;;
+            -T)
+		USE_PIGZ="1";
+		shift;;
             -b)
 		BACKUPDIR="$2"; shift;
 		shift;;
@@ -216,6 +223,18 @@ function start_backup
     if [ -z "$CLUSTER_ID" ]; then
       echo "s9s_backup  --backup -i <clusterid> missing"
       exit 1
+    fi
+
+
+    if [ -z "$DISABLE_COMPRESSION" ]; then
+	COMPRESSION=1
+    fi
+
+    if [ -z "$USE_PIGZ" ]; then
+	USE_PIGZ="0"
+	COMPRESSION_TOOL="gzip"
+    else
+	COMPRESSION_TOOL="pigz"
     fi
 
     if [ -z "$MYSQL_BINDIR" ]; then
@@ -295,10 +314,39 @@ function start_backup
 	if ! test -f $XTRABACKUP_BIN ; then
 	    install $2 $3 $4 $5 $6 $7 $8 $9
 	fi
+	if [ hash apt-get 2>/dev/null ]; then
+	    OS="redhat"
+	else
+	    OS="debian"
+	fi
+
+	if [ "$COMPRESSION_TOOL" = "pigz" ]; then
+	    if [ "$OS" = "debian" ]; then
+		hash pigz 2>/dev/null || {  $HTTP_PROXY apt-get -y install pigz ; }
+	    else
+		hash pigz 2>/dev/null || {  $HTTP_PROXY yum -y install pigz ; }
+	    fi
+	fi
+
 	QUERY="select count(column_name) from information_schema.columns where table_schema='$CMON_DB_DB' and table_name='mysql_backup' and column_name='md5sum'"
 	CNT=`$MYSQL_BIN  -A -B -N --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>/dev/null`
 	if [ $CNT -eq 0 ]; then 
 	    QUERY="ALTER TABLE $CMON_DB_DB.mysql_backup ADD COLUMN md5sum VARCHAR(255) DEFAULT ''"
+	    $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
+	    if [  $? -ne 0 ]; then
+		echo "Query failed: $QUERY"
+		echo ""
+		cat /tmp/err.log
+		log_job_message "Query 1 failed" 1
+		log_job 'FAILED' 'backup failed' 1
+		exit 1
+	    fi
+	fi
+
+	QUERY="select count(column_name) from information_schema.columns where table_schema='$CMON_DB_DB' and table_name='mysql_backup' and column_name='compressed'"
+	CNT=`$MYSQL_BIN  -A -B -N --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>/dev/null`
+	if [ $CNT -eq 0 ]; then 
+	    QUERY="ALTER TABLE $CMON_DB_DB.mysql_backup ADD COLUMN compressed TINYINT DEFAULT '1'"
 	    $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
 	    if [  $? -ne 0 ]; then
 		echo "Query failed: $QUERY"
@@ -337,13 +385,16 @@ function start_backup
 	curr_time=`date +%Y-%m-%d-%H-%M-%S`;
 	case $TYPE in
 	    full)
-		FILENAME="backup-full-${curr_time}.tar.gz"
+		if [ $COMPRESSION -eq 1 ]; then
+		    FILENAME="backup-full-${curr_time}.tar.gz"
+		else
+		    FILENAME=""
+		fi
 		PARENTID=0
 		log_job_message "Starting a FULL backup" 0
 		;;      
 	    incr|incremental)
 		TYPE="incremental"
-		FILENAME="backup-incr-${curr_time}.tar.gz"
 		PARENTID=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select backupid from mysql_backup where backup_type='full' and hostname='$HNAME' and cid=$CLUSTER_ID and lsn>0 order by report_ts desc limit 1" 2>/dev/null`
 		LSN=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select lsn from mysql_backup where cid=$CLUSTER_ID and hostname='$HNAME' and status='completed' and lsn>0 order by report_ts desc LIMIT 1" 2>/dev/null`
 		if [ -z "$LSN" ]; then
@@ -358,19 +409,26 @@ function start_backup
 		    echo "No valid LSN, refusing incremental backup. Take a full backup"
 		    exit 1
 		fi
-		if [ $LSN -eq 0 ]; then
-		    log_job_message "No valid LSN, refusing incremental backup. Take a full backup" 1
-		    log_job 'FAILED' 'backup failed' 1
-
-		    echo "No valid LSN, refusing incremental backup. Take a full backup"
-		    exit 1
-		fi
 		if [ $PARENTID -eq 0 ]; then
 		    log_job_message "No valid LSN, refusing incremental backup. Take a full backup" 1
 		    log_job 'FAILED' 'backup failed' 1
 
 		    echo "No valid parentid, refusing incremental backup. Take a full backup"
 		    exit 1
+		fi
+		
+		COMPRESSION=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select compressed from mysql_backup where cid=$CLUSTER_ID and hostname='$HNAME' and status='completed' and backup_type='full' and lsn>0  order by report_ts desc LIMIT 1" 2>/dev/null`
+		if [ -z "$COMPRESSION" ]; then
+		    COMPRESSION=1
+		fi
+		if [ "$COMPRESSION" = "NULL" ]; then
+		    COMPRESSION=1
+		fi
+
+		if [ $COMPRESSION -eq 1 ]; then
+		    FILENAME="backup-incr-${curr_time}.tar.gz"
+		else
+		    FILENAME=""
 		fi
 		log_job_message "Starting an INCREMENTAL backup" 0
 		;;
@@ -391,7 +449,9 @@ function start_backup
 	CLUSTER_TYPE=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select type from cluster where id=$CLUSTER_ID" 2>/dev/null`
 	GALERA_INFO=""
 	BACKUPDIR=${BACKUPDIR}/BACKUP-${ID}
-	mkdir -p $BACKUPDIR	
+	if [ $COMPRESSION -eq 1 ]; then
+	    mkdir -p $BACKUPDIR	
+	fi
 	log_job_message "Backup directory: $BACKUPDIR" 0
 	if [ "$CLUSTER_TYPE" = "galera" ]; then
 	    GALERA_INFO="--galera-info"
@@ -412,7 +472,7 @@ function start_backup
 	QUERY="UPDATE mysql_backup SET status='failed', error=1 WHERE status='running' AND hostname='$HNAME' "
 	$MYSQL_BIN --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY" 2>/dev/null
 	
-	QUERY="INSERT INTO mysql_backup(backupid, cid, hostname,directory,filename, size, error, status, report_ts, backup_type, backup_method, storage_host) VALUES($ID, $CLUSTER_ID, '$HNAME', '$BACKUPDIR','',0,0,'running',now(), '$TYPE', 'xtrabackup', '$HNAME')"
+	QUERY="INSERT INTO mysql_backup(backupid, cid, hostname,directory,filename, size, error, status, report_ts, backup_type, backup_method, storage_host, compressed) VALUES($ID, $CLUSTER_ID, '$HNAME', '$BACKUPDIR','',0,0,'running',now(), '$TYPE', 'xtrabackup', '$HNAME', $COMPRESSION)"
 	$MYSQL_BIN --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY" 2>/dev/null
 	if [ $? -ne 0 ]; then
 	    log_job_message "Failed to create backup record" 1
@@ -432,17 +492,27 @@ function start_backup
            fi 
         fi
         pid="$!"
-	if [ "$TYPE" = "full" ]; then   
-	    $XTRABACKUP_BIN $GALERA_INFO  --defaults-file=$MYCNF --host=127.0.0.1 --user=$CMON_USER --password=$CMON_PASSWORD $THROTTLE  --stream=tar ./  2>$BACKUP_LOGFILE | gzip - > $BACKUPDIR/$FILENAME 
-	    ret=$?
+	if [ "$TYPE" = "full" ]; then 
+	    if [ $COMPRESSION -eq 0 ]; then  
+		$XTRABACKUP_BIN $GALERA_INFO  --defaults-file=$MYCNF --host=127.0.0.1 --user=$CMON_USER --password=$CMON_PASSWORD --no-timestamp $BACKUPDIR 2>$BACKUP_LOGFILE 
+		ret=$?
+	    else
+		$XTRABACKUP_BIN $GALERA_INFO  --defaults-file=$MYCNF --host=127.0.0.1 --user=$CMON_USER --password=$CMON_PASSWORD $THROTTLE  --stream=tar ./  2>$BACKUP_LOGFILE | $COMPRESSION_TOOL - > $BACKUPDIR/$FILENAME 
+		ret=$?
+	    fi
 	    LSN=`cat $BACKUP_LOGFILE | grep 'xtrabackup: The latest check point (for incremental):' | awk -F ':' '{print $3;}'`
 	    if [ -z "$LSN" ]; then
 		LSN=0
 		ret=1
 	    fi
 	else
-	    $XTRABACKUP_BIN $GALERA_INFO  --defaults-file=$MYCNF --host=127.0.0.1 --user=$CMON_USER --password=$CMON_PASSWORD $THROTTLE --incremental --incremental-lsn=$LSN  --stream=xbstream ./ 2>$BACKUP_LOGFILE  | gzip - > $BACKUPDIR/$FILENAME 
-	    ret=$?
+	    if [ $COMPRESSION -eq 0 ]; then  
+		$XTRABACKUP_BIN $GALERA_INFO  --defaults-file=$MYCNF --host=127.0.0.1 --user=$CMON_USER --password=$CMON_PASSWORD --incremental --incremental-lsn=$LSN --no-timestamp $BACKUPDIR 2>$BACKUP_LOGFILE 
+		ret=$?
+	    else
+		$XTRABACKUP_BIN $GALERA_INFO  --defaults-file=$MYCNF --host=127.0.0.1 --user=$CMON_USER --password=$CMON_PASSWORD $THROTTLE --incremental --incremental-lsn=$LSN  --stream=xbstream ./ 2>$BACKUP_LOGFILE | $COMPRESSION_TOOL - > $BACKUPDIR/$FILENAME 		
+		ret=$?
+	    fi
 	    LSN=`cat $BACKUP_LOGFILE | grep 'xtrabackup: The latest check point (for incremental):' | awk -F ':' '{print $3;}'`
 	    if [ -z "$LSN" ]; then
 		ret=1
@@ -461,8 +531,13 @@ function start_backup
 	else
 	    STATUS='completed'
             ret=0
-	    SIZE=`stat --printf='%s' $BACKUPDIR/$FILENAME`
-	    SUM=`md5sum $BACKUPDIR/$FILENAME | awk '{print $1;}'`
+	    if [ $COMPRESSION -eq 1 ]; then  
+		SIZE=`stat --printf='%s' $BACKUPDIR/$FILENAME`
+		SUM=`md5sum $BACKUPDIR/$FILENAME | awk '{print $1;}'`
+	    else
+		SIZE=`du -sb $BACKUPDIR |awk {'print $1'}`
+		SUM=0
+	    fi
 	    if [ $? -ne 0 ]; then
 		SIZE=0
 		FILENAME=''
@@ -752,7 +827,7 @@ function restore
       exit 1
   fi
     
-  LIST=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "set group_concat_max_len=1024*1024;select group_concat(concat(parentid ,',', backup_type, ',', concat(directory,'/', filename), ',' , status, ',', size, ',\'' ,  date_format(report_ts, \"%Y-%M-%d_%H:%i:%s\") , '\'', ',', directory, ',', filename, ',', md5sum) SEPARATOR ' ') from mysql_backup where cid=$CLUSTER_ID and parentid=$BACKUPID and backup_type='full' and lsn>0 and status='completed' order by parentid, backupid" 2>/dev/null`
+  LIST=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "set group_concat_max_len=1024*1024;select group_concat(concat(parentid ,',', backup_type, ',', concat(directory,'/', filename), ',' , status, ',', size, ',\'' ,  date_format(report_ts, \"%Y-%M-%d_%H:%i:%s\") , '\'', ',', directory, ',', filename, ',', md5sum, ',', compressed) SEPARATOR ' ') from mysql_backup where cid=$CLUSTER_ID and parentid=$BACKUPID and backup_type='full' and lsn>0 and status='completed' order by parentid, backupid" 2>/dev/null`
   if [ $? -ne 0 ]; then
       echo "Failed to read backups"
       exit 1
@@ -780,31 +855,43 @@ function restore
       directory=`echo $f | awk -F ',' '{print $7;}'`
       filename=`echo $f | awk -F ',' '{print $8;}'`
       md5=`echo $f | awk -F ',' '{print $9;}'`
-      echo "Restoring into $TARGETDIR/$BACKUPID/:"
-
-      SUM=`md5sum $directory/$filename | awk '{print $1;}'`
-      
-      if [ -n "$md5" ]; then
-	  if [ "$SUM" != "$md5" ]; then
-	      echo "Md5sum does not match! The md5sum of $directory/$filename does not match md5sum stored in cmon db."
-              echo "Refusing to restore."
+      compressed=`echo $f | awk -F ',' '{print $10;}'`
+      if [ $compressed -eq 1 ]; then 
+	  BASE_DIR="$TARGETDIR/$BACKUPID/"
+	  echo "Restoring into ${BASE_DIR}:"
+	  SUM=`md5sum $directory/$filename | awk '{print $1;}'`
+	  
+	  if [ -n "$md5" ]; then
+	      if [ "$SUM" != "$md5" ]; then
+		  echo "Md5sum does not match! The md5sum of $directory/$filename does not match md5sum stored in cmon db."
+		  echo "Refusing to restore."
+		  exit 1
+	      fi
+	  fi
+	  tar -xizf $directory/$filename -C $TARGETDIR/$BACKUPID/
+	  if [ $? -ne 0 ]; then
+              echo "untar $directory/$filename failed"
 	      exit 1
 	  fi
+      else
+	  BASE_DIR="$directory"
+	  echo "Restoring into ${BASE_DIR}:"
       fi
-      tar -xizf $directory/$filename -C $TARGETDIR/$BACKUPID/
-      if [ $? -ne 0 ]; then
-        echo "untar $directory/$filename failed"
-	  exit 1
-      fi
-      $XTRABACKUP_BIN --defaults-file=$MYCNF  --apply-log --redo-only $TARGETDIR/$BACKUPID/
+      $XTRABACKUP_BIN --defaults-file=$MYCNF  --apply-log --redo-only $BASE_DIR
       ret=$?
       if [ $ret -ne 0 ]; then
-        echo "restore full $directory/$filename failed"
-	exit 1
+	  if [ $compressed -eq 1 ]; then 
+              echo "restore full $directory/$filename failed"
+	  else
+              echo "restore full $directory failed"
+	  fi
+	  exit 1
       fi
+      
+      
   done
 
-  LIST=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "set group_concat_max_len=1024*1024;select group_concat(concat(parentid ,',', backup_type, ',', concat(directory,'/', filename), ',' , status, ',', size, ',\'' ,  date_format(report_ts, \"%Y-%M-%d_%H:%i:%s\") , '\'', ',', directory, ',', filename, ',', md5sum) SEPARATOR ' ') from mysql_backup where cid=$CLUSTER_ID and parentid=$BACKUPID and backup_type='incremental' and status='completed' and lsn>0 order by parentid, backupid" 2>/dev/null`
+  LIST=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "set group_concat_max_len=1024*1024;select group_concat(concat(parentid ,',', backup_type, ',', concat(directory,'/', filename), ',' , status, ',', size, ',\'' ,  date_format(report_ts, \"%Y-%M-%d_%H:%i:%s\") , '\'', ',', directory, ',', filename, ',', md5sum, ',', compressed) SEPARATOR ' ') from mysql_backup where cid=$CLUSTER_ID and parentid=$BACKUPID and backup_type='incremental' and status='completed' and lsn>0 order by parentid, backupid" 2>/dev/null`
   if [ $? -ne 0 ]; then
       echo "Failed to read backups"
       echo "Restore FAILED"
@@ -821,6 +908,7 @@ function restore
   if [ "$LIST" = "NULL" ]  || [ -z "$LIST" ]; then
       echo "No increments found"   
   else
+      sleep 3
       for f in $LIST
       do      
 	  backupid=`echo $f | awk -F ',' '{print $1;}'`
@@ -835,24 +923,30 @@ function restore
 	  directory=`echo $f | awk -F ',' '{print $7;}'`
 	  filename=`echo $f | awk -F ',' '{print $8;}'`
 	  md5=`echo $f | awk -F ',' '{print $9;}'`
-	  echo "Restoring INCREMENTS $directory/$filename into  $TARGETDIR/$BACKUPID/:"
-	  SUM=`md5sum $directory/$filename | awk '{print $1;}'`      
-	  if [ -n "$md5" ]; then
-	      if [ "$SUM" != "$md5" ]; then
-		  echo "Md5sum does not match! The md5sum of $directory/$filename does not match md5sum stored in cmon db."
-		  echo "Refusing to restore."
+	  compressed=`echo $f | awk -F ',' '{print $10;}'`
+	  if [ $compressed -eq 1 ]; then 
+	      echo "Restoring INCREMENTS $directory/$filename into  $TARGETDIR/$BACKUPID/:"
+	      INCR_BASE_DIR="$TARGETDIR/tmp/"
+	      SUM=`md5sum $directory/$filename | awk '{print $1;}'`      
+	      if [ -n "$md5" ]; then
+		  if [ "$SUM" != "$md5" ]; then
+		      echo "Md5sum does not match! The md5sum of $directory/$filename does not match md5sum stored in cmon db."
+		      echo "Refusing to restore."
+		      exit 1
+		  fi
+	      fi
+	      
+	      rm -rf ${INCR_BASE_DIR}*
+	      zcat $directory/$filename  |xbstream -x -C  $INCR_BASE_DIR
+	      if [ $? -ne 0 ]; then
+		  echo "xbstream failed"
+		  echo "Restore FAILED"
 		  exit 1
 	      fi
+	  else
+	      INCR_BASE_DIR=$directory
 	  fi
-	  
-	  rm -rf $TARGETDIR/tmp/*
-	  zcat $directory/$filename  |xbstream -x -C  $TARGETDIR/tmp/
-	  if [ $? -ne 0 ]; then
-              echo "xbstream failed"
-	      echo "Restore FAILED"
-	      exit 1
-	  fi
-	  $XTRABACKUP_BIN --defaults-file=$MYCNF   --apply-log --redo-only --incremental-dir=$TARGETDIR/tmp/ /$TARGETDIR/$BACKUPID/ 
+	  $XTRABACKUP_BIN --defaults-file=$MYCNF   --apply-log --redo-only --incremental-dir=$INCR_BASE_DIR $BASE_DIR
 	  ret=$?
 	  if [ $ret -ne 0 ]; then
               echo "restore incremental $directory/$filename failed"
@@ -863,25 +957,32 @@ function restore
   fi
   rm -rf $TARGETDIR/tmp/
 
+  $XTRABACKUP_BIN --defaults-file=$MYCNF   --apply-log $BASE_DIR
+  ret=$?
+  if [ $ret -ne 0 ]; then
+      echo "restore innobackupex --apply-log failed"
+      echo "Restore FAILED"
+      exit 1
+  fi
   
-  if [ -f $TARGETDIR/$BACKUPID/xtrabackup_galera_info ]; then
-      UUID=`cat $TARGETDIR/$BACKUPID/xtrabackup_galera_info | awk -F: '{print $1;}'`
-      SEQNO=`cat $TARGETDIR/$BACKUPID/xtrabackup_galera_info | awk -F: '{print $2;}'`
-      cat << 'EOF' > $TARGETDIR/$BACKUPID/grastate.dat
+  if [ -f ${BASE_DIR}/xtrabackup_galera_info ]; then
+      UUID=`cat ${BASE_DIR}/xtrabackup_galera_info | awk -F: '{print $1;}'`
+      SEQNO=`cat ${BASE_DIR}/xtrabackup_galera_info | awk -F: '{print $2;}'`
+      cat << 'EOF' > ${BASE_DIR}/grastate.dat
 version: 2.1
 uuid:    _UUID
 seqno:   _SEQNO
 cert_index:
 EOF
-      sed -i.bak "s/_UUID/$UUID/g" $TARGETDIR/$BACKUPID/grastate.dat
-      sed -i.bak "s/_SEQNO/$SEQNO/g" $TARGETDIR/$BACKUPID/grastate.dat
+      sed -i.bak "s/_UUID/$UUID/g" ${BASE_DIR}/grastate.dat
+      sed -i.bak "s/_SEQNO/$SEQNO/g" ${BASE_DIR}/grastate.dat
   fi
   echo "Restore OK"
   echo "To copy back the restored data into your datadir of mysqld do:"
   echo "* Shutdown the cmon controller to prevent automatic recovery"
   echo "* Shutdown the cmon agent on this host to prevent automatic recovery"
   echo "* Shutdown the mysql server "
-  echo "* innobackupex --copy-back $TARGETDIR/$BACKUPID/"
+  echo "* innobackupex --copy-back ${BASE_DIR}"
   echo "* chwon mysql:mysql -R <mysqld datadir>"  
 
   exit 0
@@ -942,7 +1043,7 @@ function list_backups
     test_connection 127.0.0.1
 
     HNAME=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$CMON_DB_PORT -e "SHOW GLOBAL VARIABLES LIKE 'hostname'" 2>/dev/null | awk '{print $2;}'`
-    LIST=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "set group_concat_max_len=1024*1024;select group_concat(concat(parentid ,',', backup_type, ',', concat(directory,'/', filename), ',' , status, ',', size, ',\'' ,  date_format(report_ts, \"%Y-%M-%d_%H:%i:%s\") , '\'', ',',lsn, ',', md5sum) SEPARATOR ' ') from mysql_backup where cid=$CLUSTER_ID and backup_method='xtrabackup' and hostname='$HNAME' and parentid>0 order by parentid, backupid" 2>/dev/null`
+    LIST=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "set group_concat_max_len=1024*1024;select group_concat(concat(parentid ,',', backup_type, ',', concat(directory,'/', filename), ',' , status, ',', size, ',\'' ,  date_format(report_ts, \"%Y-%M-%d_%H:%i:%s\") , '\'', ',',lsn, ',', md5sum, ',', compressed) SEPARATOR ' ') from mysql_backup where cid=$CLUSTER_ID and backup_method='xtrabackup' and hostname='$HNAME' and parentid>0 order by parentid, backupid" 2>/dev/null`
     if [ $? -ne 0 ]; then
 	echo "Failed to query for backups"
 	exit 1
@@ -963,6 +1064,7 @@ function list_backups
 	report_ts=`echo $f | awk -F ',' '{print $6;}'`
 	lsn=`echo $f | awk -F ',' '{print $7;}'`
 	md5=`echo $f | awk -F ',' '{print $8;}'`
+	compressed=`echo $f | awk -F ',' '{print $9;}'`
 	VERIFICATION_PARENT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select count(backupid) from mysql_backup where cid=$CLUSTER_ID and backup_method='xtrabackup' and hostname='$HNAME' and backupid=$backupid order by parentid, backupid" 2>/dev/null`
 	if [ $VERIFICATION_PARENT -gt 0 ]; then	  
 	    if [ "$backup_type" = "full" ];  then
@@ -972,16 +1074,18 @@ function list_backups
 		echo "   backup set: $backupid"
 		echo "   status:     $status"
 		echo "   location:   $location ($size bytes)"
+		echo "   compressed: $compressed"
 		echo "   lsn:        $lsn"
 		echo "   md5:        $md5"
 	    else
 		echo "   >> incremental backup taken $report_ts:"
-		echo "      server:   $HNAME"
-		echo "      parent:   $backupid"
-		echo "      status:   $status"
-		echo "      location: $location ($size bytes)"	
-		echo "      lsn:      $lsn"
-		echo "      md5:      $md5"
+		echo "      server:     $HNAME"
+		echo "      parent:     $backupid"
+		echo "      status:     $status"
+		echo "      location:   $location ($size bytes)"	
+		echo "      compressed: $compressed"
+		echo "      lsn:        $lsn"
+		echo "      md5:        $md5"
 	    fi
 	else
             echo "==========================================================================="
@@ -1106,7 +1210,7 @@ function install
 	    ;;
 	debian)
 	    $HTTP_PROXY apt-get -q -y update 
-	    hash lsb_release 2>/dev/null || {  $HTTP_PROXY apt-get install lsb-release ; }
+	    hash lsb_release 2>/dev/null || {  $HTTP_PROXY apt-get install -y lsb-release ; }
 	    LSB=`lsb_release -c -s`
 	    if [ -z "$LSB" ]; then
 		echo "'lsb_release -c -s' return empty"

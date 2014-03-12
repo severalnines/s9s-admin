@@ -1,5 +1,4 @@
 #!/bin/bash
-set -x 
 BACKUP_LOGFILE=$1
 BACKUP_HOSTNAME=$2
 SSH_USER=$3
