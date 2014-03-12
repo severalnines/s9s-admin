@@ -860,15 +860,22 @@ function install_garbd
     sleep 2
     log_job 'RUNNING' 'installing garbd' 0
 
-    DONOR_HOSTNAME=`$MYSQL_BIN -B -N $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$CMON_DB_HOST --port=$CMON_DB_PORT --database=$CMON_DB_DB  -e "SELECT hostname FROM $CMON_DB_DB.mysql_server WHERE cid=${CLUSTER_ID} AND status=0 LIMIT 1"`
+    DONOR_HOSTNAME=`$MYSQL_BIN -B -N $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$CMON_DB_HOST --port=$CMON_DB_PORT --database=$CMON_DB_DB  -e "SELECT group_concat(concat(hostname, ':', $GALERA_PORT)) FROM $CMON_DB_DB.mysql_server WHERE cid=${CLUSTER_ID}"`
     if [ -z "$DONOR_HOSTNAME" ]; then
+	log_job_message "Could not get a cluster address" 1
+	log_job 'FAILED' 'install garbd failed' 1
+	exit 1
+    fi
+
+    ANY_HOSTNAME=`$MYSQL_BIN -B -N $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$CMON_DB_HOST --port=$CMON_DB_PORT --database=$CMON_DB_DB  -e "SELECT hostname FROM $CMON_DB_DB.mysql_server WHERE cid=${CLUSTER_ID} AND status=0 LIMIT 1"`
+    if [ -z "$ANY_HOSTNAME" ]; then
 	log_job_message "Could not get a cluster address" 1
 	log_job 'FAILED' 'install garbd failed' 1
 	exit 1
     fi
     
     QUERY="SHOW GLOBAL VARIABLES LIKE 'wsrep_cluster_name'"
-    CLUSTER_NAME=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$DONOR_HOSTNAME --port=$CMON_DB_PORT -A -Bse "$QUERY"`
+    CLUSTER_NAME=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$ANY_HOSTNAME --port=$CMON_DB_PORT -A -Bse "$QUERY"`
     if [ $? -ne 0 ]; then
         log_job_message "Failed to get wsrep_cluster_name" 1
 	log_job 'FAILED' 'install garbd failed' 1
@@ -1027,7 +1034,7 @@ EOF
     echo "Starting garbd"
     start_garbd $XHOSTNAME $DONOR_HOSTNAME $GALERA_PORT $CLUSTER_NAME
     sleep 2
-    QUERY="REPLACE INTO ext_proc (cid, hostname,bin, opts,cmd, proc_name, port, status) VALUES($CLUSTER_ID, '$XHOSTNAME','/usr/bin/garbd', '-a gcomm://${DONOR_HOSTNAME}:${GALERA_PORT} -g  -d', '/usr/bin/garbd  -a gcomm://${DONOR_HOSTNAME}:${GALERA_PORT} -g $CLUSTER_NAME -d','garbd', $GALERA_PORT , 0)"
+    QUERY="REPLACE INTO ext_proc (cid, hostname,bin, opts,cmd, proc_name, port, status) VALUES($CLUSTER_ID, '$XHOSTNAME','/usr/bin/garbd', '-a gcomm://${DONOR_HOSTNAME} -g -o gmcast.listen_addr=tcp://0.0.0.0:${GALERA_PORT}  -d', '/usr/bin/garbd  -a gcomm://${DONOR_HOSTNAME} -g $CLUSTER_NAME -o gmcast.listen_addr=tcp://0.0.0.0:${GALERA_PORT} -d','garbd', $GALERA_PORT , 0)"
     $MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$CMON_DB_HOST --port=$CMON_DB_PORT --database=$CMON_DB_DB -N -Bse "$QUERY"  2>&1 >${S9S_TMPDIR}/err.log    
     if [  $? -ne 0 ]; then
 	log_job_message "Query failed: $QUERY" 1
@@ -1125,7 +1132,7 @@ function start_garbd
 	echo "Node $xHNAME is already started"
 	exit 1
     fi
-    remote_cmd3 $xHNAME "nohup nice nohup nice /usr/bin/garbd  -a gcomm://${xDONOR}:${xGALERA_PORT} -g $xCLUSTER_NAME -d > /dev/null 2>&1"    
+    remote_cmd3 $xHNAME "nohup nice nohup nice /usr/bin/garbd  -a gcomm://${xDONOR}:${xGALERA_PORT} -g $xCLUSTER_NAME -o gmcast.listen_addr=tcp://0.0.0.0:${xGALERA_PORT} -d > /dev/null 2>&1"    
 }
 
 
