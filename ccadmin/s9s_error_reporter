@@ -60,7 +60,7 @@ function init
     if ! test -f $MYSQL_BIN; then
 	echo "Could not find mysql client binary"
 	log_job_message "Could not find mysql client binary" 1
-	log_job 'FAILED' 'backup failed' 1
+	log_job 'FAILED' 'Create error report failed.' 1
 	exit 1
     fi
     WWWROOT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='WWWROOT' AND cid=$CLUSTER_ID"`
@@ -104,7 +104,7 @@ function remote_cmd()
    done
    
    log_job_message "Command failed: $xcommand" 1
-   log_job 'FAILED' 's9s_sw_update failed' 1
+   log_job 'FAILED' 'Create error report failed.' 1
    printf "\033[31m[failed]\033[0m\n"
    echo $x
    echo 'The following command failed:'
@@ -254,13 +254,24 @@ function remote_copy_from_r2()
 }
 
 
+function collect_controller()
+{
+    mkdir -p $savedir/controller
+    tmpsavedir=$savedir/controller
+    $MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "SELECT * FROM mysql_server WHERE cid=$CLUSTER_ID" > $tmpsavedir/mysql_server
+    $MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "SELECT * FROM hosts WHERE cid=$CLUSTER_ID" > $tmpsavedir/hosts
+    $MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "SELECT * FROM cmon_job_message WHERE cid=$CLUSTER_ID" > $tmpsavedir/cmon_job_messages
+    $MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "SELECT * FROM cmon_job WHERE cid=$CLUSTER_ID" > $tmpsavedir/cmon_job
+    
+    cp $configfile $tmpsavedir
+    CMON_LOG=`grep logfile /etc/cmon.cnf |grep -v '#' | awk -F '=' '{print $2;}'`
+    cp ${CMON_LOG}* $tmpsavedir    
+}
+
+
 function collect_mysql_logs()
 {
     printf "%s: %-80s\n" "Severalnines" "Copying logs";
-    $MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "SELECT * FROM mysql_server WHERE cid=$CLUSTER_ID" > $savedir/mysql_server
-    $MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "SELECT * FROM hosts WHERE cid=$CLUSTER_ID" > $savedir/hosts
-    $MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "SELECT * FROM cmon_job_message WHERE cid=$CLUSTER_ID" > $savedir/cmon_job_messages
-    $MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "SELECT * FROM cmon_job WHERE cid=$CLUSTER_ID" > $savedir/cmon_job
 
     for host in $HOSTNAMES
     do
@@ -272,7 +283,7 @@ function collect_mysql_logs()
 	DATADIR=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$host --port=$CMON_DB_PORT -A -Bse "$QUERY"`
 	if [ $? -ne 0 ]; then
             log_job_message "Failed to get datadir" 1
-	    log_job 'FAILED' 's9s_error_reporter' 1
+	    log_job 'FAILED' 'Create error report failed.' 1
             exit 1
 	fi
 	DATADIR=`echo $DATADIR | awk   '{print $2;}'`
@@ -281,7 +292,7 @@ function collect_mysql_logs()
 	ERRLOG=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$host --port=$CMON_DB_PORT -A -Bse "$QUERY"`
 	if [ $? -ne 0 ]; then
             log_job_message "Failed to get log-error" 1
-	    log_job 'FAILED' 's9s_error_reporter' 1
+	    log_job 'FAILED' 'Create error report failed.' 1
             exit 1
 	fi
 	ERRLOG=`echo $ERRLOG | awk   '{print $2;}'`
@@ -322,10 +333,9 @@ function collect_mysql_logs()
 function collect_ndb_logs()
 {
     printf "%s: %-80s\n" "Severalnines" "Copying logs";
-    MGM_HOSTNAME=`$MYSQL_BIN -B -N $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$CMON_DB_HOST --port=$CMON_DB_PORT --database=$CMON_DB_DB  -e " select group_concat(h.hostname SEPARATOR ' ') from hosts h, node_state n where n.cid=h.cid and n.hostid=h.id WHERE n.cid=${CLUSTER_ID} and n.node_type='NDB_MGMD' ORDER BY RAND() LIMIT 1"`
-    MGM_HOSTNAME=`$MYSQL_BIN -B -N $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$CMON_DB_HOST --port=$CMON_DB_PORT --database=$CMON_DB_DB  -e " select group_concat(h.hostname SEPARATOR ' ') from hosts h, node_state n where n.cid=h.cid and n.hostid=h.id WHERE n.cid=${CLUSTER_ID} and n.node_type='NDB_MGMD' ORDER BY RAND() LIMIT 1"`
-    
-    NDBD_HOSTNAMES_TUPLE=$(ssh $SSH_OPTS $SSH_USER@$MGM_HOSTNAME "$MYSQL_BASEDIR/ndb_config -c $NDB_CONNECTSTRING --query hostname,datadir --type ndbd"
+    MGM_HOSTNAME=`$MYSQL_BIN -B -N $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$CMON_DB_HOST --port=$CMON_DB_PORT --database=$CMON_DB_DB  -e " select h.hostname from hosts h, node_state n where n.cid=h.cid and n.hostid=h.id and n.cid=${CLUSTER_ID} and n.node_type='NDB_MGMD' ORDER BY RAND() LIMIT 1"`
+
+    NDBD_HOSTNAMES_TUPLE=`ssh $SSH_OPTS $SSH_USER@$MGM_HOSTNAME "$MYSQL_BASEDIR/bin/ndb_config -c $NDB_CONNECTSTRING --query hostname,datadir --type ndbd"`
     
     for tup in $NDBD_HOSTNAMES_TUPLE
     do
@@ -353,9 +363,10 @@ function collect_ndb_logs()
 function collect_mgm_logs()
 {
     printf "%s: %-80s\n" "Severalnines" "Copying logs";
-    MGM_HOSTNAME=`$MYSQL_BIN -B -N $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$CMON_DB_HOST --port=$CMON_DB_PORT --database=$CMON_DB_DB  -e " select group_concat(h.hostname SEPARATOR ' ') from hosts h, node_state n where n.cid=h.cid and n.hostid=h.id WHERE n.cid=${CLUSTER_ID} and n.node_type='NDB_MGMD' ORDER BY RAND() LIMIT 1"`
-    
-    MGM_HOSTNAMES_TUPLE=$(ssh $SSH_OPTS $SSH_USER@$MGM_HOSTNAME "$MYSQL_BASEDIR/ndb_config -c $NDB_CONNECTSTRING --query hostname,datadir --type ndb_mgmd"
+    MGM_HOSTNAME=`$MYSQL_BIN -B -N $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$CMON_DB_HOST --port=$CMON_DB_PORT --database=$CMON_DB_DB  -e " select h.hostname from hosts h, node_state n where n.cid=h.cid and n.hostid=h.id and n.cid=${CLUSTER_ID} and n.node_type='NDB_MGMD' ORDER BY RAND() LIMIT 1"`
+
+    MGM_HOSTNAMES_TUPLE=`ssh $SSH_OPTS $SSH_USER@$MGM_HOSTNAME "$MYSQL_BASEDIR/bin/ndb_config -c $NDB_CONNECTSTRING --query hostname,datadir --type ndb_mgmd"`
+
     
     for tup in $MGM_HOSTNAMES_TUPLE
     do
@@ -367,7 +378,7 @@ function collect_mgm_logs()
 	remote_cmd_nofail $host "chown $SSH_USER /tmp/ndb*log*"
 	remote_copy_from_r2 $host /tmp/ndb*log* $tmpsavedir/
 	remote_copy_from_r2 $host /tmp/ndb*trace* $tmpsavedir/
-	remote_cmd_nofail $host "rm /tmp/ndb*logl*"
+	remote_cmd_nofail $host "rm /tmp/ndb*log*"
 	if [ $AGENTLESS -eq 0 ]; then 
 	   remote_cmd_nofail $host "cp /var/log/cmon.log /tmp"
 	   remote_cmd_nofail $host "chown $SSH_USER /tmp/cmon.log"
@@ -382,28 +393,31 @@ function create_report
 {
     init 
     load_opts $CLUSTER_ID
+    
+    if [ -n "$DESTINATION" ]; then
+	S9S_TMPDIR=$DESTINATION
+    fi
 
     now=$(date +"%Y%m%d-%H%M%S")
     error_pkg_tgz=error_report_$now.tar.gz    
     savedir=$S9S_TMPDIR/error_report_$now
     mkdir $savedir
     
-    CLUSTER_TYPE=`$MYSQL_BIN -B -N $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$CMON_DB_HOST --port=$CMON_DB_PORT --database=$CMON_DB_DB  -e "SELECT type FROM cluster WHERE cid=${CLUSTER_ID}"`
+    CLUSTER_TYPE=`$MYSQL_BIN -B -N $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$CMON_DB_HOST --port=$CMON_DB_PORT --database=$CMON_DB_DB  -e "SELECT type FROM cluster WHERE id=${CLUSTER_ID}"`
         
     HOSTNAMES=`$MYSQL_BIN -B -N $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$CMON_DB_HOST --port=$CMON_DB_PORT --database=$CMON_DB_DB  -e "SELECT group_concat(hostname SEPARATOR ' ') FROM mysql_server WHERE cid=${CLUSTER_ID}"`
     if [ -z "HOSTNAMES" ]; then
-	log_job_message "Could not get a cluster address" 1
-	log_job 'FAILED' 'install garbd failed' 1
+	log_job_message "Could not get hostnames" 1
+	log_job 'FAILED' 'Create error report failed.' 1
 	exit 1
     fi
     
-    
+    collect_controller
     collect_mysql_logs
     if [ "$CLUSTER_TYPE" = "mysqlcluster" ]; then
 	collect_ndb_logs
 	collect_mgm_logs
-    fi
-    
+    fi    
 
 
     currdir=`pwd`
@@ -411,18 +425,25 @@ function create_report
     tar cfz ${error_pkg_tgz} error_report_$now
     cd $currdir
     echo ""
-    echo "Please attach $S9S_TMPDIR/${error_pkg_tgz} to the support issue."
+    log_job_message "Please attach $S9S_TMPDIR/${error_pkg_tgz} to the support issue." 0
+    log_job 'FINISHED' 'Successfully created error report.' 0
     
 }
 
 
-args=`getopt p:s:P:h:i:N:n:f: $*`
+args=`getopt p:s:P:h:i:N:n:f:j:d: $*`
 set -- $args
 for i
 do
     case "$i" in
         -i)
             CLUSTER_ID="$2"; shift;
+            shift;;
+	-j)
+            JOBID="$2"; shift;
+            shift;;
+	-d)
+            DESTINATION="$2"; shift;
             shift;;
         --)
             shift; break;;
