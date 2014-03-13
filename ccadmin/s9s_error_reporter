@@ -428,6 +428,14 @@ function create_report
     log_job_message "Please attach $S9S_TMPDIR/${error_pkg_tgz} to the support issue." 0
     log_job 'FINISHED' 'Successfully created error report.' 0
     
+    CREATE_TABLE="CREATE TABLE IF NOT EXISTS cmon_error_reports(id bigint unsigned auto_increment, cid integer unsigned, errorlog_filepath varchar(512) NOT NULL DEFAULT '', created TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(id))ENGINE=innodb"
+    `$MYSQL_BIN -B -N $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$CMON_DB_HOST --port=$CMON_DB_PORT --database=$CMON_DB_DB  -e "$CREATE_TABLE"`
+    if [ $? -eq 0 ]; then 
+	INSERT="INSERT INTO cmon_error_reports(cid, errorlog_filepath, created) VALUES($CLUSTER_ID, \"$S9S_TMPDIR/${error_pkg_tgz}\", now())"
+	`$MYSQL_BIN -B -N $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$CMON_DB_HOST --port=$CMON_DB_PORT --database=$CMON_DB_DB  -e "$INSERT"`
+    fi
+    
+
 }
 
 
