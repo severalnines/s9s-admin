@@ -122,6 +122,8 @@ function load_opts
     HTTP_PROXY=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='HTTP_PROXY' AND cid=$CLUSTER_ID" 2>/dev/null`
     CONFIGDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='CONFIGDIR' AND cid=$CLUSTER_ID" 2>/dev/null`
     MYSQL_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MYSQL_PORT' AND cid=$CLUSTER_ID" 2>/dev/null`
+    NDB_CONNECTSTRING=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='NDB_CONNECTSTRING' AND cid=$CLUSTER_ID" 2>/dev/null`
+    MYSQL_BASEDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MYSQL_BASEDIR' AND cid=$CLUSTER_ID" 2>/dev/null`
     GALERA_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='GALERA_PORT' AND cid=$CLUSTER_ID" 2>/dev/null`
     MYSQL_BASEDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MYSQL_BASEDIR' AND cid=$CLUSTER_ID" 2>/dev/null`
     STAGING_DIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='STAGING_DIR' AND cid=$CLUSTER_ID" 2>/dev/null`
@@ -252,7 +254,7 @@ function remote_copy_from_r2()
 }
 
 
-function collect_logs()
+function collect_mysql_logs()
 {
     printf "%s: %-80s\n" "Severalnines" "Copying logs";
     $MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "SELECT * FROM mysql_server WHERE cid=$CLUSTER_ID" > $savedir/mysql_server
@@ -262,7 +264,7 @@ function collect_logs()
 
     for host in $HOSTNAMES
     do
-	mkdir $savedir/$host
+	mkdir -p $savedir/$host
 	tmpsavedir=$savedir/$host
 	$MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --port=$CMON_DB_PORT -h$host -e "SHOW GLOBAL STATUS" > $tmpsavedir/show_status
 	$MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --port=$CMON_DB_PORT -h$host -e "SHOW GLOBAL VARIABLES" > $tmpsavedir/show_variables
@@ -284,19 +286,24 @@ function collect_logs()
 	fi
 	ERRLOG=`echo $ERRLOG | awk   '{print $2;}'`
 	remote_cmd_nofail $host "cp $ERRLOG /tmp"
-	remote_cmd_nofail $host "cp $DATADIR/GRA* /tmp"
-	remote_cmd_nofail $host "cp $DATADIR/inno*.log /tmp"
-	remote_cmd_nofail $host "cp $DATADIR/sst.err /tmp"
-
+	if [ "$CLUSTER_TYPE" = "galera" ]; then
+	    remote_cmd_nofail $host "cp $DATADIR/GRA* /tmp"
+	    remote_cmd_nofail $host "cp $DATADIR/inno*.log /tmp"
+	    remote_cmd_nofail $host "cp $DATADIR/sst.err /tmp"
+	    remote_cmd_nofail $host "chown $SSH_USER /tmp/inno*.log"
+	    remote_cmd_nofail $host "chown $SSH_USER /tmp/sst.err"
+	    remote_cmd_nofail $host "chown $SSH_USER /tmp/GRA*"
+	    remote_copy_from_r2 $host /tmp/innodb*.log $tmpsavedir/
+	    remote_copy_from_r2 $host /tmp/sst.err $tmpsavedir/
+	    remote_copy_from_r2 $host /tmp/GRA*  $tmpsavedir/
+	    remote_cmd_nofail $host "rm /tmp/innodb*.log"
+	    remote_cmd_nofail $host "rm /tmp/sst.err"
+	    remote_cmd_nofail $host "rm /tmp/GRA*"
+	fi
 	remote_cmd_nofail $host "chown $SSH_USER /tmp/error.log"
 	remote_cmd_nofail $host "chown $SSH_USER /tmp/mysql*.log"
-	remote_cmd_nofail $host "chown $SSH_USER /tmp/inno*.log"
-	remote_cmd_nofail $host "chown $SSH_USER /tmp/sst.err"
 	remote_copy_from_r2 $host /tmp/error.log $tmpsavedir/
 	remote_copy_from_r2 $host /tmp/mysql*.log $tmpsavedir/
-	remote_copy_from_r2 $host /tmp/innodb*.log $tmpsavedir/
-	remote_copy_from_r2 $host /tmp/sst.err $tmpsavedir/
-	remote_copy_from_r2 $host /tmp/GRA*  $tmpsavedir/
 	if [ $AGENTLESS -eq 0 ]; then 
 	   remote_cmd_nofail $host "cp /var/log/cmon.log* /tmp"
 	   remote_cmd_nofail $host "chown $SSH_USER /tmp/cmon.log*"
@@ -308,13 +315,67 @@ function collect_logs()
 	   remote_cmd_nofail $host "rm /tmp/cmon.log*"
        fi
        remote_cmd_nofail $host "rm /tmp/error.log"
-       remote_cmd_nofail $host "rm /tmp/innodb*.log"
        remote_cmd_nofail $host "rm /tmp/mysql*.log"
-       remote_cmd_nofail $host "rm /tmp/sst.err"
-       remote_cmd_nofail $host "rm /tmp/GRA*"
     done
 }
 
+function collect_ndb_logs()
+{
+    printf "%s: %-80s\n" "Severalnines" "Copying logs";
+    MGM_HOSTNAME=`$MYSQL_BIN -B -N $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$CMON_DB_HOST --port=$CMON_DB_PORT --database=$CMON_DB_DB  -e " select group_concat(h.hostname SEPARATOR ' ') from hosts h, node_state n where n.cid=h.cid and n.hostid=h.id WHERE n.cid=${CLUSTER_ID} and n.node_type='NDB_MGMD' ORDER BY RAND() LIMIT 1"`
+    MGM_HOSTNAME=`$MYSQL_BIN -B -N $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$CMON_DB_HOST --port=$CMON_DB_PORT --database=$CMON_DB_DB  -e " select group_concat(h.hostname SEPARATOR ' ') from hosts h, node_state n where n.cid=h.cid and n.hostid=h.id WHERE n.cid=${CLUSTER_ID} and n.node_type='NDB_MGMD' ORDER BY RAND() LIMIT 1"`
+    
+    NDBD_HOSTNAMES_TUPLE=$(ssh $SSH_OPTS $SSH_USER@$MGM_HOSTNAME "$MYSQL_BASEDIR/ndb_config -c $NDB_CONNECTSTRING --query hostname,datadir --type ndbd"
+    
+    for tup in $NDBD_HOSTNAMES_TUPLE
+    do
+	host=`echo $tup |awk '{split($0,a,","); print a[1]}'`
+	ndbd_datadir=`echo $tup |awk '{split($0,a,","); print a[2]}'`
+	mkdir -p $savedir/$host
+	tmpsavedir=$savedir/$host
+	remote_cmd_nofail $host "cp $ndbd_datadir/ndb*log* /tmp"
+	remote_cmd_nofail $host "cp $ndbd_datadir/ndb*trace* /tmp"
+	remote_cmd_nofail $host "chown $SSH_USER /tmp/ndb*log*"
+	remote_cmd_nofail $host "chown $SSH_USER /tmp/ndb*trace*"
+	remote_copy_from_r2 $host /tmp/ndb*log* $tmpsavedir/
+	remote_copy_from_r2 $host /tmp/ndb*trace* $tmpsavedir/
+	remote_cmd_nofail $host "rm /tmp/ndb*log*"
+	remote_cmd_nofail $host "rm /tmp/ndb*trace*"
+	if [ $AGENTLESS -eq 0 ]; then 
+	    remote_cmd_nofail $host "cp /var/log/cmon.log /tmp"
+	    remote_cmd_nofail $host "chown $SSH_USER /tmp/cmon.log"
+	    remote_copy_from_r2 $host /tmp/cmon.log $tmpsavedir/cmon.log.$host
+	    remote_cmd_nofail $host "rm /tmp/cmon.log"
+	fi
+    done
+}
+
+function collect_mgm_logs()
+{
+    printf "%s: %-80s\n" "Severalnines" "Copying logs";
+    MGM_HOSTNAME=`$MYSQL_BIN -B -N $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$CMON_DB_HOST --port=$CMON_DB_PORT --database=$CMON_DB_DB  -e " select group_concat(h.hostname SEPARATOR ' ') from hosts h, node_state n where n.cid=h.cid and n.hostid=h.id WHERE n.cid=${CLUSTER_ID} and n.node_type='NDB_MGMD' ORDER BY RAND() LIMIT 1"`
+    
+    MGM_HOSTNAMES_TUPLE=$(ssh $SSH_OPTS $SSH_USER@$MGM_HOSTNAME "$MYSQL_BASEDIR/ndb_config -c $NDB_CONNECTSTRING --query hostname,datadir --type ndb_mgmd"
+    
+    for tup in $MGM_HOSTNAMES_TUPLE
+    do
+	host=`echo $tup |awk '{split($0,a,","); print a[1]}'`
+	ndbd_datadir=`echo $tup |awk '{split($0,a,","); print a[2]}'`
+	mkdir -p $savedir/$host
+	tmpsavedir=$savedir/$host
+	remote_cmd_nofail $host "cp $ndbd_datadir/ndb*log* /tmp"
+	remote_cmd_nofail $host "chown $SSH_USER /tmp/ndb*log*"
+	remote_copy_from_r2 $host /tmp/ndb*log* $tmpsavedir/
+	remote_copy_from_r2 $host /tmp/ndb*trace* $tmpsavedir/
+	remote_cmd_nofail $host "rm /tmp/ndb*logl*"
+	if [ $AGENTLESS -eq 0 ]; then 
+	   remote_cmd_nofail $host "cp /var/log/cmon.log /tmp"
+	   remote_cmd_nofail $host "chown $SSH_USER /tmp/cmon.log"
+	   remote_copy_from_r2 $host /tmp/cmon.log $tmpsavedir/
+	   remote_cmd_nofail $host "rm /tmp/cmon.log"
+	fi
+    done
+}
 
 
 function create_report
@@ -326,9 +387,10 @@ function create_report
     error_pkg_tgz=error_report_$now.tar.gz    
     savedir=$S9S_TMPDIR/error_report_$now
     mkdir $savedir
-
+    
+    CLUSTER_TYPE=`$MYSQL_BIN -B -N $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$CMON_DB_HOST --port=$CMON_DB_PORT --database=$CMON_DB_DB  -e "SELECT type FROM cluster WHERE cid=${CLUSTER_ID}"`
         
-    HOSTNAMES=`$MYSQL_BIN -B -N $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$CMON_DB_HOST --port=$CMON_DB_PORT --database=$CMON_DB_DB  -e "SELECT group_concat(hostname SEPARATOR ' ') FROM $CMON_DB_DB.mysql_server WHERE cid=${CLUSTER_ID}"`
+    HOSTNAMES=`$MYSQL_BIN -B -N $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$CMON_DB_HOST --port=$CMON_DB_PORT --database=$CMON_DB_DB  -e "SELECT group_concat(hostname SEPARATOR ' ') FROM mysql_server WHERE cid=${CLUSTER_ID}"`
     if [ -z "HOSTNAMES" ]; then
 	log_job_message "Could not get a cluster address" 1
 	log_job 'FAILED' 'install garbd failed' 1
@@ -336,7 +398,14 @@ function create_report
     fi
     
     
-    collect_logs
+    collect_mysql_logs
+    if [ "$CLUSTER_TYPE" = "mysqlcluster" ]; then
+	collect_ndb_logs
+	collect_mgm_logs
+    fi
+    
+
+
     currdir=`pwd`
     cd $S9S_TMPDIR
     tar cfz ${error_pkg_tgz} error_report_$now
