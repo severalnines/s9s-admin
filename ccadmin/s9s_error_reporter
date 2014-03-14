@@ -304,10 +304,11 @@ function collect_mysql_logs()
 	    remote_cmd_nofail $host "chown $SSH_USER /tmp/inno*.log"
 	    remote_cmd_nofail $host "chown $SSH_USER /tmp/sst.err"
 	    remote_cmd_nofail $host "chown $SSH_USER /tmp/GRA*"
-	    remote_copy_from_r2 $host /tmp/innodb*.log $tmpsavedir/
+	    remote_copy_from_r2 $host /tmp/inno*.log $tmpsavedir/
 	    remote_copy_from_r2 $host /tmp/sst.err $tmpsavedir/
 	    remote_copy_from_r2 $host /tmp/GRA*  $tmpsavedir/
-	    remote_cmd_nofail $host "rm /tmp/innodb*.log"
+	    sleep 10
+	    remote_cmd_nofail $host "rm /tmp/inno*.log"
 	    remote_cmd_nofail $host "rm /tmp/sst.err"
 	    remote_cmd_nofail $host "rm /tmp/GRA*"
 	fi
