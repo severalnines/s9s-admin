@@ -10,7 +10,7 @@
 LOCKFILE="/tmp/s9s_change_passwd.lock"
 
 function init
-{    
+{
     FILES=`ls /etc/cmon.cnf 2>&1`
     FILES2=`ls /etc/cmon.d/*.cnf 2>&1`
     FILES="$FILES $FILES2"
@@ -41,23 +41,23 @@ function init
     CLUSTER_TYPE=$type
     MYSQL_OPTS="--connect-timeout=$CONNECT_TIMEOUT"
     OSUSER=$USER
-    JOBID=0    
-    
+    JOBID=0
+
     if [ "$OSUSER" != "root" ]; then
 	echo "must be executed as 'root' or with 'sudo'"
 	exit 1
-    fi    
+    fi
 }
 
 function log_job_message
-{    
+{
     MSG=$1
     EXIT_CODE=$2
     if [ -z "$EXIT_CODE" ]; then
 	EXIT_CODE=1
     fi
     QUERY="INSERT INTO cmon_job_message(cid, jobid,message,exit_code,report_ts) VALUES($CLUSTER_ID,$JOBID,\"$MSG\",$EXIT_CODE,now())"
-    if [ $JOBID -ne 0 ]; then 
+    if [ $JOBID -ne 0 ]; then
 	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
     else
 	if [ $EXIT_CODE -ne 0 ]; then
@@ -68,12 +68,12 @@ function log_job_message
 }
 
 function log_job
-{    
+{
     STATUS=$1
     STATUS_TXT=$2
     EXIT_CODE=$3
     QUERY="UPDATE cmon_job SET status='$STATUS', status_txt='$STATUS_TXT', exit_code=$EXIT_CODE, report_ts=NOW()  WHERE cid=$CLUSTER_ID AND jobid=$JOBID"
-    if [ $JOBID -ne 0 ]; then 
+    if [ $JOBID -ne 0 ]; then
 	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
     fi
 }
@@ -135,7 +135,7 @@ function remote_cmd()
    MAX_RETRIES=1
    printf "%-4s: Executing '%s' " "$desthost" "$xcommand"
    retry=0
-   while [ $retry -lt $MAX_RETRIES ]; 
+   while [ $retry -lt $MAX_RETRIES ];
    do
       x=`ssh -q $SSH_OPTS $SSH_USER@$desthost "$SUDO $xcommand " 2>&1  >> $HOME/s9s_deploy.log`
       if [ $? -eq 0 ]; then
@@ -198,27 +198,27 @@ function load_opts
     NETWORKLESS=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='NETWORKLESS' AND cid=$CLUSTER_ID" 2>/dev/null`
     CMON_HOSTNAME=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='CMON_HOSTNAME1' AND cid=$CLUSTER_ID" 2>/dev/null`
 
-    if [ $? -ne 0 ]; then 
+    if [ $? -ne 0 ]; then
         log_job_message "load opts failed"
         exit 1
     fi
 
-    if [ -z "$MYSQL_PORT" ]; then 
+    if [ -z "$MYSQL_PORT" ]; then
         log_job_message "MYSQL_PORT not set in Cluster Settings"
         exit 1
     fi
 
-    if [ -z "$SSH_USER" ]; then 
+    if [ -z "$SSH_USER" ]; then
         log_job_message "SSH_USER not set in Cluster Settings"
         exit 1
     fi
 
-    if [ -z "$OS" ]; then 
+    if [ -z "$OS" ]; then
         log_job_message "OS not set in Cluster Settings"
         exit 1
     fi
 
-    
+
     SSH_OPTS="-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10"
     if [ "$SSH_IDENTITY" = "" ]; then
 	SSH_IDENTITY="-oIdentityFile=${OS_USER_HOME}/.ssh/id_rsa"
@@ -236,8 +236,8 @@ function load_opts
     if [ "$SSH_PORT" = "" ] || [ "$SSH_PORT" = "NULL" ];  then
         SSH_PORT="22"
     fi
-    SSH_OPTS="$SSH_OPTSX -p$SSH_PORT $SSH_OPTS"    
-    SSH_OPTS2="-P$SSH_PORT $SSH_OPTS"    
+    SSH_OPTS="$SSH_OPTSX -p$SSH_PORT $SSH_OPTS"
+    SSH_OPTS2="-P$SSH_PORT $SSH_OPTS"
 
 }
 
@@ -245,23 +245,23 @@ function change_password_mysql
 {
     local h=$1
     local user=$2
-    local new_password=$3    
-    local old_password=$4    
-    QUERY="UPDATE mysql.user SET password=password('$new_password') WHERE user='$user' AND password=password('${old_password}'); FLUSH PRIVILEGES;"        
+    local new_password=$3
+    local old_password=$4
+    QUERY="UPDATE mysql.user SET password=password('$new_password') WHERE user='$user' AND password=password('${old_password}'); FLUSH PRIVILEGES;"
     echo "$h: executing: $QUERY"
    `$MYSQL_BIN -B -N --host=$h --port=$MYSQL_PORT --user=cmon --password=$CMON_PASSWORD --database=mysql -e "$QUERY"`
-    if [ $? -ne 0 ]; then 
+    if [ $? -ne 0 ]; then
 	echo "Failed $QUERY"
 	exit 1
     fi
-    
+
 }
 
 
 function change_password_mysql_mycnf
 {
     local h=$1
-    local new_password=$2    
+    local new_password=$2
     MYCNF=$CONFIGDIR/my.cnf
     remote_cmd $h "sed -i 's#wsrep_sst_auth=.*#wsrep_sst_auth=root:$new_password#g' $MYCNF"
 }
@@ -271,7 +271,7 @@ function change_password_cmoncnf
 {
     local h=$1
     local new_password=$2
-    tmp_configfile=$configfile    
+    tmp_configfile=$configfile
     if [ "$h" != "$CMON_HOSTNAME" ]; then
          tmp_configfile=/etc/cmon.cnf
     fi
@@ -304,7 +304,7 @@ function change_cmon_password
                 esac
     done
 
-    
+
     if [ -z "$CMON_PASSWORD" ]; then
         echo "s9s_change_passwd --cmon  -p <current cmon password> is missing"
       exit 1
@@ -320,8 +320,8 @@ function change_cmon_password
         echo "s9s_change_passwd --cmon  -n <new_password> is missing"
         exit 1
     fi
-    
-    
+
+
     if ! test -f $MYSQL_BIN; then
 	if ! test -f $MYSQL_BIN2; then
 	    echo "Could not find mysql client binary"
@@ -343,12 +343,12 @@ function change_cmon_password
     c_cnt=`$MYSQL_BIN -B -N --host=$CMON_DB_HOST --port=$CMON_DB_PORT --user=cmon --password=$CMON_PASSWORD --database=$CMON_DB_DB -e "$QUERY"`
     QUERY="select count(id) from hosts h WHERE h.cid=$CLUSTER_ID"
     a_cnt=`$MYSQL_BIN -B -N --host=$CMON_DB_HOST --port=$CMON_DB_PORT --user=cmon --password=$CMON_PASSWORD --database=$CMON_DB_DB -e "$QUERY"`
-    
+
     if [ $a_cnt -ne $c_cnt ]; then
 	echo "Not all hosts are reachable. Aborting"
 	exit 1
     fi
-    
+
 
     if [ -z "$mysql_hostnames" ]; then
        echo "No hostnames found."
@@ -370,10 +370,10 @@ function change_cmon_password
        echo "No hostnames found."
        exit 1
     fi
-    
+
     mysql_hostnames="$mysql_hostname $mysql_hostnames"
     echo $mysql_hostnames
-    
+
     for h in $mysql_hostnames
     do
 	change_password_mysql $h cmon $NEW_PASSWORD $OLD_PASSWORD
@@ -382,22 +382,23 @@ function change_cmon_password
     echo $all_hostnames
     for h in $all_hostnames
     do
-	change_password_cmoncnf $h $NEW_PASSWORD	
+	change_password_cmoncnf $h $NEW_PASSWORD
     done
     for h in $all_hostnames
     do
 	remote_cmd $h "/etc/init.d/cmon restart"
     done
     QUERY="UPDATE cmon_configuration SET value='$NEW_PASSWORD' WHERE param='CMON_PASSWORD' AND cid='$CLUSTER_ID'"
-    
+
     `$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$NEW_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"`
     if [ $? -ne 0 ]; then
 	echo "Failed to set CMON_PASSWORD in cmon_configuration table, you can go into Cluster Settings in the web interface and set it"
 	exit 1
     fi
+
+    change_ui_password "cmon" "$NEW_PASSWORD"
     echo "Successfully changed 'cmon' password"
     exit 0
-    
 }
 
 
@@ -430,7 +431,7 @@ function change_root_password
                 esac
     done
 
-    
+
     if [ -z "$CMON_PASSWORD" ]; then
         echo "s9s_change_passwd --root  -p <current cmon password> is missing"
       exit 1
@@ -451,7 +452,7 @@ function change_root_password
         echo "s9s_change_passwd --root  -n <new_root_password> is missing"
         exit 1
     fi
-    
+
 
 
     load_opts $CLUSTER_ID
@@ -467,10 +468,10 @@ function change_root_password
        echo "No hostnames found."
        exit 1
     fi
-    
+
     mysql_hostnames="$mysql_hostname $mysql_hostnames"
     echo $mysql_hostnames
-    
+
     for h in $mysql_hostnames
     do
 	change_password_mysql $h root $NEW_PASSWORD
@@ -482,7 +483,7 @@ function change_root_password
 		;;
 	esac
     done
-    
+
 
     for h in $mysql_hostnames
     do
@@ -496,12 +497,42 @@ function change_root_password
     fi
     echo "Successfully changed root password"
     exit 0
-    
+
+}
+
+function change_ui_password()
+{
+    user="$1"
+    new_password="$2"
+    db_credentials=""
+    [[ -f /var/www/clustercontrol/bootstrap.php ]] && db_credentials="/var/www/clustercontrol/bootstrap.php"
+    [[ -f /var/www/html/clustercontrol/bootstrap.php ]] && db_credentials="/var/www/html/clustercontrol/bootstrap.php"
+    if [[ ! -z $db_credentials ]]; then
+        echo "Found ClusterControl UI database credentials, $db_credentials"
+        sed -i "s|^define('DB_LOGIN'.*|define('DB_LOGIN', '${user}');|g" $db_credentials
+        sed -i "s|^define('DB_PASS'.*|define('DB_PASS', '${new_password}');|g" $db_credentials
+        echo "ClusterControl UI database access credentials changed"
+    else
+        echo "** Unable to find ClusterControl UI database credentials (/var/www/clustercontrol/bootstrap.php | /var/www/html/clustercontrol/bootstrap.php)"
+        echo "** ClusterControl UI database access credentials have not been changed"
+    fi
+    db_credentials=""
+    [[ -f /var/www/cmonapi/config/database.php ]] && db_credentials="/var/www/cmonapi/config/database.php"
+    [[ -f /var/www/html/cmonapi/config/database.php ]] && db_credentials="/var/www/html/cmonapi/config/database.php"
+    if [[ ! -z $db_credentials ]]; then
+        echo "Found ClusterControl REST API database credentials, $db_credentials"
+        sed -i "s|^define('DB_USER'.*|define('DB_USER', '${user}');|g" $db_credentials
+        sed -i "s|^define('DB_PASS'.*|define('DB_PASS', '${new_password}');|g" $db_credentials
+        echo "ClusterControl REST API database access credentials changed"
+    else
+        echo "** Unable to find ClusterControl REST API database credentials (/var/www/cmonapi/config/database.php | /var/www/html/cmonapi/database.php)"
+        echo "** ClusterControl REST API database access credentials have not been changed"
+    fi
 }
 
 if [ ! -e $LOCKFILE ]; then
     trap "rm -f $LOCKFILE; exit" INT TERM EXIT
-    touch $LOCKFILE    
+    touch $LOCKFILE
     case $1 in
 	--cmon)
 	    change_cmon_password  $2 $3 $4 $5 $6 $7 $8 $9
