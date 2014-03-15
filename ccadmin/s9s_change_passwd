@@ -34,7 +34,7 @@ function init
     CMON_DB_PORT=$mysql_port
     CMON_USER=cmon
     CMON_DB_DB=cmon
-    CMON_PASSWORD=$mysql_password
+#    CMON_PASSWORD=$mysql_password
     MYSQL_BIN=$mysql_basedir/bin/mysql
     MYSQL_BIN2=$mysql_bindir/mysql
     CONNECT_TIMEOUT=10
@@ -175,6 +175,17 @@ function remote_cmd3()
    fi
 }
 
+function remote_cmd_getreply()
+{
+   desthost=$1
+   xcommand=$2
+   x=`ssh -q $SSH_OPTS $SSH_USER@$desthost "$SUDO $xcommand"`
+   if [ $? -ne 0 ]; then
+       echo ""
+   fi
+   x=`echo $x | grep -v "password"`
+   echo "OK"
+}
 
 
 function load_opts
@@ -192,6 +203,7 @@ function load_opts
     SSH_USER=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_USER' AND cid=$CLUSTER_ID" 2>/dev/null`
     SSH_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_PORT' AND cid=$CLUSTER_ID" 2>/dev/null`
     SSH_OPTSX=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_OPTS' AND cid=$CLUSTER_ID" 2>/dev/null`
+    AGENTLESS=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='AGENTLESS' AND cid=$CLUSTER_ID" 2>/dev/null`
     SUDO=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SUDO' AND cid=$CLUSTER_ID" 2>/dev/null`
     XVENDOR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='VENDOR' AND cid=$CLUSTER_ID" 2>/dev/null`
     OS_USER_HOME=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='OS_USER_HOME' AND cid=$CLUSTER_ID" 2>/dev/null`
@@ -206,6 +218,10 @@ function load_opts
     if [ -z "$MYSQL_PORT" ]; then
         log_job_message "MYSQL_PORT not set in Cluster Settings"
         exit 1
+    fi
+
+    if [ -z "$AGENTLESS" ]; then
+	AGENTLESS=0
     fi
 
     if [ -z "$SSH_USER" ]; then
@@ -267,16 +283,46 @@ function change_password_mysql_mycnf
 }
 
 
+function change_password_mysql_mysqlchk
+{
+    local h=$1
+    local new_password=$2    
+    MYSQLCHK=/usr/local/bin/mysqlchk.sh
+    exist=$(remote_cmd_getreply $h "[ -f $MYSQLCHK ] && echo 'OK'")
+    if [ "$exist" = "OK" ]; then
+	remote_cmd $h "sed -i 's#^MYSQL_PASSWORD=.*#MYSQL_PASSWORD=$new_password#g' $MYSQLCHK"
+	remote_cmd $h "sed -i 's#^MYSQL_USERNAME=.*#MYSQL_USERNAME=root#g' $MYSQLCHK"
+    fi
+}
+
+
 function change_password_cmoncnf
 {
     local h=$1
     local new_password=$2
     tmp_configfile=$configfile
     if [ "$h" != "$CMON_HOSTNAME" ]; then
-         tmp_configfile=/etc/cmon.cnf
+        tmp_configfile=/etc/cmon.cnf
     fi
     remote_cmd $h "sed -i.bak 's#mysql_password=.*#mysql_password=$new_password#g' $tmp_configfile"
     remote_cmd $h "rm -rf ${configfile}*bak"
+}
+
+function change_root_password_cmoncnf
+{
+    local h=$1
+    local new_password=$2
+    tmp_configfile=$configfile
+    if [ "$h" != "$CMON_HOSTNAME" ]; then
+        tmp_configfile=/etc/cmon.cnf
+    fi
+    exist=$(remote_cmd_getreply $h "grep monitored_mysql_root $tmp_configfile")
+    if [ "$exist" = "OK" ]; then
+	remote_cmd $h "sed -i.bak 's#monitored_mysql_root_password=.*#monitored_mysql_root_password=$new_password#g' $tmp_configfile"
+	remote_cmd $h "rm -rf ${configfile}*bak"
+    else
+	remote_cmd $h "echo 'monitored_mysql_root_password=$new_password' >> $tmp_configfile"
+    fi
 }
 
 function change_cmon_password
@@ -377,16 +423,30 @@ function change_cmon_password
     for h in $mysql_hostnames
     do
 	change_password_mysql $h cmon $NEW_PASSWORD $OLD_PASSWORD
+	F=/usr/bin/wsrep_notify_cc
+	exist=$(remote_cmd_getreply $h "[ -f $F ] && echo 'OK'")
+	if [ "$exist" = "OK" ]; then
+	    remote_cmd $h "sed -i 's#^CMON_PASSWORD=.*#CMON_PASSWORD=$NEW_PASSWORD#g' $F"	    
+	fi
     done
 
     echo $all_hostnames
     for h in $all_hostnames
     do
-	change_password_cmoncnf $h $NEW_PASSWORD
-    done
-    for h in $all_hostnames
-    do
-	remote_cmd $h "/etc/init.d/cmon restart"
+	if [ $AGENTLESS -eq 1 ]; then
+	    if [ "$hostname" = "$h" ]; then
+		change_password_cmoncnf $h $NEW_PASSWORD
+		remote_cmd_nofail $h "killall -9 cmon"
+		sleep 1
+		remote_cmd3 $h "/etc/init.d/cmon start 2>&1 >/dev/null"
+	    fi
+	else
+	    change_password_cmoncnf $h $NEW_PASSWORD
+	    remote_cmd_nofail $h "killall -9 cmon"
+	    sleep 1
+	    remote_cmd $h "/etc/init.d/cmon start 2>&1 >/dev/null"
+	fi
+	    
     done
     QUERY="UPDATE cmon_configuration SET value='$NEW_PASSWORD' WHERE param='CMON_PASSWORD' AND cid='$CLUSTER_ID'"
 
@@ -428,24 +488,25 @@ function change_root_password
                 shift;;
             --)
                 shift; break;;
-                esac
+        esac
     done
 
 
     if [ -z "$CMON_PASSWORD" ]; then
-        echo "s9s_change_passwd --root  -p <current cmon password> is missing"
-      exit 1
+        echo "s9s_change_passwd --root  -p <cmon password> is missing"
+	exit 1
     fi
-
+    
     if [ -z "$OLD_PASSWORD" ]; then
-        echo "s9s_change_passwd --root  -o <old root password> is missing"
-      exit 1
+        echo "s9s_change_passwd --root  -o <old_root_password> is missing"
+	exit 1
     fi
-
+    
     if [ -z "$CLUSTER_ID" ]; then
         echo "s9s_change_passwd --root  -i <cluster id> is missing"
 	exit 1
     fi
+
     init
 
     if [ -z "$NEW_PASSWORD" ]; then
@@ -474,7 +535,8 @@ function change_root_password
 
     for h in $mysql_hostnames
     do
-	change_password_mysql $h root $NEW_PASSWORD
+	change_password_mysql $h root $NEW_PASSWORD $OLD_PASSWORD
+	change_password_mysql_mysqlchk $h $NEW_PASSWORD
 	case $CLUSTER_TYPE in
 	    galera)
 		change_password_mysql_mycnf $h $NEW_PASSWORD
@@ -487,7 +549,19 @@ function change_root_password
 
     for h in $mysql_hostnames
     do
-	remote_cmd $h "/etc/init.d/cmon restart"
+	if [ $AGENTLESS -eq 1 ]; then
+	    if [ "$hostname" = "$h" ]; then
+		change_root_password_cmoncnf $h $NEW_PASSWORD
+		remote_cmd_nofail $h "killall -9 cmon"
+		sleep 1
+		remote_cmd3 $h "/etc/init.d/cmon start 2>&1 >/dev/null"
+	    fi
+	else
+	    change_root_password_cmoncnf $h $NEW_PASSWORD
+	    remote_cmd_nofail $h "killall -9 cmon"
+	    sleep 1
+	    remote_cmd $h "/etc/init.d/cmon start 2>&1 >/dev/null"
+	fi
     done
     QUERY="UPDATE cmon_configuration SET value='$NEW_PASSWORD' WHERE param='ROOT_PASSWORD' AND cid='$CLUSTER_ID'"
     `$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"`
