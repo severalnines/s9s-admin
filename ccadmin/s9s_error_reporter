@@ -446,7 +446,7 @@ function create_report
 
     if [ $WWWSTORE -eq 1 ]; then	
 	S9S_TMPDIR=$WWWROOT/cc-reports
-	WWWFILE="cc-reports/error_report_$now.tar.gz" 
+	WWWFILE="/cc-reports/error_report_$now.tar.gz" 
     fi
     savedir=$S9S_TMPDIR/error_report_$now
 
