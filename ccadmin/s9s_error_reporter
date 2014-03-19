@@ -279,23 +279,21 @@ function collect_mysql_logs()
 	tmpsavedir=$savedir/$host
 	$MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --port=$CMON_DB_PORT -h$host -e "SHOW GLOBAL STATUS" > $tmpsavedir/show_status
 	$MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --port=$CMON_DB_PORT -h$host -e "SHOW GLOBAL VARIABLES" > $tmpsavedir/show_variables
-	QUERY="SHOW GLOBAL VARIABLES LIKE 'datadir'"
-	DATADIR=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$host --port=$CMON_DB_PORT -A -Bse "$QUERY"`
-	if [ $? -ne 0 ]; then
-            log_job_message "Failed to get datadir" 1
-	    log_job 'FAILED' 'Create error report failed.' 1
-            exit 1
-	fi
-	DATADIR=`echo $DATADIR | awk   '{print $2;}'`
+	if [ -z "$XDATADIR" ]; then
+	    DATADIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e " select value from mysql_variables mv, hosts h where h.cid=mv.cid and mv.id=h.id and h.hostname='$host' and h.cid=${CLUSTER_ID} and mv.var='datadir'" 2>/dev/null`
+	    if [ $? -ne 0 ]; then
+		log_job_message "Failed to get datadir" 1
+		log_job 'FAILED' 'Create error report failed.' 1
+		exit 1
+	    fi
 
-	QUERY="SHOW GLOBAL VARIABLES LIKE 'log_error'"
-	ERRLOG=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$host --port=$CMON_DB_PORT -A -Bse "$QUERY"`
-	if [ $? -ne 0 ]; then
-            log_job_message "Failed to get log-error" 1
-	    log_job 'FAILED' 'Create error report failed.' 1
-            exit 1
+	    ERRLOG=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e " select value from mysql_variables mv, hosts h where h.cid=mv.cid and mv.id=h.id and h.hostname='$host' and h.cid=${CLUSTER_ID} and mv.var='log_error'" 2>/dev/null`
+	    if [ $? -ne 0 ]; then
+		log_job_message "Failed to get log-error" 1
+		log_job 'FAILED' 'Create error report failed.' 1
+		exit 1
+	    fi
 	fi
-	ERRLOG=`echo $ERRLOG | awk   '{print $2;}'`
 	remote_cmd_nofail $host "cp $ERRLOG /tmp"
 	if [ "$CLUSTER_TYPE" = "galera" ]; then
 	    remote_cmd_nofail $host "cp $DATADIR/GRA* /tmp"
@@ -307,7 +305,7 @@ function collect_mysql_logs()
 	    remote_copy_from_r2 $host /tmp/inno*.log $tmpsavedir/
 	    remote_copy_from_r2 $host /tmp/sst.err $tmpsavedir/
 	    remote_copy_from_r2 $host /tmp/GRA*  $tmpsavedir/
-	    sleep 10
+	    sleep 1
 	    remote_cmd_nofail $host "rm /tmp/inno*.log"
 	    remote_cmd_nofail $host "rm /tmp/sst.err"
 	    remote_cmd_nofail $host "rm /tmp/GRA*"
@@ -390,6 +388,39 @@ function collect_mgm_logs()
 }
 
 
+function collect_mongodb_logs()
+{
+    printf "%s: %-80s\n" "Severalnines" "Copying logs";
+    HOSTNAMES=`$MYSQL_BIN -B -N $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$CMON_DB_HOST --port=$CMON_DB_PORT --database=$CMON_DB_DB  -e "SELECT group_concat(hostname SEPARATOR ' ') FROM mongodb_server WHERE cid=${CLUSTER_ID}"`
+    if [ -z "HOSTNAMES" ]; then
+	log_job_message "Could not get hostnames" 1
+	log_job 'FAILED' 'Create error report failed.' 1
+	exit 1
+    fi
+    for host in $HOSTNAMES
+    do
+	mkdir -p $savedir/$host
+	tmpsavedir=$savedir/$host
+	
+	remote_cmd_nofail $host "cp /var/log/mongodb/m*.log /tmp"
+	remote_cmd_nofail $host "chown $SSH_USER /tmp/m*.log"
+	remote_copy_from_r2 $host /tmp/m*.log  $tmpsavedir/
+	sleep 1
+	remote_cmd_nofail $host "rm /tmp/m*.log"
+
+	if [ $AGENTLESS -eq 0 ]; then 
+	    remote_cmd_nofail $host "cp /var/log/cmon.log* /tmp"
+	    remote_cmd_nofail $host "chown $SSH_USER /tmp/cmon.log*"
+	    remote_copy_from_r2 $host /tmp/cmon.log $tmpsavedir/cmon.log
+	    for i in 1 2 3 4 5 
+	    do
+		remote_copy_from_r2 $host /tmp/cmon.log.$i $tmpsavedir/cmon.log.$i
+	    done 
+	    remote_cmd_nofail $host "rm /tmp/cmon.log*"
+	fi
+    done
+}
+
 function create_report
 {
     init 
@@ -412,8 +443,14 @@ function create_report
 
     now=$(date +"%Y%m%d-%H%M%S")
     error_pkg_tgz=error_report_$now.tar.gz    
+
+    if [ $WWWSTORE -eq 1 ]; then	
+	S9S_TMPDIR=$WWWROOT/cc-reports
+	WWWFILE="cc-reports/error_report_$now.tar.gz" 
+    fi
     savedir=$S9S_TMPDIR/error_report_$now
-    mkdir $savedir
+
+    mkdir -p $savedir
     
     CLUSTER_TYPE=`$MYSQL_BIN -B -N $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$CMON_DB_HOST --port=$CMON_DB_PORT --database=$CMON_DB_DB  -e "SELECT type FROM cluster WHERE id=${CLUSTER_ID}"`
         
@@ -425,34 +462,45 @@ function create_report
     fi
     
     collect_controller
-    collect_mysql_logs
+    if [ "$CLUSTER_TYPE" != "mongodb" ]; then
+	collect_mysql_logs
+    fi
     if [ "$CLUSTER_TYPE" = "mysqlcluster" ]; then
 	collect_ndb_logs
 	collect_mgm_logs
     fi    
-
+    if [ "$CLUSTER_TYPE" = "mongodb" ]; then
+	collect_mongodb_logs
+    fi    
 
     currdir=`pwd`
     cd $S9S_TMPDIR
     tar cfz ${error_pkg_tgz} error_report_$now
+    rm -rf error_report_$now
     cd $currdir
     echo ""
     log_job_message "Please attach $S9S_TMPDIR/${error_pkg_tgz} to the support issue." 0
     log_job 'FINISHED' 'Successfully created error report.' 0
     
-    CREATE_TABLE="CREATE TABLE IF NOT EXISTS cmon_error_reports(id bigint unsigned auto_increment, cid integer unsigned, errorlog_filepath varchar(512) NOT NULL DEFAULT '', created TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(id))ENGINE=innodb"
+
+    CREATE_TABLE="CREATE TABLE IF NOT EXISTS cmon_error_reports(id bigint unsigned auto_increment, cid integer unsigned, errorlog_filepath varchar(512) NOT NULL DEFAULT '', www tinyint DEFAULT '0', created TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(id))ENGINE=innodb"
     `$MYSQL_BIN -B -N $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$CMON_DB_HOST --port=$CMON_DB_PORT --database=$CMON_DB_DB  -e "$CREATE_TABLE"`
     if [ $? -eq 0 ]; then 
-	FILENAME=$(readlink -m $S9S_TMPDIR/${error_pkg_tgz})
-	INSERT="INSERT INTO cmon_error_reports(cid, errorlog_filepath, created) VALUES($CLUSTER_ID, \"$FILENAME\", now())"
+	if [ $WWWSTORE -eq 1 ]; then	
+	    FILENAME=$WWWFILE
+	else
+	    FILENAME=$(readlink -m $S9S_TMPDIR/${error_pkg_tgz})
+	fi
+	INSERT="INSERT INTO cmon_error_reports(cid, errorlog_filepath, www, created) VALUES($CLUSTER_ID, \"$FILENAME\", $WWWSTORE, now())"
 	`$MYSQL_BIN -B -N $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$CMON_DB_HOST --port=$CMON_DB_PORT --database=$CMON_DB_DB  -e "$INSERT"`
     fi
     
 
 }
 
+WWWSTORE=0
 
-args=`getopt p:s:P:h:i:N:n:f:j:d: $*`
+args=`getopt p:s:P:h:i:N:n:f:j:d:w $*`
 set -- $args
 for i
 do
@@ -466,6 +514,9 @@ do
 	-d)
             DESTINATION="$2"; shift;
             shift;;
+	-w)
+            WWWSTORE=1; 
+	    shift;;
         --)
             shift; break;;
     esac

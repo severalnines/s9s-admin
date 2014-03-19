@@ -224,8 +224,8 @@ defaults
         timeout check   3500ms
         timeout queue   3500ms
         timeout connect 3500ms
-        timeout client  10000ms
-        timeout server  10000ms
+        timeout client  120s
+        timeout server  120s
 
 userlist STATSUSERS
         group admin users admin

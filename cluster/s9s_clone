@@ -575,7 +575,8 @@ function create_cluster
     sed -i.bak "s#cluster_id=.*#cluster_id=${TARGET_CLUSTER_ID}#g" /etc/cmon.d/cmon_${TARGET_CLUSTER_ID}.cnf
     sed -i.bak "s#logfile=.*#logfile=/var/log/cmon_${TARGET_CLUSTER_ID}.log#g" /etc/cmon.d/cmon_${TARGET_CLUSTER_ID}.cnf
     sed -i.bak "s#mysql_server_addresses=.*#mysql_server_addresses=${TARGET_HOSTNAME}#g" /etc/cmon.d/cmon_${TARGET_CLUSTER_ID}.cnf
-    
+    rm -rf /etc/cmon.d/cmon*.bak
+    rm -rf /etc/cmon.cnf.bak
     
 #    remote_cmd $TARGET_HOSTNAME "sed -i.bak 's#cluster_id=.*#cluster_id=${TARGET_CLUSTER_ID}#g' /etc/cmon.cnf"
     if [ "$AGENTLESS" = "0" ]; then
@@ -604,7 +605,8 @@ function create_cluster
     fi
     
     sed -i.bak "s#mysql_server_addresses=.*#mysql_server_addresses=${SERVERS}#g" $SOURCE_CNF
-
+    rm -rf /etc/cmon.d/cmon*.bak
+    rm -rf /etc/cmon.cnf.bak
     echo ""
     if [ $DETACH -eq 1 ]; then
 	CLUSTER_ID=$TARGET_CLUSTER_ID
@@ -745,8 +747,12 @@ function delete_cluster
 	done
     fi
     rm -rf /etc/cmon.d/cmon*${CLUSTER_ID}.cnf*
+    rm -rf /etc/cmon.cnf.bak
+    killall -HUP cmon
     log_job 'FINISHED' 's9s_clone --delete finished successfully' 0
 }
+
+
 function list_cluster
 {
     CLUSTER_ID=1
@@ -914,8 +920,8 @@ function move_node
     fi
 
     remote_cmd_nofail $SOURCE_HOSTNAME "rm -rf ${DATADIR}/grastate.dat"
-    rm /etc/cmon.cnf.bak
-    rm /etc/cmon_${TARGET_CLUSTER_ID}.cnf.bak
+    rm -rf /etc/cmon.d/cmon*.bak
+    rm -rf /etc/cmon.cnf.bak
     
     log_job_message "Node moved - follow recovery progress in GUI" 0
     log_job 'FINISHED' 's9s_clone --move-node finished successfully' 0
