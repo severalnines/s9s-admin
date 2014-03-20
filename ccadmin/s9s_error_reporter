@@ -294,6 +294,7 @@ function collect_mysql_logs()
 		exit 1
 	    fi
 	fi
+	remote_cmd_nofail $host "cp $CONFIGDIR/my.cnf /tmp"
 	remote_cmd_nofail $host "cp $ERRLOG /tmp"
 	if [ "$CLUSTER_TYPE" = "galera" ]; then
 	    remote_cmd_nofail $host "cp $DATADIR/GRA* /tmp"
@@ -314,6 +315,7 @@ function collect_mysql_logs()
 	remote_cmd_nofail $host "chown $SSH_USER /tmp/mysql*.log"
 	remote_copy_from_r2 $host /tmp/error.log $tmpsavedir/
 	remote_copy_from_r2 $host /tmp/mysql*.log $tmpsavedir/
+	remote_copy_from_r2 $host /tmp/my.cnf $tmpsavedir/
 	if [ $AGENTLESS -eq 0 ]; then 
 	   remote_cmd_nofail $host "cp /var/log/cmon.log* /tmp"
 	   remote_cmd_nofail $host "chown $SSH_USER /tmp/cmon.log*"
@@ -325,6 +327,7 @@ function collect_mysql_logs()
 	   remote_cmd_nofail $host "rm /tmp/cmon.log*"
        fi
        remote_cmd_nofail $host "rm /tmp/error.log"
+       remote_cmd_nofail $host "rm /tmp/my.cnf"
        remote_cmd_nofail $host "rm /tmp/mysql*.log"
     done
 }
