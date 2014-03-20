@@ -445,8 +445,7 @@ function create_report
     error_pkg_tgz=error_report_$now.tar.gz    
 
     if [ $WWWSTORE -eq 1 ]; then	
-	S9S_TMPDIR=$WWWROOT/cc-reports
-	WWWFILE="/cc-reports/error_report_$now.tar.gz" 
+	S9S_TMPDIR=$WWWROOT/clustercontrol/app/tmp/logs/
     fi
     savedir=$S9S_TMPDIR/error_report_$now
 
@@ -486,11 +485,7 @@ function create_report
     CREATE_TABLE="CREATE TABLE IF NOT EXISTS cmon_error_reports(id bigint unsigned auto_increment, cid integer unsigned, errorlog_filepath varchar(512) NOT NULL DEFAULT '', www tinyint DEFAULT '0', created TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(id))ENGINE=innodb"
     `$MYSQL_BIN -B -N $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$CMON_DB_HOST --port=$CMON_DB_PORT --database=$CMON_DB_DB  -e "$CREATE_TABLE"`
     if [ $? -eq 0 ]; then 
-	if [ $WWWSTORE -eq 1 ]; then	
-	    FILENAME=$WWWFILE
-	else
-	    FILENAME=$(readlink -m $S9S_TMPDIR/${error_pkg_tgz})
-	fi
+	FILENAME=$(readlink -m $S9S_TMPDIR/${error_pkg_tgz})
 	INSERT="INSERT INTO cmon_error_reports(cid, errorlog_filepath, www, created) VALUES($CLUSTER_ID, \"$FILENAME\", $WWWSTORE, now())"
 	`$MYSQL_BIN -B -N $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$CMON_DB_HOST --port=$CMON_DB_PORT --database=$CMON_DB_DB  -e "$INSERT"`
     fi
