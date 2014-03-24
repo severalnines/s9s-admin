@@ -4,6 +4,7 @@ BACKUP_LOGFILE=$1
 SLEEPTIME=10
 
 searchexpr="innobackupex: Error: "
+searchexpr2="innobackupex: completed OK!"
 #give xtrabackup a chance to start
 sleep 60
 
@@ -19,11 +20,24 @@ do
         exit 1
       fi
       if  grep " Starting to lock all tables" $BACKUP_LOGFILE ;  then
-          sleep 60
+          sleep 10
           rm -rf /tmp/xtrabackup_suspended_2
       fi
    else
-      exit 0
+      err=`grep "$searchexpr" $BACKUP_LOGFILE`
+      if [ $? -eq 0 ]; then
+        sleep $SLEEPTIME
+        killall -9 xtrabackup innobackupex xtrabackup_55 xtrabackup_56
+        echo "BACKUP FAILED: $err " >> $BACKUP_LOGFILE
+        exit 1
+      fi
+      err=`grep "$searchexpr2" $BACKUP_LOGFILE`
+      if [ $? -eq 0 ]; then
+        echo "BACKUP Completed OK: $err " >> $BACKUP_LOGFILE
+        exit 0
+      fi
+      echo "BACKUP FAILED: Unknonw reason at this point. " >> $BACKUP_LOGFILE
+      exit 1
    fi
    sleep 2
 done

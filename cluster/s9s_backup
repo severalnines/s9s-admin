@@ -242,7 +242,7 @@ function start_backup
     else
 	MYSQL_BIN=$MYSQL_BINDIR
 	if [ ! -f $MYSQL_BIN ]; then
-	    echo "s9s_backkup - mysql client not found, change -B $MYSQL_BINDIR"
+	    echo "s9s_backup - mysql client not found, change -B $MYSQL_BINDIR"
 	    exit 1
 	fi
     fi
@@ -525,6 +525,7 @@ function start_backup
 	    STATUS='failed'
 	    SIZE=0
 	    FILENAME=''
+	    ret=1
             write_email "Backup failed" "s9s_backup failed - check log on ${HOSTNAME}:$BACKUP_LOGFILE."
 	    log_job_message "Backup failed, innobackupex failed" 1
 	    log_job 'FAILED' 'backup failed' 1
@@ -572,6 +573,10 @@ function start_backup
            write_email "Backup finished" "s9s_backup finished ok - check Backups for status"
 	   log_job_message "Backup finished - check Backups for status" 0
    	   log_job 'FINISHED' 'Command OK' 0
+	else
+ 	    write_email "Backup failed" "s9s_backup failed - check Backups and the backup log for status. If backup log is empty, then check diskspace."
+   	    log_job_message "Backup failed - check Backups for status" 1
+  	    log_job 'FAILED' 'Backup failed' 1
         fi
 	rm $LOCKFILE
 	rm -rf /tmp/xtrabackup_pid
@@ -629,7 +634,7 @@ function purge_backups
     else
 	MYSQL_BIN=$MYSQL_BINDIR
 	if [ ! -f $MYSQL_BIN ]; then
-	    echo "s9s_backkup - mysql client not found, change -B $MYSQL_BINDIR"
+	    echo "s9s_backup - mysql client not found, change -B $MYSQL_BINDIR"
 	    exit 1
 	fi
     fi    
@@ -1153,7 +1158,7 @@ function install
     else
 	MYSQL_BIN=$MYSQL_BINDIR
 	if [ ! -f $MYSQL_BIN ]; then
-	    echo "s9s_backkup - mysql client not found, change -B $MYSQL_BINDIR"
+	    echo "s9s_backup - mysql client not found, change -B $MYSQL_BINDIR"
 	    exit 1
 	fi
     fi
