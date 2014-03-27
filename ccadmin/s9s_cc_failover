@@ -258,21 +258,6 @@ function load_opts
 
 }
 
-function change_password_mysql
-{
-    local h=$1
-    local user=$2
-    local new_password=$3    
-    QUERY="UPDATE mysql.user SET password=password('$new_password') WHERE user='$user'; FLUSH PRIVILEGES;"        
-    echo "$h: executing: $QUERY"
-   `$MYSQL_BIN -B -N --host=$h --port=$MYSQL_PORT --user=cmon --password=$CMON_PASSWORD --database=mysql -e "$QUERY"`
-    if [ $? -ne 0 ]; then 
-	echo "Failed $QUERY"
-	exit 1
-    fi
-    
-}
-
 
 function change_controller_address
 {

@@ -3,6 +3,7 @@
 #
 # MODIFY THE BELOW TO SUIT YOU ENV:
 jobid=0
+MONITORED_MYSQL_PORT=3306
 function init
 {    
     FILES=`ls /etc/cmon.cnf 2>&1`
@@ -289,7 +290,7 @@ function start_backup
 	CONFIGDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='CONFIGDIR' AND cid=$CLUSTER_ID"`
 	
 	STORAGE_HNAME=$CMON_DB_HOST
-	DATADIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD  --host=$BACKUP_HOSTNAME --port=$CMON_DB_PORT -e "SHOW GLOBAL VARIABLES LIKE 'hostname'" | awk '{print $2;}'`
+	DATADIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD  --host=$BACKUP_HOSTNAME --port=$MONITORED_MYSQL_PORT -e "SHOW GLOBAL VARIABLES LIKE 'hostname'" | awk '{print $2;}'`
 
 	if [ -z "$TYPE" ]; then
 	    TYPE="full"
@@ -438,10 +439,10 @@ function start_backup
 	if [ "$TYPE" = "full" ]; then   
 	    log_job 'RUNNING' 'Job is running' 0
 	    if [ $COMPRESSION -eq 1 ]; then
- 		ssh $SSH_OPTS  $SSH_USER@$BACKUP_HOSTNAME "$SUDO sh -c 'ulimit -n $ULIMIT && $XTRABACKUP_BIN $GALERA_INFO   --defaults-file=$MYCNF --host=127.0.0.1 --user=$CMON_USER --password=$CMON_PASSWORD $INNOBACKUP_OPTS $THROTTLE  --stream=tar ./  2>$BACKUP_LOGFILE | $COMPRESSION_TOOL  - | nc $STORAGE_HNAME $NETCAT_PORT  '" 
+ 		ssh $SSH_OPTS  $SSH_USER@$BACKUP_HOSTNAME "$SUDO sh -c 'ulimit -n $ULIMIT && $XTRABACKUP_BIN $GALERA_INFO   --defaults-file=$MYCNF --host=127.0.0.1  --port=$MONITORED_MYSQL_PORT --user=$CMON_USER --password=$CMON_PASSWORD $INNOBACKUP_OPTS $THROTTLE  --stream=tar ./  2>$BACKUP_LOGFILE | $COMPRESSION_TOOL  - | nc $STORAGE_HNAME $NETCAT_PORT  '" 
 		ret=$?
 	    else
-		ssh $SSH_OPTS  $SSH_USER@$BACKUP_HOSTNAME "$SUDO sh -c 'ulimit -n $ULIMIT && $XTRABACKUP_BIN $GALERA_INFO   --defaults-file=$MYCNF --host=127.0.0.1 --user=$CMON_USER --password=$CMON_PASSWORD $INNOBACKUP_OPTS $THROTTLE  --stream=tar ./  2>$BACKUP_LOGFILE | nc $STORAGE_HNAME $NETCAT_PORT  '" 
+		ssh $SSH_OPTS  $SSH_USER@$BACKUP_HOSTNAME "$SUDO sh -c 'ulimit -n $ULIMIT && $XTRABACKUP_BIN $GALERA_INFO   --defaults-file=$MYCNF --host=127.0.0.1 --port=$MONITORED_MYSQL_PORT --user=$CMON_USER --password=$CMON_PASSWORD $INNOBACKUP_OPTS $THROTTLE  --stream=tar ./  2>$BACKUP_LOGFILE | nc $STORAGE_HNAME $NETCAT_PORT  '" 
 		ret=$?
 	    fi
 	    scp -q $SCP_OPTS $SSH_USER@$BACKUP_HOSTNAME:$BACKUP_LOGFILE $BACKUP_LOGFILE
@@ -453,10 +454,10 @@ function start_backup
 	else
 	    log_job 'RUNNING' 'Job is running' 0
 	    if [ $COMPRESSION -eq 1 ]; then
- 		ssh  $SSH_OPTS  $SSH_USER@$BACKUP_HOSTNAME "$SUDO sh -c 'ulimit -n $ULIMIT && $XTRABACKUP_BIN $GALERA_INFO  --defaults-file=$MYCNF --host=127.0.0.1 --user=$CMON_USER --password=$CMON_PASSWORD --incremental --incremental-lsn=$LSN $INNOBACKUP_OPTS $THROTTLE  --stream=xbstream ./  2>$BACKUP_LOGFILE | $COMPRESSION_TOOL  - | nc $STORAGE_HNAME $NETCAT_PORT  '" 
+ 		ssh  $SSH_OPTS  $SSH_USER@$BACKUP_HOSTNAME "$SUDO sh -c 'ulimit -n $ULIMIT && $XTRABACKUP_BIN $GALERA_INFO  --defaults-file=$MYCNF --host=127.0.0.1  --port=$MONITORED_MYSQL_PORT --user=$CMON_USER --password=$CMON_PASSWORD --incremental --incremental-lsn=$LSN $INNOBACKUP_OPTS $THROTTLE  --stream=xbstream ./  2>$BACKUP_LOGFILE | $COMPRESSION_TOOL  - | nc $STORAGE_HNAME $NETCAT_PORT  '" 
 		ret=$?
 	    else
- 		ssh  $SSH_OPTS  $SSH_USER@$BACKUP_HOSTNAME "$SUDO sh -c 'ulimit -n $ULIMIT && $XTRABACKUP_BIN $GALERA_INFO  --defaults-file=$MYCNF --host=127.0.0.1 --user=$CMON_USER --password=$CMON_PASSWORD --incremental --incremental-lsn=$LSN $INNOBACKUP_OPTS $THROTTLE  --stream=xbstream ./  2>$BACKUP_LOGFILE | nc $STORAGE_HNAME $NETCAT_PORT  '" 
+ 		ssh  $SSH_OPTS  $SSH_USER@$BACKUP_HOSTNAME "$SUDO sh -c 'ulimit -n $ULIMIT && $XTRABACKUP_BIN $GALERA_INFO  --defaults-file=$MYCNF --host=127.0.0.1  --port=$MONITORED_MYSQL_PORT --user=$CMON_USER --password=$CMON_PASSWORD --incremental --incremental-lsn=$LSN $INNOBACKUP_OPTS $THROTTLE  --stream=xbstream ./  2>$BACKUP_LOGFILE | nc $STORAGE_HNAME $NETCAT_PORT  '" 
 		ret=$?
 	    fi
 	    
@@ -933,6 +934,7 @@ function load_opts
     CONFIGDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='CONFIGDIR' AND cid=$CLUSTER_ID" 2>/dev/null`
     HTTP_PROXY=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='HTTP_PROXY' AND cid=$CLUSTER_ID" 2>/dev/null`
     MYSQL_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MYSQL_PORT' AND cid=$CLUSTER_ID" 2>/dev/null`
+    MONITORED_MYSQL_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MONITORED_MYSQL_PORT' AND cid=$CLUSTER_ID" 2>/dev/null`
     GALERA_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='GALERA_PORT' AND cid=$CLUSTER_ID" 2>/dev/null`
     MYSQL_BASEDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MYSQL_BASEDIR' AND cid=$CLUSTER_ID" 2>/dev/null`
     MYSQL_SCRIPTDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SCRIPTDIR' AND cid=$CLUSTER_ID" 2>/dev/null`
@@ -959,6 +961,10 @@ function load_opts
 	if [ "$SUDO" = "" ] || [ "$SUDO" = "NULL" ];  then
            SUDO=sudo
         fi
+    fi
+
+    if [ "$MONITORED_MYSQL_PORT" = "" ] || [ "$MONITORED_MYSQL_PORT" = "NULL" ];  then
+        MONITORED_MYSQL_PORT="3306"
     fi
 
     if [ "$SSH_PORT" = "" ] || [ "$SSH_PORT" = "NULL" ];  then

@@ -167,8 +167,9 @@ if [ -z "$SERVER_LIST" ]; then
     echo "No servers found"
     exit
 fi
-if [ -d ccadmin/s9s_repo ]; then   
-    mv ccadmin/s9s_repo ccadmin/repo
+if [ -d ccadmin/s9s_repo ]; then
+    rm -rf ccadmin/repo   
+    mv -f ccadmin/s9s_repo ccadmin/repo
 fi
 for H in $SERVER_LIST
 do

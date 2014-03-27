@@ -143,8 +143,12 @@ function load_opts
     if [ -z "$RPM" ]; then
 	RPM=1
     fi
-
     
+    MONITORED_MYSQL_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MONITORED_MYSQL_PORT' AND cid=$CLUSTER_ID" 2>/dev/null`
+    
+    if [ "$MONITORED_MYSQL_PORT" = "" ] || [ "$MONITORED_MYSQL_PORT" = "NULL" ];  then
+        MONITORED_MYSQL_PORT="3306"
+    fi
     SSH_OPTS="-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10"
     if [ "$SSH_IDENTITY" = "" ]; then
 	SSH_IDENTITY="-oIdentityFile=${OS_USER_HOME}/.ssh/id_rsa"
@@ -264,7 +268,7 @@ function collect_controller()
     $MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "SELECT * FROM cmon_job WHERE cid=$CLUSTER_ID" > $tmpsavedir/cmon_job
     
     cp $configfile $tmpsavedir
-    CMON_LOG=`grep logfile /etc/cmon.cnf |grep -v '#' | awk -F '=' '{print $2;}'`
+    CMON_LOG=`grep logfile $configfile |grep -v '#' | awk -F '=' '{print $2;}'`
     cp ${CMON_LOG}* $tmpsavedir    
 }
 
@@ -277,8 +281,8 @@ function collect_mysql_logs()
     do
 	mkdir -p $savedir/$host
 	tmpsavedir=$savedir/$host
-	$MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --port=$CMON_DB_PORT -h$host -e "SHOW GLOBAL STATUS" > $tmpsavedir/show_status
-	$MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --port=$CMON_DB_PORT -h$host -e "SHOW GLOBAL VARIABLES" > $tmpsavedir/show_variables
+	$MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --port=$MONITORED_MYSQL_PORT -h$host -e "SHOW GLOBAL STATUS" > $tmpsavedir/show_status
+	$MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --port=$MONITORED_MYSQL_PORT -h$host -e "SHOW GLOBAL VARIABLES" > $tmpsavedir/show_variables
 	if [ -z "$XDATADIR" ]; then
 	    DATADIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e " select value from mysql_variables mv, hosts h where h.cid=mv.cid and mv.id=h.id and h.hostname='$host' and h.cid=${CLUSTER_ID} and mv.var='datadir'" 2>/dev/null`
 	    if [ $? -ne 0 ]; then

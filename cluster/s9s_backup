@@ -13,7 +13,7 @@ OSUSER=$USER
 CMON_USER=cmon
 CMON_DB_DB=cmon
 CMON_DB_PORT=3306
-
+LOCAL_MYQL_PORT=3306
 function init
 {
     FILES=`ls /etc/cmon.cnf 2>&1`
@@ -60,11 +60,12 @@ function init
 function test_connection
 {
     HNAME=$1    
+    local MYSQL_PORT=$2
     QUERY="select 1"
-    $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --host=$HNAME --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
+    $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --host=$HNAME --port=$MYSQL_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
     if [ $? -ne 0 ]; then
-	echo "Could not connect the mysql server @ $HNAME:$CMON_DB_PORT with user=$CMON_USER and password='hidden'. GRANT ALL PRIVILEGES ON *.* TO 'cmon'@'127.0.0.1' IDENTIFIED BY <cmon_password> " 
-	log_job_message "Could not connect the mysql server @ $HNAME:$CMON_DB_PORT with user=$CMON_USER and password='hidden'. GRANT ALL PRIVILEGES ON *.* TO 'cmon'@'127.0.0.1' IDENTIFIED BY <cmon_password> " 1
+	echo "Could not connect the mysql server @ $HNAME:$$MYSQL_PORT with user=$CMON_USER and password='hidden'. GRANT ALL PRIVILEGES ON *.* TO 'cmon'@'127.0.0.1' IDENTIFIED BY <cmon_password> " 
+	log_job_message "Could not connect the mysql server @ $HNAME:$$MYSQL_PORT with user=$CMON_USER and password='hidden'. GRANT ALL PRIVILEGES ON *.* TO 'cmon'@'127.0.0.1' IDENTIFIED BY <cmon_password> " 1
 	log_job 'FAILED' 'backup failed' 1
 	exit 1
     fi
@@ -77,6 +78,7 @@ function load_opts
     CONFIGDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='CONFIGDIR' AND cid=$CLUSTER_ID" 2>/dev/null`
     HTTP_PROXY=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='HTTP_PROXY' AND cid=$CLUSTER_ID" 2>/dev/null`
     MYSQL_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MYSQL_PORT' AND cid=$CLUSTER_ID" 2>/dev/null`
+    MONITORED_MYSQL_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MONITORED_MYSQL_PORT' AND cid=$CLUSTER_ID" 2>/dev/null`
     GALERA_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='GALERA_PORT' AND cid=$CLUSTER_ID" 2>/dev/null`
     MYSQL_BASEDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MYSQL_BASEDIR' AND cid=$CLUSTER_ID" 2>/dev/null`
     MYSQL_SCRIPTDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SCRIPTDIR' AND cid=$CLUSTER_ID" 2>/dev/null`
@@ -104,7 +106,10 @@ function load_opts
            SUDO=sudo
         fi
     fi
-
+    MONITORED_MYSQL_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MONITORED_MYSQL_PORT' AND cid=$CLUSTER_ID" 2>/dev/null`
+    if [ "$MONITORED_MYSQL_PORT" = "" ] || [ "$MONITORED_MYSQL_PORT" = "NULL" ];  then
+        MONITORED_MYSQL_PORT="3306"
+    fi
     if [ "$SSH_PORT" = "" ] || [ "$SSH_PORT" = "NULL" ];  then
         SSH_PORT="22"
     fi
@@ -164,7 +169,7 @@ function write_logfile
    cat $BACKUP_LOGFILE | sed  -e "s/'/\\\'/g" -e 's/"/\\"/g' > /tmp/s9s_backup_log_escaped
    LOG_CONTENT=`cat /tmp/s9s_backup_log_escaped`
    SIZE=`stat --printf='%s' /tmp/s9s_backup_log_escaped`
-   HNAME=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$CMON_DB_PORT -e "SHOW GLOBAL VARIABLES LIKE 'hostname'" | awk '{print $2;}'`
+   HNAME=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$MONITORED_MYSQL_PORT -e "SHOW GLOBAL VARIABLES LIKE 'hostname'" | awk '{print $2;}'`
    QUERY="REPLACE INTO cmon_host_log(cid, hostname, filename, result_len, result, report_ts,description, tag) VALUES ($CLUSTER_ID,'$HNAME', '$BACKUP_LOGFILE', $SIZE, \"$LOG_CONTENT\", NOW(), 's9s_backup log', 's9s_backup')"
    $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
    
@@ -176,7 +181,7 @@ function write_logfile
 
 function start_backup
 {        
-    args=`getopt u:P:p:h:i:b:t:j:B:CT $*`
+    args=`getopt u:P:p:h:i:b:t:j:B:N:CT $*`
     set -- $args
     for i
     do
@@ -266,8 +271,12 @@ function start_backup
 	log_job 'FAILED' 'backup failed' 1
 	exit 1
     fi
-
-    test_connection 127.0.0.1
+    test_connection $CMON_DB_HOST $CMON_DB_PORT
+    MONITORED_MYSQL_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MONITORED_MYSQL_PORT' AND cid=$CLUSTER_ID" 2>/dev/null`
+    if [ "$MONITORED_MYSQL_PORT" = "" ] || [ "$MONITORED_MYSQL_PORT" = "NULL" ];  then
+        MONITORED_MYSQL_PORT="3306"
+    fi
+    test_connection 127.0.0.1 $MONITORED_MYSQL_PORT
 
     if [ -z "$BACKUPDIR" ]; then
 	BACKUPDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='BACKUPDIR' AND cid=$CLUSTER_ID" 2>/dev/null`
@@ -360,7 +369,7 @@ function start_backup
 
 
 	CONFIGDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='CONFIGDIR' AND cid=$CLUSTER_ID" 2>/dev/null`
-	HNAME=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$CMON_DB_PORT -e "SHOW GLOBAL VARIABLES LIKE 'hostname'" 2>/dev/null | awk '{print $2;}'`
+	HNAME=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$MONITORED_MYSQL_PORT -e "SHOW GLOBAL VARIABLES LIKE 'hostname'" 2>/dev/null | awk '{print $2;}'`
 
 	if [ -z "$TYPE" ]; then
 	    TYPE="full"
@@ -443,7 +452,7 @@ function start_backup
 	fi
 	
 
-	DATADIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --host=127.0.0.1 --port=$CMON_DB_PORT -e "SHOW GLOBAL VARIABLES LIKE 'datadir'" 2>/dev/null | awk '{print $2;}'`
+	DATADIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --host=127.0.0.1 --port=$MONITORED_MYSQL_PORT -e "SHOW GLOBAL VARIABLES LIKE 'datadir'" 2>/dev/null | awk '{print $2;}'`
 	    
 	ID=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select ifnull(max(backupid)+1,1) from mysql_backup" 2>/dev/null`
 	CLUSTER_TYPE=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select type from cluster where id=$CLUSTER_ID" 2>/dev/null`
@@ -494,10 +503,10 @@ function start_backup
         pid="$!"
 	if [ "$TYPE" = "full" ]; then 
 	    if [ $COMPRESSION -eq 0 ]; then  
-		$XTRABACKUP_BIN $GALERA_INFO  --defaults-file=$MYCNF --host=127.0.0.1 --user=$CMON_USER --password=$CMON_PASSWORD --no-timestamp $BACKUPDIR 2>$BACKUP_LOGFILE 
+		$XTRABACKUP_BIN $GALERA_INFO  --defaults-file=$MYCNF --host=127.0.0.1 --port=$MONITORED_MYSQL_PORT --user=$CMON_USER --password=$CMON_PASSWORD --no-timestamp $BACKUPDIR 2>$BACKUP_LOGFILE 
 		ret=$?
 	    else
-		$XTRABACKUP_BIN $GALERA_INFO  --defaults-file=$MYCNF --host=127.0.0.1 --user=$CMON_USER --password=$CMON_PASSWORD $THROTTLE  --stream=tar ./  2>$BACKUP_LOGFILE | $COMPRESSION_TOOL - > $BACKUPDIR/$FILENAME 
+		$XTRABACKUP_BIN $GALERA_INFO  --defaults-file=$MYCNF --host=127.0.0.1 --port=$MONITORED_MYSQL_PORT --user=$CMON_USER --password=$CMON_PASSWORD $THROTTLE  --stream=tar ./  2>$BACKUP_LOGFILE | $COMPRESSION_TOOL - > $BACKUPDIR/$FILENAME 
 		ret=$?
 	    fi
 	    LSN=`cat $BACKUP_LOGFILE | grep 'xtrabackup: The latest check point (for incremental):' | awk -F ':' '{print $3;}'`
@@ -507,10 +516,10 @@ function start_backup
 	    fi
 	else
 	    if [ $COMPRESSION -eq 0 ]; then  
-		$XTRABACKUP_BIN $GALERA_INFO  --defaults-file=$MYCNF --host=127.0.0.1 --user=$CMON_USER --password=$CMON_PASSWORD --incremental --incremental-lsn=$LSN --no-timestamp $BACKUPDIR 2>$BACKUP_LOGFILE 
+		$XTRABACKUP_BIN $GALERA_INFO  --defaults-file=$MYCNF --host=127.0.0.1 --port=$MONITORED_MYSQL_PORT --user=$CMON_USER --password=$CMON_PASSWORD --incremental --incremental-lsn=$LSN --no-timestamp $BACKUPDIR 2>$BACKUP_LOGFILE 
 		ret=$?
 	    else
-		$XTRABACKUP_BIN $GALERA_INFO  --defaults-file=$MYCNF --host=127.0.0.1 --user=$CMON_USER --password=$CMON_PASSWORD $THROTTLE --incremental --incremental-lsn=$LSN  --stream=xbstream ./ 2>$BACKUP_LOGFILE | $COMPRESSION_TOOL - > $BACKUPDIR/$FILENAME 		
+		$XTRABACKUP_BIN $GALERA_INFO  --defaults-file=$MYCNF --host=127.0.0.1 --port=$MONITORED_MYSQL_PORT --user=$CMON_USER --password=$CMON_PASSWORD $THROTTLE --incremental --incremental-lsn=$LSN  --stream=xbstream ./ 2>$BACKUP_LOGFILE | $COMPRESSION_TOOL - > $BACKUPDIR/$FILENAME 		
 		ret=$?
 	    fi
 	    LSN=`cat $BACKUP_LOGFILE | grep 'xtrabackup: The latest check point (for incremental):' | awk -F ':' '{print $3;}'`
@@ -591,7 +600,7 @@ function start_backup
 
 function purge_backups
 {    
-    args=`getopt u:P:B:h:p:i:r: $*`
+    args=`getopt u:P:B:h:p:N:i:r: $*`
     set -- $args
     for i
     do
@@ -646,8 +655,13 @@ function purge_backups
 	fi
 	MYSQL_BIN=$MYSQL_BIN2
     fi
-    test_connection 127.0.0.1
-    HNAME=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$CMON_DB_PORT -e "SHOW GLOBAL VARIABLES LIKE 'hostname'" 2>/dev/null | awk '{print $2;}' `
+    test_connection $CMON_DB_HOST $CMON_DB_PORT
+    MONITORED_MYSQL_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MONITORED_MYSQL_PORT' AND cid=$CLUSTER_ID" 2>/dev/null`
+    if [ "$MONITORED_MYSQL_PORT" = "" ] || [ "$MONITORED_MYSQL_PORT" = "NULL" ];  then
+        MONITORED_MYSQL_PORT="3306"
+    fi
+    test_connection 127.0.0.1 $MONITORED_MYSQL_PORT
+    HNAME=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$MONITORED_MYSQL_PORT -e "SHOW GLOBAL VARIABLES LIKE 'hostname'" 2>/dev/null | awk '{print $2;}' `
     if [ -z "$RETENTION" ]; then
 	RETENTION=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='BACKUP_RETENTION' AND cid=$CLUSTER_ID" 2>/dev/null`
 	if [ $? -ne 0 ]; then
@@ -750,7 +764,7 @@ function purge_backups
 
 function restore
 {    
-    args=`getopt P:u:B:p:h:i:b:t:e: $*`
+    args=`getopt P:u:B:p:h:i:b:t:e:N: $*`
     set -- $args
     for i
     do
@@ -817,8 +831,13 @@ function restore
       fi
       MYSQL_BIN=$MYSQL_BIN2
   fi
+  test_connection $CMON_DB_HOST $CMON_DB_PORT
+  MONITORED_MYSQL_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MONITORED_MYSQL_PORT' AND cid=$CLUSTER_ID" 2>/dev/null`
+  if [ "$MONITORED_MYSQL_PORT" = "" ] || [ "$MONITORED_MYSQL_PORT" = "NULL" ];  then
+      MONITORED_MYSQL_PORT="3306"
+  fi
+  test_connection 127.0.0.1 $MONITORED_MYSQL_PORT
 
-  test_connection 127.0.0.1
 
   rm -rf $TARGETDIR/$BACKUPID
   mkdir -p $TARGETDIR/$BACKUPID
@@ -1045,9 +1064,14 @@ function list_backups
 	fi
 	MYSQL_BIN=$MYSQL_BIN2
     fi
-    test_connection 127.0.0.1
+    test_connection $CMON_DB_HOST $CMON_DB_PORT
+    MONITORED_MYSQL_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MONITORED_MYSQL_PORT' AND cid=$CLUSTER_ID" 2>/dev/null`
+    if [ "$MONITORED_MYSQL_PORT" = "" ] || [ "$MONITORED_MYSQL_PORT" = "NULL" ];  then
+        MONITORED_MYSQL_PORT="3306"
+    fi
+    test_connection 127.0.0.1 $MONITORED_MYSQL_PORT
 
-    HNAME=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$CMON_DB_PORT -e "SHOW GLOBAL VARIABLES LIKE 'hostname'" 2>/dev/null | awk '{print $2;}'`
+    HNAME=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$MONITORED_MYSQL_PORT -e "SHOW GLOBAL VARIABLES LIKE 'hostname'" 2>/dev/null | awk '{print $2;}'`
     LIST=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "set group_concat_max_len=1024*1024;select group_concat(concat(parentid ,',', backup_type, ',', concat(directory,'/', filename), ',' , status, ',', size, ',\'' ,  date_format(report_ts, \"%Y-%M-%d_%H:%i:%s\") , '\'', ',',lsn, ',', md5sum, ',', compressed) SEPARATOR ' ') from mysql_backup where cid=$CLUSTER_ID and backup_method='xtrabackup' and hostname='$HNAME' and parentid>0 order by parentid, backupid" 2>/dev/null`
     if [ $? -ne 0 ]; then
 	echo "Failed to query for backups"
@@ -1106,7 +1130,7 @@ function install
 {    
     CROND=""
     BACKUPDIR=""
-    args=`getopt u:P:B:h:p:i:b:c $*`
+    args=`getopt u:P:B:h:p:i:b:N:c $*`
     set -- $args
     for i
     do

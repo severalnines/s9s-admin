@@ -261,6 +261,7 @@ function load_opts
     OS=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='OS' AND cid=$CLUSTER_ID" 2>/dev/null`
     CONFIGDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='CONFIGDIR' AND cid=$CLUSTER_ID" 2>/dev/null`
     MYSQL_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MYSQL_PORT' AND cid=$CLUSTER_ID" 2>/dev/null`
+    MONITORED_MYSQL_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MONITORED_MYSQL_PORT' AND cid=$CLUSTER_ID" 2>/dev/null`
     GALERA_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='GALERA_PORT' AND cid=$CLUSTER_ID" 2>/dev/null`
     GALERA_VERSION=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='GALERA_VERSION' AND cid=$CLUSTER_ID" 2>/dev/null`
     MYSQL_BASEDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MYSQL_BASEDIR' AND cid=$CLUSTER_ID" 2>/dev/null`
@@ -280,6 +281,10 @@ function load_opts
 
 
     echo $MYCNF |  sed 's#\\n#\n\r#g' > /tmp/my.cnf
+
+    if [ "$MONITORED_MYSQL_PORT" = "" ] || [ "$MONITORED_MYSQL_PORT" = "NULL" ];  then
+        MONITORED_MYSQL_PORT="3306"
+    fi
     
     SSH_OPTS="-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10"
     if [ "$SSH_IDENTITY" = "" ]; then
@@ -875,7 +880,7 @@ function install_garbd
     fi
     
     QUERY="SHOW GLOBAL VARIABLES LIKE 'wsrep_cluster_name'"
-    CLUSTER_NAME=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$ANY_HOSTNAME --port=$CMON_DB_PORT -A -Bse "$QUERY"`
+    CLUSTER_NAME=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$ANY_HOSTNAME --port=$MONITORED_MYSQL_PORT -A -Bse "$QUERY"`
     if [ $? -ne 0 ]; then
         log_job_message "Failed to get wsrep_cluster_name" 1
 	log_job 'FAILED' 'install garbd failed' 1
@@ -1186,7 +1191,7 @@ function get_galera_nodestate
     local xHNAME=$1
     local xVAR="$2"
     QUERY="SHOW GLOBAL STATUS LIKE '$xVAR'"
-    STATE=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$xHNAME --port=$CMON_DB_PORT -N -Bse "$QUERY"`
+    STATE=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$xHNAME --port=$MONITORED_MYSQL_PORT -N -Bse "$QUERY"`
     if [ $? -ne 0 ]; then
 	STATE=$(check_node_up $xHNAME)
 	if [ "$STATE" = "DOWN" ]; then
@@ -1205,7 +1210,7 @@ function get_galera_clusterstate
 {
     local xHNAME=$1
     QUERY="SHOW GLOBAL STATUS LIKE 'wsrep_cluster_status'"
-    STATE=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$xHNAME --port=$CMON_DB_PORT -N -Bse "$QUERY"  2>/dev/null`
+    STATE=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$xHNAME --port=$MONITORED_MYSQL_PORT -N -Bse "$QUERY"  2>/dev/null`
     
     if [ $? -ne 0 ]; then
 	STATE=$(check_node_up $xHNAME)
@@ -1355,7 +1360,7 @@ function reinit_cluster
     if [ $RESET -eq 1 ]; then
       echo "Preparing non-donor nodes"
       QUERY="SHOW GLOBAL VARIABLES LIKE 'datadir'"
-      DATADIR=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$DONOR_HOSTNAME --port=$CMON_DB_PORT -A -Bse "$QUERY"`
+      DATADIR=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$DONOR_HOSTNAME --port=$MONITORED_MYSQL_PORT -A -Bse "$QUERY"`
       if [ $? -ne 0 ]; then
          echo "Failed to get datadir"
          exit 1
@@ -1445,7 +1450,7 @@ function make_primary
     load_opts $CLUSTER_ID
     
     QUERY="SHOW GLOBAL VARIABLES LIKE 'wsrep_provider_options'"
-    PROVIDER_OPTS=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$XHOSTNAME --port=$CMON_DB_PORT -A -Bse "$QUERY"` 
+    PROVIDER_OPTS=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$XHOSTNAME --port=$MONITORED_MYSQL_PORT -A -Bse "$QUERY"` 
     if [ $? -ne 0 ]; then
 	echo "Failed to get provider options"
 	exit 1
@@ -1461,7 +1466,7 @@ function make_primary
 	CSTATE=$(get_galera_clusterstate $XHOSTNAME)
 	if [ "$CSTATE" = "non-Primary" ]; then	   
 	    QUERY="set global wsrep_provider_options='${PROVIDER_OPTS};pc.bootstrap=1'"
-	    $MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$XHOSTNAME --port=$CMON_DB_PORT -e "$QUERY"
+	    $MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$XHOSTNAME --port=$MONITORED_MYSQL_PORT -e "$QUERY"
 	    if [ $? -ne 0 ]; then
 		echo "$QUERY failed"
 		exit 1

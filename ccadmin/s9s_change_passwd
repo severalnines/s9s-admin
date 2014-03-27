@@ -223,7 +223,11 @@ function load_opts
     if [ -z "$AGENTLESS" ]; then
 	AGENTLESS=0
     fi
-
+    MONITORED_MYSQL_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MONITORED_MYSQL_PORT' AND cid=$CLUSTER_ID" 2>/dev/null`
+    
+    if [ "$MONITORED_MYSQL_PORT" = "" ] || [ "$MONITORED_MYSQL_PORT" = "NULL" ];  then
+        MONITORED_MYSQL_PORT="3306"
+    fi
     if [ -z "$SSH_USER" ]; then
         log_job_message "SSH_USER not set in Cluster Settings"
         exit 1
@@ -265,7 +269,7 @@ function change_password_mysql
     local old_password=$4
     QUERY="UPDATE mysql.user SET password=password('$new_password') WHERE user='$user' AND password=password('${old_password}'); FLUSH PRIVILEGES;"
     echo "$h: executing: $QUERY"
-   `$MYSQL_BIN -B -N --host=$h --port=$MYSQL_PORT --user=cmon --password=$CMON_PASSWORD --database=mysql -e "$QUERY"`
+   `$MYSQL_BIN -B -N --host=$h --port=$MONITORED_MYSQL_PORT --user=cmon --password=$CMON_PASSWORD --database=mysql -e "$QUERY"`
     if [ $? -ne 0 ]; then
 	echo "Failed $QUERY"
 	exit 1

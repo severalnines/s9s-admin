@@ -657,6 +657,12 @@ function load_opts
     MYCNF=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select data  from cmon.cluster_configuration where cid=1 limit 1"`
 
 
+    MONITORED_MYSQL_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MONITORED_MYSQL_PORT' AND cid=$CLUSTER_ID" 2>/dev/null`
+    
+    if [ "$MONITORED_MYSQL_PORT" = "" ] || [ "$MONITORED_MYSQL_PORT" = "NULL" ];  then
+        MONITORED_MYSQL_PORT="3306"
+    fi
+    
 
     if [ $? -ne 0 ]; then 
         log_job_message "load opts failed"     
@@ -935,7 +941,7 @@ function install_haproxy
     rm -rf  $TMPDIR/${PREFIX}*.backend  2>/dev/null
     sed -i "s#MYSQL_PASSWORD=.*#MYSQL_PASSWORD=\"$CMON_PASSWORD\"#g" $TMPDIR/mysqlchk.sh
     sed -i "s#MYSQL_USERNAME=.*#MYSQL_USERNAME=\"cmon\"#g" $TMPDIR/mysqlchk.sh
-    sed -i "s#MYSQL_PORT=.*#MYSQL_PORT=\"$CMON_DB_PORT\"#g" $TMPDIR/mysqlchk.sh
+    sed -i "s#MYSQL_PORT=.*#MYSQL_PORT=\"$MONITORED_MYSQL_PORT\"#g" $TMPDIR/mysqlchk.sh
     sed -i "s#MYSQL_BIN=.*#MYSQL_BIN=\"$MYSQL_BIN\"#g" $TMPDIR/mysqlchk.sh
 
     
@@ -1738,7 +1744,7 @@ function add_node
     cp $TMPDIR/mysqlchk.sh.$CLUSTER_TYPE $TMPDIR/mysqlchk.sh 
     sed -i "s#MYSQL_PASSWORD=.*#MYSQL_PASSWORD=\"$CMON_PASSWORD\"#g" $TMPDIR/mysqlchk.sh
     sed -i "s#MYSQL_USERNAME=.*#MYSQL_USERNAME=\"cmon\"#g" $TMPDIR/mysqlchk.sh
-    sed -i "s#MYSQL_PORT=.*#MYSQL_PORT=\"$CMON_DB_PORT\"#g" $TMPDIR/mysqlchk.sh
+    sed -i "s#MYSQL_PORT=.*#MYSQL_PORT=\"$MONITORED_MYSQL_PORT\"#g" $TMPDIR/mysqlchk.sh
     sed -i "s#MYSQL_BIN=.*#MYSQL_BIN=\"$MYSQL_BIN\"#g" $TMPDIR/mysqlchk.sh
     install_mysqlchk $NODE
     REMOVE_STR="server $NODE"

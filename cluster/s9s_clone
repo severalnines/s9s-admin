@@ -260,6 +260,7 @@ function load_opts
     MYSQL_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MYSQL_PORT' AND cid=$CLUSTER_ID"`
     GALERA_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='GALERA_PORT' AND cid=$CLUSTER_ID"`
     MYSQL_BASEDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MYSQL_BASEDIR' AND cid=$CLUSTER_ID"`
+    MONITORED_MYSQL_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MONITORED_MYSQL_PORT' AND cid=$CLUSTER_ID" 2>/dev/null`
     MYSQL_SCRIPTDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SCRIPTDIR' AND cid=$CLUSTER_ID"`
     SSH_IDENTITY=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_IDENTITY' AND cid=$CLUSTER_ID"`
     SSH_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_PORT' AND cid=$CLUSTER_ID"`
@@ -272,7 +273,9 @@ function load_opts
     MYCNF=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select data  from cmon.cluster_configuration where cid=1 limit 1"`
 
     echo $MYCNF |  sed 's#\\n#\n\r#g' > /tmp/my.cnf
-    
+    if [ "$MONITORED_MYSQL_PORT" = "" ] || [ "$MONITORED_MYSQL_PORT" = "NULL" ];  then
+        MONITORED_MYSQL_PORT="3306"
+    fi
     SSH_OPTS="-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10"
     if [ "$SSH_IDENTITY" = "" ]; then
 	SSH_IDENTITY="-oIdentityFile=${OS_USER_HOME}/.ssh/id_rsa"
@@ -482,7 +485,7 @@ function create_cluster
 
     QUERY="SHOW GLOBAL STATUS LIKE 'wsrep_local_state'"
     
-    STATE=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=$TARGET_HOSTNAME --port=$CMON_DB_PORT --auto-vertical-output -N -A -Bse "$QUERY"`
+    STATE=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=$TARGET_HOSTNAME --port=$MONITORED_MYSQL_PORT --auto-vertical-output -N -A -Bse "$QUERY"`
     
     if [ $? -ne 0 ]; then
 	log_job_message "Failed to get wsrep_local_state of $TARGET_HOSTNAME" 1
@@ -885,7 +888,7 @@ function move_node
     if [ $CNT -eq 0 ]; then 
 	## IF THE CLUSTER WE MOVE THE NODE TO IS EMPTY, THEN INIT THE GALERA NODE
 	QUERY="SET WSREP_ON=0;SET GLOBAL wsrep_cluster_address='gcomm://'"	    
-	`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=$SOURCE_HOSTNAME --port=$PORT --auto-vertical-output -Bse "$QUERY"`	    
+	`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=$SOURCE_HOSTNAME --port=$MONITORED_MYSQL_PORT --auto-vertical-output -Bse "$QUERY"`	    
 	if [ $? -ne 0 ]; then
 	    log_job_message "Failed to create galera cluster on $TARGET_CLUSTER_ID" 1
 	    log_job 'FAILED' 's9s_clone --move-node failed' 1
@@ -1002,7 +1005,7 @@ function detach_cluster
     fi
     log_job 'RUNNING' 's9s_clone --detach is running' 0
     QUERY="SET GLOBAL wsrep_cluster_address='gcomm://'"    
-    `$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=$TARGET_HOSTNAME --port=$PORT --auto-vertical-output -Bse "$QUERY"`   
+    `$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=$TARGET_HOSTNAME --port=$MONITORED_MYSQL_PORT --auto-vertical-output -Bse "$QUERY"`   
     if [ $? -ne 0 ]; then
 	log_job_message "Failed to detach cluster" 1
 	log_job 'FAILED' 's9s_clone --detach failed' 1
