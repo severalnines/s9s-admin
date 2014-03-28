@@ -794,8 +794,10 @@ upgradeCmon()
 		else
 			upgradeCcUi $LATEST_CCUI_VERSION
 		fi
-		#[ -d $tmp_dir/cmon.d ] && commandStatus 'Restoring CMON config directory' "cp -f $tmp_dir/cmon.d/* /etc/cmon.d/"
-        fi
+		if [ -d /$tmp_dir/cmon.d ]; then
+			[ "$(ls -A /$tmp_dir/cmon.d)" ] && commandStatus 'Restoring CMON config directory' "cp -f $tmp_dir/cmon.d/* /etc/cmon.d/"
+       		fi
+	fi
 	commandStatus 'Restoring CMON config file' "cp -f $tmp_dir/cmon.cnf /etc/"
 	if [ "$mode" == "controller" ] || [ "$mode" == "dual" ]; then
 		if [ -z "$agent_based" ]; then
@@ -1077,26 +1079,30 @@ disableAgents()
 
         for h in $AGENT_HOSTS
         do
-		echo "$h: Killing CMON agent process .."
-		ssh $SSH_OPTS $os_user@$h "$sudo killall -q -9 cmon"
-		if [ "$os" == "debian" ]; then
-			echo "$h: Removing CMON from runlevel .."
-			ssh $SSH_OPTS $os_user@$h "$sudo update-rc.d -f cmon remove"
-		elif [ "$os" == "redhat" ]; then
-			echo "$h: Removing CMON from runlevel .."
-			ssh $SSH_OPTS $os_user@$h "$sudo chkconfig --del cmon"
+		if [ `ssh $SSH_OPTS $os_user@$h "$sudo grep ^mode=controller /etc/cmon.cnf"` ]; then
+			:
+		else
+			echo "$h: Killing CMON agent process .."
+			ssh $SSH_OPTS $os_user@$h "$sudo killall -q -9 cmon"
+			if [ "$os" == "debian" ]; then
+				echo "$h: Removing CMON from runlevel .."
+				ssh $SSH_OPTS $os_user@$h "$sudo update-rc.d -f cmon remove"
+			elif [ "$os" == "redhat" ]; then
+				echo "$h: Removing CMON from runlevel .."
+				ssh $SSH_OPTS $os_user@$h "$sudo chkconfig --del cmon"
+			fi
+			echo "$h: Disabling /etc/cmon.cnf .."
+			ssh $SSH_OPTS $os_user@$h "[ -f /etc/cmon.cnf ] && $sudo mv /etc/cmon.cnf /etc/cmon.cnf.disabled"
+			echo "$h: Disabling /etc/init.d/cmon .."
+			ssh $SSH_OPTS $os_user@$h "[ -f /etc/init.d/cmon ] && $sudo mv /etc/init.d/cmon /etc/init.d/cmon.disabled"
+			echo "$h: Disabling /usr/local/cmon .."
+			ssh $SSH_OPTS $os_user@$h "[ -e /usr/local/cmon ] && $sudo mv /usr/local/cmon /usr/local/cmon.disabled"
+			echo "$h: Disabling /usr/sbin/cmon .."
+			ssh $SSH_OPTS $os_user@$h "[ -e /usr/sbin/cmon ] && $sudo mv /usr/sbin/cmon /usr/sbin/cmon.disabled"
+			echo "$h: Disabling /var/log/cmon.log .."
+			ssh $SSH_OPTS $os_user@$h "[ -e /var/log/cmon.log ] && $sudo mv /var/log/cmon.log /var/log/cmon.log.disabled"
+			echo ""
 		fi
-		echo "$h: Disabling /etc/cmon.cnf .."
-		ssh $SSH_OPTS $os_user@$h "[ -f /etc/cmon.cnf ] && $sudo mv /etc/cmon.cnf /etc/cmon.cnf.disabled"
-		echo "$h: Disabling /etc/init.d/cmon .."
-		ssh $SSH_OPTS $os_user@$h "[ -f /etc/init.d/cmon ] && $sudo mv /etc/init.d/cmon /etc/init.d/cmon.disabled"
-		echo "$h: Disabling /usr/local/cmon .."
-		ssh $SSH_OPTS $os_user@$h "[ -e /usr/local/cmon ] && $sudo mv /usr/local/cmon /usr/local/cmon.disabled"
-		echo "$h: Disabling /usr/sbin/cmon .."
-		ssh $SSH_OPTS $os_user@$h "[ -e /usr/sbin/cmon ] && $sudo mv /usr/sbin/cmon /usr/sbin/cmon.disabled"
-		echo "$h: Disabling /var/log/cmon.log .."
-		ssh $SSH_OPTS $os_user@$h "[ -e /var/log/cmon.log ] && $sudo mv /var/log/cmon.log /var/log/cmon.log.disabled"
-		echo ""
         done
 	
 }
