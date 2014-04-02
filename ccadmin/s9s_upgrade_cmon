@@ -673,8 +673,30 @@ upgradeCcUi()
 	commandStatus 'Backing up ClusterControl bootstrap.php' "cp -rf $wwwroot/clustercontrol/bootstrap.php $repo_dir/cc-ui-${version}/"
 	commandStatus 'Backing up CMONAPI bootstrap.php' "cp -rf $wwwroot/cmonapi/config/bootstrap.php $repo_dir/cc-cmonapi-${version}/config/"
 	commandStatus 'Backing up CMONAPI database.php' "cp -rf $wwwroot/cmonapi/config/database.php $repo_dir/cc-cmonapi-${version}/config/"
-	sed -i "s|^define('CC_API_VERSION'.*|define('CC_API_VERSION', '${version}');|g" $repo_dir/cc-cmonapi-${version}/config/bootstrap.php
-	sed -i "s|^define('CC_API_VERSION'.*|define('CC_API_VERSION', '${version}');|g" $repo_dir/cc-ui-${version}/bootstrap.php
+
+        new_version=$(sed -n "s/^define('CC_API_VERSION'.*'\(.*\)'.*/\1/p" ${repo_dir}/cc-cmonapi-${version}/config/bootstrap.php.default)
+        [[ -z $new_version ]] && new_version=$version
+        $(grep -q "ENABLE_CC_API_TOKEN_CHECK" ${repo_dir}/cc-cmonapi-${version}/config/bootstrap.php)
+        if [[ $? -eq 1 ]]; then
+            echo "define('ENABLE_CC_API_TOKEN_CHECK', 1);" | sudo tee -a ${repo_dir}/cc-cmonapi-${version}/config/bootstrap.php &>/dev/null
+        fi
+	sed -i "s|^define('CC_API_VERSION'.*|define('CC_API_VERSION', '${new_version}');|g" $repo_dir/cc-cmonapi-${version}/config/bootstrap.php
+
+        $(grep -q "GALERA_5_6_URL" ${repo_dir}/cc-ui-${version}/bootstrap.php)
+        if [[ $? -eq 1 ]]; then
+            echo "define('GALERA_5_6_URL', 'http://www.severalnines.com/galera-configurator3');" | sudo tee -a ${repo_dir}/cc-ui-${version}/bootstrap.php &>/dev/null
+            echo "define('GALERA_5_5_URL', 'http://www.severalnines.com/galera-configurator');" | sudo tee -a ${repo_dir}/cc-ui-${version}/bootstrap.php &>/dev/null
+        fi
+        # needed for release 1.2.6
+        $(grep -q "'CMON_API'" ${repo_dir}/cc-ui-${version}/bootstrap.php)
+        if [[ $? -eq 1 ]]; then
+            echo "define('CMON_API', APP_URL .'/cmonapi');" | sudo tee -a ${repo_dir}/cc-ui-${version}/bootstrap.php &>/dev/null
+        fi
+        new_version=$(sed -n "s/^define('CC_UI_VERSION'.*'\(.*\)'.*/\1/p" ${repo_dir}/cc-ui-${version}/bootstrap.php.default)
+        [[ -z $new_version ]] && new_version=$version 
+	sed -i "s|^define('CC_API_VERSION'.*|define('CC_API_VERSION', '${new_version}');|g" $repo_dir/cc-ui-${version}/bootstrap.php &>/dev/null
+	sed -i "s|^define('CC_UI_VERSION'.*|define('CC_UI_VERSION', '${new_version}');|g" $repo_dir/cc-ui-${version}/bootstrap.php &>/dev/null
+
 	commandStatus "Copying CMONAPI to $wwwroot" "cp -rf $repo_dir/cc-cmonapi-${version} $wwwroot/"
 	commandStatus "Copying ClusterControl UI to $wwwroot" "cp -rf $repo_dir/cc-ui-${version} $wwwroot/"
 	rm -f $wwwroot/clustercontrol
