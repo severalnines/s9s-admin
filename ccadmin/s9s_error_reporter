@@ -279,6 +279,9 @@ function collect_mysql_logs()
 
     for host in $HOSTNAMES
     do
+	if [ "$host" = "NULL" ]; then
+             continue
+	fi
 	mkdir -p $savedir/$host
 	tmpsavedir=$savedir/$host
 	$MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --port=$MONITORED_MYSQL_PORT -h$host -e "SHOW GLOBAL STATUS" > $tmpsavedir/show_status
