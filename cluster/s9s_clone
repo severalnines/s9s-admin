@@ -551,6 +551,8 @@ function create_cluster
     QUERY="$QUERY;INSERT IGNORE INTO cmon_configuration(cid, param, value) SELECT $TARGET_CLUSTER_ID, param,value  FROM cmon.cmon_configuration WHERE cid=${SOURCE_CLUSTER_ID}"    
     QUERY="$QUERY;INSERT IGNORE INTO cmon_sw_package(cid, packageid, name, rpm, selected) SELECT $TARGET_CLUSTER_ID,packageid, name, rpm, selected  FROM cmon.cmon_sw_package WHERE cid=${SOURCE_CLUSTER_ID}"    
     QUERY="$QUERY;INSERT INTO cmon_uploads(cid, packageid, filename,path,cluster_type,version_tag,md5sum,filesize, selected) SELECT $TARGET_CLUSTER_ID, packageid, filename,path,cluster_type,version_tag,md5sum,filesize, selected FROM cmon.cmon_uploads WHERE cid=${SOURCE_CLUSTER_ID}"    
+    QUERY="$QUERY;INSERT IGNORE INTO expression_group(cid, name, created) SELECT $TARGET_CLUSTER_ID, name,created FROM cmon.expression_group WHERE cid=${SOURCE_CLUSTER_ID}"    
+    QUERY="$QUERY;INSERT IGNORE INTO expression(cid, groupid, expression, result_var,advise) SELECT $TARGET_CLUSTER_ID, groupid, expression, result_var,advise FROM cmon.expression WHERE cid=${SOURCE_CLUSTER_ID}" 
     QUERY="$QUERY;REPLACE INTO cmon_configuration(cid, param, value) VALUES ($TARGET_CLUSTER_ID, \"CLUSTER_NAME\", \"${CLUSTER_NAME}\")"    
     QUERY="$QUERY;CALL sp_cmon_movehost(${TARGET_CLUSTER_ID}, ${HID})"
     QUERY="$QUERY;COMMIT"
@@ -569,10 +571,14 @@ function create_cluster
     if [ -f /etc/cmon.d/cmon_${SOURCE_CLUSTER_ID}.cnf ]; then
 	cp /etc/cmon.d/cmon_${SOURCE_CLUSTER_ID}.cnf /etc/cmon.d/cmon_${TARGET_CLUSTER_ID}.cnf
 	SOURCE_CNF=/etc/cmon.d/cmon_${SOURCE_CLUSTER_ID}.cnf
-    fi
-    if [ -f /etc/cmon.cnf ]; then
-	cp /etc/cmon.cnf /etc/cmon.d/cmon_${TARGET_CLUSTER_ID}.cnf
-	SOURCE_CNF=/etc/cmon.cnf
+    else	
+	if [ -f /etc/cmon.cnf ]; then
+	    cp /etc/cmon.cnf /etc/cmon.d/cmon_${TARGET_CLUSTER_ID}.cnf
+	    SOURCE_CNF=/etc/cmon.cnf
+	else
+	    log_job_message "No configuration file found" 1
+	    log_job 'FAILED' 's9s_clone --create failed' 1
+	fi
     fi
     
     sed -i.bak "s#cluster_id=.*#cluster_id=${TARGET_CLUSTER_ID}#g" /etc/cmon.d/cmon_${TARGET_CLUSTER_ID}.cnf
@@ -604,6 +610,7 @@ function create_cluster
     SERVERS=`$MYSQL_BIN $MYSQL_OPTS -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"`    
     if [ $? -ne 0 ]; then
 	log_job_message "Failed to get mysql_server list" 1
+	log_job 'FAILED' 's9s_clone --create failed' 1
 	exit 1
     fi
     
@@ -913,10 +920,10 @@ function move_node
     fi
 
     if [ $TARGET_CLUSTER_ID -eq 1 ]; then
-	if [ -f /etc/cmon.cnf ]; then 
-	    sed -i.bak "s#mysql_server_addresses=.*#mysql_server_addresses=${SERVERS}#g" /etc/cmon.cnf
-	else
+	if [ -f  /etc/cmon.d/cmon_${TARGET_CLUSTER_ID}.cnf ]; then 
 	    sed -i.bak "s#mysql_server_addresses=.*#mysql_server_addresses=${SERVERS}#g" /etc/cmon.d/cmon_${TARGET_CLUSTER_ID}.cnf
+	else
+	    sed -i.bak "s#mysql_server_addresses=.*#mysql_server_addresses=${SERVERS}#g" /etc/cmon.cnf
 	fi
     else
 	sed -i.bak "s#mysql_server_addresses=.*#mysql_server_addresses=${SERVERS}#g" /etc/cmon_${TARGET_CLUSTER_ID}.cnf

@@ -64,8 +64,8 @@ function test_connection
     QUERY="select 1"
     $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --host=$HNAME --port=$MYSQL_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
     if [ $? -ne 0 ]; then
-	echo "Could not connect the mysql server @ $HNAME:$$MYSQL_PORT with user=$CMON_USER and password='hidden'. GRANT ALL PRIVILEGES ON *.* TO 'cmon'@'127.0.0.1' IDENTIFIED BY <cmon_password> " 
-	log_job_message "Could not connect the mysql server @ $HNAME:$$MYSQL_PORT with user=$CMON_USER and password='hidden'. GRANT ALL PRIVILEGES ON *.* TO 'cmon'@'127.0.0.1' IDENTIFIED BY <cmon_password> " 1
+	echo "Could not connect the mysql server @ $HNAME:${MYSQL_PORT} with user=$CMON_USER and password='hidden'. GRANT ALL PRIVILEGES ON *.* TO 'cmon'@'127.0.0.1' IDENTIFIED BY <cmon_password> " 
+	log_job_message "Could not connect the mysql server @ $HNAME:${MYSQL_PORT} with user=$CMON_USER and password='hidden'. GRANT ALL PRIVILEGES ON *.* TO 'cmon'@'127.0.0.1' IDENTIFIED BY <cmon_password> " 1
 	log_job 'FAILED' 'backup failed' 1
 	exit 1
     fi

@@ -328,6 +328,7 @@ ERR_FILE="/dev/shm/mysqlchk.$$.err"
 FORCE_FAIL="/dev/shm/proxyoff"
 MYSQL_BIN=$MYSQL_BIN
 CHECK_QUERY="show global status where variable_name='wsrep_local_state'"
+CHECK_QUERY2="show global status where variable_name='wsrep_sst_method'"
 preflight_check()
 {
     for I in "$TMP_FILE" "$ERR_FILE"; do
@@ -377,11 +378,21 @@ if [ $? -ne 0 ]; then
 fi
 status=`cat  $TMP_FILE | awk '{print $2;}'`
 
-if [ $status -ne 4 ]; then
-   return_fail;
+if [ $status -eq 2 ] || [ $status -eq 4 ] ; then
+   if [ $status -eq 2 ]; then
+     $MYSQL_BIN $MYSQL_OPTS --host=$MYSQL_HOST --port=$MYSQL_PORT --user=$MYSQL_USERNAME --password=$MYSQL_PASSWORD -e "$CHECK_QUERY2" > $TMP_FILE 2> $ERR_FILE
+     if [ $? -ne 0 ]; then
+        return_fail;
+     fi
+     method=`cat  $TMP_FILE | awk '{print $2;}'`
+     if [ -z "$method" ] || [ "$method" = "rsync" ] || [ "$method" = "mysqldump" ]; then
+         return_fail;
+     fi
+   fi
+   return_ok;
 fi
 
-return_ok;
+return_fail;
 
 EOF
 
@@ -1061,7 +1072,7 @@ function install_haproxy
     QUERY="REPLACE INTO ext_proc (cid, hostname,bin, opts,cmd, proc_name, port) VALUES($CLUSTER_ID, '$LB_HOSTNAME','/usr/sbin/haproxy', \"${HAPROXY_OPTS}\", \"/usr/sbin/haproxy ${HAPROXY_OPTS}\",'haproxy', $LB_ADMIN_PORT)"
     $MYSQL_BIN -B -N  -ucmon -p$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST  --port=${CMON_DB_PORT} -e "$QUERY" 2>&1 >/tmp/err.log
     if [  $? -ne 0 ]; then
-	log_job_message "Query failed: $QUERY"
+	log_job_message "Query failed: $QUERY" 1
 	echo ""
 	cat /tmp/err.log
 	log_job 'FAILED' 's9s_haproxy failed' 1
@@ -1075,14 +1086,14 @@ function install_haproxy
     log_message  ""
     log_message  "FIREWALL: To access HAproxy within ClusterControl, you should allow the clustercontrol server to connect to $LB_HOSTNAME on port ${LB_ADMIN_PORT}, and HAProxy must be able to communicate on port 9200 and 3306 with the MySQL Servers."
     log_message  ""
-    log_message  "**The admin interface is on http://${LB_HOSTNAME}:${LB_ADMIN_PORT} **"
-    log_message  "  Login with ${LB_ADMIN_USER}/${LB_ADMIN_PASSWORD}"
+    log_job_message  "**The admin interface is on http://${LB_HOSTNAME}:${LB_ADMIN_PORT} **" 0
+    log_job_message  "  Login with ${LB_ADMIN_USER}/${LB_ADMIN_PASSWORD}" 0
     log_message  ""
-    log_message  "** Connect from applications: "
-    log_message  "  HAProxy listens on ${LB_HOSTNAME}:${HAPROXY_MYSQL_LISTEN_PORT} for mysql connections."
+    log_job_message  "** Connect from applications: " 0
+    log_job_message  "  HAProxy listens on ${LB_HOSTNAME}:${HAPROXY_MYSQL_LISTEN_PORT} for mysql connections." 0
     log_message  ""
-    log_message  " ** Don't forget to GRANT ${LB_HOSTNAME} on your mysql servers:"
-    log_message  "  GRANT <privs> ON <db>.* TO '<user>'@'${LB_HOSTNAME}' IDENTIFIED BY '<password>'"
+    log_job_message  " ** Don't forget to GRANT ${LB_HOSTNAME} on your mysql servers:" 0
+    log_job_message  "  GRANT <privs> ON <db>.* TO '<user>'@'${LB_HOSTNAME}' IDENTIFIED BY '<password>'" 0
     log_message  ""
     
     cat $HAPROXY_LOG2  > /tmp/s9s_result
@@ -1408,7 +1419,7 @@ function delete_keepalived
 	QUERY="DELETE FROM ext_proc WHERE cid=${cluster_id} AND hostname='$LB_HOSTNAME' AND proc_name='keepalived'"
 	$MYSQL_BIN -B -N  -ucmon -p$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST  --port=${CMON_DB_PORT} -e "$QUERY" 2>&1 >/tmp/err.log
 	if [  $? -ne 0 ]; then
-	    log_job_message "Query failed: $QUERY"
+	    log_job_message "Query failed: $QUERY" 1
 	    echo ""
 	    cat /tmp/err.log
 	    log_job 'FAILED' 's9s_haproxy --delete-ka failed' 1
@@ -1531,7 +1542,7 @@ function delete_haproxy
     QUERY="DELETE FROM ext_proc WHERE cid=$CLUSTER_ID AND hostname='$LB_HOSTNAME' AND proc_name='haproxy'"
     $MYSQL_BIN -B -N  -ucmon -p$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST  --port=${CMON_DB_PORT} -e "$QUERY" 2>&1 >/tmp/err.log
     if [  $? -ne 0 ]; then
-        log_job_message "Query failed: $QUERY"
+        log_job_message "Query failed: $QUERY" 1
        echo ""
        cat /tmp/err.log
        log_job "FAILED" "s9s_haproxy failed" 1
