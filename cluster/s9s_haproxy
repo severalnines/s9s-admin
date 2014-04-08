@@ -950,7 +950,7 @@ function install_haproxy
 
 
     rm -rf  $TMPDIR/${PREFIX}*.backend  2>/dev/null
-    sed -i "s#MYSQL_PASSWORD=.*#MYSQL_PASSWORD=\"$CMON_PASSWORD\"#g" $TMPDIR/mysqlchk.sh
+    sed -i "s#MYSQL_PASSWORD=.*#MYSQL_PASSWORD='$CMON_PASSWORD'#g" $TMPDIR/mysqlchk.sh
     sed -i "s#MYSQL_USERNAME=.*#MYSQL_USERNAME=\"cmon\"#g" $TMPDIR/mysqlchk.sh
     sed -i "s#MYSQL_PORT=.*#MYSQL_PORT=\"$MONITORED_MYSQL_PORT\"#g" $TMPDIR/mysqlchk.sh
     sed -i "s#MYSQL_BIN=.*#MYSQL_BIN=\"$MYSQL_BIN\"#g" $TMPDIR/mysqlchk.sh

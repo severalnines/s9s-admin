@@ -839,7 +839,7 @@ EOF
 		    remote_cmd $XHOSTNAME "gpg --import ${S9S_TMPDIR}/RPM-GPG-KEY-percona"
 		    remote_cmd $XHOSTNAME "/bin/sh -c 'gpg -a --export CD2EFD2A | apt-key add -'"
 		fi
-		remote_cmd $XHOSTNAME "/usr/bin/s9s_backup --install -i $CLUSTER_ID -b /tmp/  -u $CMON_USER -p $CMON_PASSWORD -h $CMON_DB_HOST -P $CMON_DB_PORT -B$MYSQL_BASEDIR/bin/mysql"
+		remote_cmd $XHOSTNAME "/usr/bin/s9s_backup --install -i $CLUSTER_ID -b /tmp/  -u $CMON_USER -p'$CMON_PASSWORD' -h $CMON_DB_HOST -P $CMON_DB_PORT -B$MYSQL_BASEDIR/bin/mysql"
 	    fi
 	    log_job_message "Installing s9s_notify_cc on $XHOSTNAME"
 	    bash /usr/bin/s9s_galera --install-notifycc -i${CLUSTER_ID} -h${XHOSTNAME} -j${JOBID}

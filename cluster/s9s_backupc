@@ -7,7 +7,7 @@ MONITORED_MYSQL_PORT=3306
 function init
 {    
     FILES=`ls /etc/cmon.cnf 2>&1`
-    FILES2=`ls /etc/cmon.d/*.cnf 2>&1`    
+    FILES2=`ls /etc/cmon.d/cmon*cnf 2>&1`    
     FILES="$FILES $FILES2"
     configfile=""
     for f in $FILES 
@@ -32,8 +32,8 @@ function init
     CMON_DB_HOST=$mysql_hostname
     CMON_DB_DB=cmon
     CMON_DB_PORT=$mysql_port
-    BACKUP_LOGFILE=/tmp/s9s_backup.log
-    LOCKFILE="/tmp/s9s_backup.lock"
+    BACKUP_LOGFILE=/tmp/s9s_backupc_${CLUSTER_ID}.log
+    LOCKFILE="/tmp/s9s_backupc_${CLUSTER_ID}.lock"
     XTRABACKUP_BIN=/usr/bin/innobackupex
     NETCAT_PORT=59999
     ULIMIT=32768
@@ -102,6 +102,16 @@ function log_job
     if [ $jobid -ne 0 ]; then 
 	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
     fi
+}
+
+
+function write_defaults_file
+{ 
+   user=$1
+   pass=$2
+   ssh $SSH_OPTS  $SSH_USER@$BACKUP_HOSTNAME "echo [client] > /tmp/s9s_pass"
+   ssh $SSH_OPTS  $SSH_USER@$BACKUP_HOSTNAME "echo user='$user' >> /tmp/s9s_pass"
+   ssh $SSH_OPTS  $SSH_USER@$BACKUP_HOSTNAME "echo password='$pass' >> /tmp/s9s_pass"
 }
 
 function write_logfile
@@ -203,6 +213,8 @@ function start_backup
 	log_job 'FAILED' 'backup failed' 1
 	exit 1
     fi
+
+    write_defaults_file cmon $CMON_PASSWORD
     
     if [ -z "$BACKUPDIR" ]; then
 	BACKUPDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='BACKUPDIR' AND cid=$CLUSTER_ID"`
@@ -222,7 +234,7 @@ function start_backup
        rm $LOCKFILE
     fi
     if [ ! -e $LOCKFILE ]; then
-	trap "rm -f $LOCKFILE; killall -9 s9s_backupc_wd nc; rm -rf /tmp/xtrabackup_pid; exit" INT TERM EXIT
+	trap "rm -f $LOCKFILE; killall -9 s9s_backupc_wd nc; rm -rf /tmp/xtrabackup_pid; ssh $SSH_OPTS $SSH_USER@$BACKUP_HOSTNAME rm /tmp/s9s_pass; exit" INT TERM EXIT
 	echo $$ $LOCKFILE	
 	if which pv &> /dev/null; then
             #THROTTLE="--throttle=30"
@@ -439,10 +451,10 @@ function start_backup
 	if [ "$TYPE" = "full" ]; then   
 	    log_job 'RUNNING' 'Job is running' 0
 	    if [ $COMPRESSION -eq 1 ]; then
- 		ssh $SSH_OPTS  $SSH_USER@$BACKUP_HOSTNAME "$SUDO sh -c 'ulimit -n $ULIMIT && $XTRABACKUP_BIN $GALERA_INFO   --defaults-file=$MYCNF --host=127.0.0.1  --port=$MONITORED_MYSQL_PORT --user=$CMON_USER --password=$CMON_PASSWORD $INNOBACKUP_OPTS $THROTTLE  --stream=tar ./  2>$BACKUP_LOGFILE | $COMPRESSION_TOOL  - | nc $STORAGE_HNAME $NETCAT_PORT  '" 
+ 		ssh $SSH_OPTS  $SSH_USER@$BACKUP_HOSTNAME "$SUDO sh -c 'ulimit -n $ULIMIT && LC_ALL=C $XTRABACKUP_BIN $GALERA_INFO   --defaults-extra-file=/tmp/s9s_pass --host=127.0.0.1  --port=$MONITORED_MYSQL_PORT $INNOBACKUP_OPTS $THROTTLE  --stream=tar ./  2>$BACKUP_LOGFILE | $COMPRESSION_TOOL  - | nc $STORAGE_HNAME $NETCAT_PORT  '" 	   		
 		ret=$?
 	    else
-		ssh $SSH_OPTS  $SSH_USER@$BACKUP_HOSTNAME "$SUDO sh -c 'ulimit -n $ULIMIT && $XTRABACKUP_BIN $GALERA_INFO   --defaults-file=$MYCNF --host=127.0.0.1 --port=$MONITORED_MYSQL_PORT --user=$CMON_USER --password=$CMON_PASSWORD $INNOBACKUP_OPTS $THROTTLE  --stream=tar ./  2>$BACKUP_LOGFILE | nc $STORAGE_HNAME $NETCAT_PORT  '" 
+		ssh $SSH_OPTS  $SSH_USER@$BACKUP_HOSTNAME "$SUDO sh -c 'ulimit -n $ULIMIT && $XTRABACKUP_BIN $GALERA_INFO   --defaults-extra-file=/tmp/s9s_pass --host=127.0.0.1 --port=$MONITORED_MYSQL_PORT  $INNOBACKUP_OPTS $THROTTLE  --stream=tar ./  2>$BACKUP_LOGFILE | nc $STORAGE_HNAME $NETCAT_PORT  '" 
 		ret=$?
 	    fi
 	    scp -q $SCP_OPTS $SSH_USER@$BACKUP_HOSTNAME:$BACKUP_LOGFILE $BACKUP_LOGFILE
@@ -454,10 +466,10 @@ function start_backup
 	else
 	    log_job 'RUNNING' 'Job is running' 0
 	    if [ $COMPRESSION -eq 1 ]; then
- 		ssh  $SSH_OPTS  $SSH_USER@$BACKUP_HOSTNAME "$SUDO sh -c 'ulimit -n $ULIMIT && $XTRABACKUP_BIN $GALERA_INFO  --defaults-file=$MYCNF --host=127.0.0.1  --port=$MONITORED_MYSQL_PORT --user=$CMON_USER --password=$CMON_PASSWORD --incremental --incremental-lsn=$LSN $INNOBACKUP_OPTS $THROTTLE  --stream=xbstream ./  2>$BACKUP_LOGFILE | $COMPRESSION_TOOL  - | nc $STORAGE_HNAME $NETCAT_PORT  '" 
+ 		ssh  $SSH_OPTS  $SSH_USER@$BACKUP_HOSTNAME "$SUDO sh -c 'ulimit -n $ULIMIT && $XTRABACKUP_BIN $GALERA_INFO  --defaults-extra-file=/tmp/s9s_pass --host=127.0.0.1  --port=$MONITORED_MYSQL_PORT  --incremental --incremental-lsn=$LSN $INNOBACKUP_OPTS $THROTTLE  --stream=xbstream ./  2>$BACKUP_LOGFILE | $COMPRESSION_TOOL  - | nc $STORAGE_HNAME $NETCAT_PORT  '" 
 		ret=$?
 	    else
- 		ssh  $SSH_OPTS  $SSH_USER@$BACKUP_HOSTNAME "$SUDO sh -c 'ulimit -n $ULIMIT && $XTRABACKUP_BIN $GALERA_INFO  --defaults-file=$MYCNF --host=127.0.0.1  --port=$MONITORED_MYSQL_PORT --user=$CMON_USER --password=$CMON_PASSWORD --incremental --incremental-lsn=$LSN $INNOBACKUP_OPTS $THROTTLE  --stream=xbstream ./  2>$BACKUP_LOGFILE | nc $STORAGE_HNAME $NETCAT_PORT  '" 
+ 		ssh  $SSH_OPTS  $SSH_USER@$BACKUP_HOSTNAME "$SUDO sh -c 'ulimit -n $ULIMIT && $XTRABACKUP_BIN $GALERA_INFO  --defaults-extra-file=/tmp/s9s_pass --host=127.0.0.1  --port=$MONITORED_MYSQL_PORT  --incremental --incremental-lsn=$LSN $INNOBACKUP_OPTS $THROTTLE  --stream=xbstream ./  2>$BACKUP_LOGFILE | nc $STORAGE_HNAME $NETCAT_PORT  '" 
 		ret=$?
 	    fi
 	    

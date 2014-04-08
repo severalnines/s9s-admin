@@ -11,7 +11,7 @@
 JOBID=0
 function init
 {    
-    FILES=`ls /etc/cmon.cnf 2>&1`
+    FILES=`ls /etc/cmon*cnf 2>&1`
     FILES2=`ls /etc/cmon.d/*.cnf 2>&1`
     FILES="$FILES $FILES2"
     configfile=""
@@ -21,6 +21,7 @@ function init
 	if [ $? -eq 0 ]; then
             source $f
             configfile=$f
+	    break
         fi
     done
 
@@ -303,6 +304,7 @@ function collect_mysql_logs()
 	fi
 	remote_cmd_nofail $host "cp $CONFIGDIR/my.cnf /tmp"
 	remote_cmd_nofail $host "/sbin/iptables -L > /tmp/iptables_out"
+	remote_cmd_nofail $host "/sbin/ifconfig > /tmp/ifconfig_out"
 	remote_cmd_nofail $host "cp $ERRLOG /tmp"
 	if [ "$CLUSTER_TYPE" = "galera" ]; then
 	    remote_cmd_nofail $host "cp $DATADIR/GRA* /tmp"
@@ -321,11 +323,13 @@ function collect_mysql_logs()
 	fi
 	remote_cmd_nofail $host "chown $SSH_USER /tmp/error.log"
 	remote_cmd_nofail $host "chown $SSH_USER /tmp/iptables_out"
+	remote_cmd_nofail $host "chown $SSH_USER /tmp/ifconfig_out"
 	remote_cmd_nofail $host "chown $SSH_USER /tmp/mysql*.log"
 	remote_copy_from_r2 $host /tmp/error.log $tmpsavedir/
 	remote_copy_from_r2 $host /tmp/mysql*.log $tmpsavedir/
 	remote_copy_from_r2 $host /tmp/my.cnf $tmpsavedir/
 	remote_copy_from_r2 $host /tmp/iptables_out $tmpsavedir/
+	remote_copy_from_r2 $host /tmp/ifconfig_out $tmpsavedir/
 	if [ $AGENTLESS -eq 0 ]; then 
 	   remote_cmd_nofail $host "cp /var/log/cmon.log* /tmp"
 	   remote_cmd_nofail $host "chown $SSH_USER /tmp/cmon.log*"
@@ -340,6 +344,7 @@ function collect_mysql_logs()
        remote_cmd_nofail $host "rm /tmp/my.cnf"
        remote_cmd_nofail $host "rm /tmp/mysql*.log"
        remote_cmd_nofail $host "rm /tmp/iptables_out"
+       remote_cmd_nofail $host "rm /tmp/ifconfig_out"
     done
 }
 
