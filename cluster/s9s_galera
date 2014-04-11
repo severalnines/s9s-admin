@@ -629,7 +629,7 @@ EOF
 	    remote_copy $S9S_TMPDIR/wsrep_notify_cc ${HNAME} ${S9S_TMPDIR}/wsrep_notify_cc
 	    remote_cmd $HNAME "sed -i.bak 's#.*CMON_DB_HOST=.*#CMON_DB_HOST=$CMON_DB_HOST#g' ${S9S_TMPDIR}/wsrep_notify_cc"
 	    remote_cmd $HNAME "sed -i.bak 's#.*CMON_DB_PORT=.*#CMON_DB_PORT=$CMON_DB_PORT#g' ${S9S_TMPDIR}/wsrep_notify_cc"
-	    remote_cmd $HNAME "sed -i.bak 's#.*CMON_PASSWORD=.*#CMON_PASSWORD=$CMON_PASSWORD#g' ${S9S_TMPDIR}/wsrep_notify_cc"
+	    remote_cmd $HNAME "sed -i.bak 's#.*CMON_PASSWORD=.*#CMON_PASSWORD=\'$CMON_PASSWORD\'#g' ${S9S_TMPDIR}/wsrep_notify_cc"
 	    remote_cmd $HNAME "sed -i.bak 's#.*CLUSTER_ID=.*#CLUSTER_ID=$CLUSTER_ID#g' ${S9S_TMPDIR}/wsrep_notify_cc"
 	    remote_cmd $HNAME "sed -i.bak 's#.*MYSQL_BIN=.*#MYSQL_BIN=$MYSQL_BIN#g' ${S9S_TMPDIR}/wsrep_notify_cc"
 	    remote_cmd $HNAME "sed -i.bak 's#.*MYSQL_HOSTNAME=.*#MYSQL_HOSTNAME=$HNAME#g' ${S9S_TMPDIR}/wsrep_notify_cc"
