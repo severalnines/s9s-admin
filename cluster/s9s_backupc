@@ -70,9 +70,9 @@ function write_email
 {
   SUBJECT=$1
   MSG=$2
-  cat $BACKUP_LOGFILE | sed  -e "s/'/\\\'/g" -e 's/"/\\"/g' > /tmp/s9s_backup_log_escaped
-  df -h > /tmp/s9s_diskspace
-  MSG="$MSG \nBackup log follows:\n `cat /tmp/s9s_backup_log_escaped`\n\n`cat /tmp/s9s_diskspace`" 
+  cat $BACKUP_LOGFILE | sed  -e "s/'/\\\'/g" -e 's/"/\\"/g' > /tmp/s9s_backup_log_escaped_${CLUSTER_ID}
+  df -h > /tmp/s9s_diskspace_${CLUSTER_ID}
+  MSG="$MSG \nBackup log follows:\n `cat /tmp/s9s_backup_log_escaped_${CLUSTER_ID}`\n\n`cat /tmp/s9s_diskspace_${CLUSTER_ID}`" 
   QUERY="INSERT INTO simple_email(cid,subject,message) VALUES($CLUSTER_ID, \"$SUBJECT\", \"$MSG\")"
   $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
 }
@@ -117,15 +117,15 @@ function write_defaults_file
 function write_logfile
 {
    BACKUPID=$1
-   cat $BACKUP_LOGFILE | sed  -e "s/'/\\\'/g" -e 's/"/\\"/g' > /tmp/s9s_backup_log_escaped
-   LOG_CONTENT=`cat /tmp/s9s_backup_log_escaped`
-   SIZE=`stat --printf='%s' /tmp/s9s_backup_log_escaped`
+   cat $BACKUP_LOGFILE | sed  -e "s/'/\\\'/g" -e 's/"/\\"/g' > /tmp/s9s_backup_log_escaped_${CLUSTER_ID}
+   LOG_CONTENT=`cat /tmp/s9s_backup_log_escaped_${CLUSTER_ID}`
+   SIZE=`stat --printf='%s' /tmp/s9s_backup_log_escaped_${CLUSTER_ID}`
    QUERY="REPLACE INTO cmon_host_log(cid, hostname, filename, result_len, result, report_ts,description, tag) VALUES ($CLUSTER_ID,'$BACKUP_HOSTNAME', '$BACKUP_LOGFILE', $SIZE, \"$LOG_CONTENT\", NOW(), 's9s_backup log', 's9s_backup')"
    $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
    
    QUERY="UPDATE mysql_backup SET logfile=\"$LOG_CONTENT\" WHERE cid=$CLUSTER_ID and backupid=$BACKUPID "
    $MYSQL_BIN --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"  2>&1 >/tmp/err.log
-   rm -rf /tmp/s9s_backup_log_escaped
+   rm -rf /tmp/s9s_backup_log_escaped_${CLUSTER_ID}
 }
 
 

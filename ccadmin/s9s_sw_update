@@ -33,8 +33,8 @@ function init
     CMON_PASSWORD=$mysql_password
     CMON_DB_HOST=$mysql_hostname
     CMON_DB_DB=cmon
-    BACKUP_LOGFILE=/tmp/s9s_backup.log
-    LOCKFILE="/tmp/s9s_backup.lock"
+    BACKUP_LOGFILE=/tmp/s9s_sw_update_${CLUSTER_ID}.log
+    LOCKFILE="/tmp/s9s_sw_update_${CLUSTER_ID}.lock"
 ### NO MODS BELOW UNLESS YOU KNOW WHAT YOU DO:
     
     OSUSER=$USER
@@ -55,7 +55,7 @@ function init
     if ! test -f $MYSQL_BIN; then
 	echo "Could not find mysql client binary"
 	log_job_message "Could not find mysql client binary" 1
-	log_job 'FAILED' 'backup failed' 1
+	log_job 'FAILED' 's9s_sw_update failed' 1
 	exit 1
     fi
     WWWROOT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='WWWROOT' AND cid=$CLUSTER_ID"`
@@ -112,15 +112,26 @@ function log_job
     fi
 }
 
+function write_email
+{
+  SUBJECT=$1
+  MSG=$2
+  cat $BACKUP_LOGFILE | sed  -e "s/'/\\\'/g" -e 's/"/\\"/g' > /tmp/s9s_backup_log_escaped_${CLUSTER_ID}
+  df -h > /tmp/s9s_diskspace_${CLUSTER_ID}
+  MSG="$MSG \nBackup log follows:\n `cat /tmp/s9s_backup_log_escaped_${CLUSTER_ID}`\n\n`cat /tmp/s9s_diskspace_${CLUSTER_ID}`" 
+  QUERY="INSERT INTO simple_email(cid,subject,message) VALUES($CLUSTER_ID, \"$SUBJECT\", \"$MSG\")"
+  $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
+}
+
 function write_logfile
 {
-   cat $BACKUP_LOGFILE | sed  -e "s/'/\\\'/g" -e 's/"/\\"/g' > /tmp/s9s_backup_log_escaped
-   LOG_CONTENT=`cat /tmp/s9s_backup_log_escaped`
-   SIZE=`stat --printf='%s' /tmp/s9s_backup_log_escaped`
+   cat $BACKUP_LOGFILE | sed  -e "s/'/\\\'/g" -e 's/"/\\"/g' > /tmp/s9s_backup_log_escaped_${CLUSTER_ID}
+   LOG_CONTENT=`cat /tmp/s9s_backup_log_escaped_${CLUSTER_ID}`
+   SIZE=`stat --printf='%s' /tmp/s9s_backup_log_escaped_${CLUSTER_ID}`
    HNAME=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$CMON_DB_PORT -e "SHOW GLOBAL VARIABLES LIKE 'hostname'" | awk '{print $2;}'`
    QUERY="REPLACE INTO cmon_host_log(cid, hostname, filename, result_len, result, report_ts,description, tag) VALUES ($CLUSTER_ID,'$HNAME', '$BACKUP_LOGFILE', $SIZE, \"$LOG_CONTENT\", NOW(), 's9s_backup log', 's9s_backup')"
    $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
-   rm -rf /tmp/s9s_backup_log_escaped
+   rm -rf /tmp/s9s_backup_log_escaped_${CLUSTER_ID}
 }
 
 
@@ -156,6 +167,7 @@ function remote_copy()
       log_job_message "copying file $srcfile --> $desthost:$destfile" 1
       log_job 'FAILED' 'job failed' 1
       log_job_message "scp $SSH_OPTS2 $srcfile $os_user@$desthost:$destfile" 1
+      write_email "s9s_sw_update failed" "s9s_sw_update, remote_cpy failed. Check job messages."
       printf "\033[31m[failed]\033[0m\n"
       exit 1
    fi
@@ -173,6 +185,7 @@ function remote_cmdx()
    else
       log_job_message "command failed: $xcommand" 1
       log_job 'FAILED' 'backup failed' 1
+      write_email "s9s_sw_update failed" "s9s_sw_update, remote_cmdx failed. Check job messages."
       printf "\033[31m[failed]\033[0m\n"
       exit 1
    fi
@@ -223,6 +236,7 @@ function remote_cmd()
    echo "ssh -q $SSH_OPTS $SSH_USER@$desthost \" $SUDO  $xcommand \""
    cat $HOME/s9s_cmd.log
    echo 'Try running the command on the line above again, contact http://support.severalnines.com/ticket/new, attach the output from deploy.sh and the error from running the command to the Support issue.'
+   write_email "s9s_sw_update failed" "s9s_sw_update, remote_cmd failed. Check job messages."
    exit 1
 }
 
@@ -492,6 +506,7 @@ function install_mysql
 	if [ $? -ne 0 ]; then
 	    log_job_message "FAILED : download failed - check link and/or that EPEL version. EPEL is needed for socat." 1
 	    log_job 'FAILED' 'job failed' 1	   
+	    write_email "s9s_sw_update failed" "wget epel failed. Check job messages."
 	    exit 1
 	else
 	    remote_copy $S9S_TMPDIR/epel-release-${EPEL_REL}.noarch.rpm $XHOSTNAME $S9S_TMPDIR
@@ -511,6 +526,7 @@ function install_mysql
 	remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY yum -y install socat"	
 	remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY yum -y install nc"	
 	remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY yum -y install perl"	
+	remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY yum -y install libevent"	
     else
 	remote_cmd_nofail $XHOSTNAME "touch /etc/init.d/mysql"	
 	remote_cmd_nofail $XHOSTNAME "LC_ALL=C DEBIAN_FRONTEND=noninteractive $HTTP_PROXY apt-get -y -f install"
@@ -541,6 +557,7 @@ function install_mysql
 	remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY apt-get -y install socat"
 	remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY apt-get -y install lsb-release"
 	remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY apt-get -y install perl"
+	remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY apt-get -y install libevent"
 	remote_cmd $XHOSTNAME "$HTTP_PROXY apt-get -y install libssl0.9.8 libssl1.0.0  wget rsync psmisc netcat-openbsd"
 	remote_cmd_nofail $XHOSTNAME "ln --force -s /lib/x86_64-linux-gnu/libssl.so.1.0.0 /lib/x86_64-linux-gnu/libssl.so.10"
 	remote_cmd_nofail $XHOSTNAME "ln --force -s /lib/x86_64-linux-gnu/libcrypto.so.1.0.0 /lib/x86_64-linux-gnu/libcrypto.so.10"
@@ -586,6 +603,7 @@ function install_mysql
     QUERY="GRANT INSERT,UPDATE,DELETE, SELECT ON $CMON_DB_DB.* TO 'cmon'@'$XHOSTNAME' IDENTIFIED BY '$CMON_PASSWORD'"    
     $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log    
     if [ $? -ne 0 ]; then 
+	write_email "s9s_sw_update failed" "GRANT failed: $QUERY. Check job messages."
 	log_job_message "FAILED: $QUERY" 1
 	log_job 'FAILED' 'job failed' 1
 	exit 1
@@ -593,6 +611,7 @@ function install_mysql
     QUERY="GRANT SUPER ON *.* TO 'cmon'@'$XHOSTNAME' IDENTIFIED BY '$CMON_PASSWORD'"    
     $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log    
     if [ $? -ne 0 ]; then 
+	write_email "s9s_sw_update failed" "GRANT failed: $QUERY. Check job messages."
 	log_job_message "FAILED: $QUERY" 1
 	log_job 'FAILED' 'job failed' 1
 	exit 1
@@ -626,6 +645,7 @@ function install_mysql
 		if [ $? -ne 0 ]; then
 		    log_job_message "Failed: $HTTP_PROXY wget --no-check-certificate --tries=5  -O ${S9S_TMPDIR}/RPM-GPG-KEY-percona http://www.percona.com/redir/downloads/RPM-GPG-KEY-percona" 1
 		    log_job 'FAILED' 'install garbd failed' 1
+		    write_email "s9s_sw_update failed" "wget RPM-GPG-KEY-percona failed. Check job messages."
 		    exit 1
 		fi
 		remote_cmd_nofail $XHOSTNAME "chown  -R $SSH_USER:$SSH_USER $S9S_TMPDIR"
@@ -656,6 +676,7 @@ function install_mysql
 	    if [ -z "$PID" ]; then
 		log_job_message "Invalid package name $PKG_NAME" 1
 		log_job 'FAILED' 'job failed' 1
+		write_email "s9s_sw_update failed" "Invalid package name $PKG_NAME. Check job messages."
 		exit 1
 	    fi
 	    QUERY="SELECT group_concat(concat(path,',', filename) SEPARATOR ' ') FROM ${CMON_DB}.cmon_uploads WHERE packageid='$PID' AND cid=$CLUSTER_ID"
@@ -663,12 +684,14 @@ function install_mysql
 	    if [ -z "$FILELIST" ]; then
 		log_job_message "No files in package $PKG_NAME" 1
 		log_job 'FAILED' 'job failed' 1
+		write_email "s9s_sw_update failed" "No files in $PKG_NAME. Check job messages."
 		exit 1	    
 	    fi
 	    
 	    if [ "$FILELIST" = "NULL" ]; then
 		log_job_message "No files in package $PKG_NAME" 1
 		log_job 'FAILED' 'job failed' 1
+		write_email "s9s_sw_update failed" "No files in $PKG_NAME. Check job messages."
 		exit 1	    
 	    fi
 	    
@@ -685,6 +708,7 @@ function install_mysql
 		else
 		    log_job_message "File did not exist: $path/$filename" 1
 		    log_job 'FAILED' 'job failed' 1
+		    write_email "s9s_sw_update failed" "File did not exist: $path/$filename. Check job messages."
 		    exit 1	    
 		fi
 	    done
@@ -788,6 +812,7 @@ EOF
 	*)
 	    log_job_message "Not a supported vendor" 1
 	    log_job 'FAILED' 'job failed' 1
+	    write_email "s9s_sw_update failed" "Not a supported vendor. Check job messages."
 	    exit 1;	           	     
     esac
 
@@ -806,6 +831,7 @@ EOF
     else
 	log_job_message "datadir is not set in my.cnf - aborting" 1
 	log_job 'FAILED' 'job failed' 1
+	write_email "s9s_sw_update failed" "datadir is not set in my.cnf. Check job messages."
 	exit 1
     fi
 
@@ -830,7 +856,7 @@ EOF
 		$HTTP_PROXY wget --no-check-certificate --tries=5  -O ${S9S_TMPDIR}/RPM-GPG-KEY-percona http://www.percona.com/redir/downloads/RPM-GPG-KEY-percona
 		if [ $? -ne 0 ]; then
 		    log_job_message "Failed: $HTTP_PROXY wget --no-check-certificate --tries=5  -O ${S9S_TMPDIR}/RPM-GPG-KEY-percona http://www.percona.com/redir/downloads/RPM-GPG-KEY-percona" 1
-		    log_job 'FAILED' 'install garbd failed' 1
+		    log_job 'FAILED' 'download RPM-GPG-KEY-percona failed' 1
 		    exit 1
 		fi
 		remote_cmd_nofail $XHOSTNAME "chown  -R $SSH_USER:$SSH_USER $S9S_TMPDIR"
@@ -909,6 +935,7 @@ EOF
 	*)
 	    log_job_message  "Not a supported vendor" 1
 	    log_job 'FAILED' 'job failed' 1
+	    write_email "s9s_sw_update failed" "Not a supported vendor. Check job messages."
 	    exit 1;	           	     
     esac    
     exit 0
