@@ -599,8 +599,8 @@ function install_mysql
     fi
 
     remote_cmd $XHOSTNAME "mkdir -p $DATADIR/"
-    
-    QUERY="GRANT INSERT,UPDATE,DELETE, SELECT ON $CMON_DB_DB.* TO 'cmon'@'$XHOSTNAME' IDENTIFIED BY '$CMON_PASSWORD'"    
+    CMON_PASSWORD_ESCAPED=$(printf '%q' $CMON_PASSWORD)
+    QUERY="GRANT INSERT,UPDATE,DELETE, SELECT ON $CMON_DB_DB.* TO 'cmon'@'$XHOSTNAME' IDENTIFIED BY '$CMON_PASSWORD_ESCAPED'"    
     $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log    
     if [ $? -ne 0 ]; then 
 	write_email "s9s_sw_update failed" "GRANT failed: $QUERY. Check job messages."
@@ -608,7 +608,8 @@ function install_mysql
 	log_job 'FAILED' 'job failed' 1
 	exit 1
     fi	
-    QUERY="GRANT SUPER ON *.* TO 'cmon'@'$XHOSTNAME' IDENTIFIED BY '$CMON_PASSWORD'"    
+    CMON_PASSWORD_ESCAPED=$(printf '%q' $CMON_PASSWORD)
+    QUERY="GRANT SUPER ON *.* TO 'cmon'@'$XHOSTNAME' IDENTIFIED BY '$CMON_PASSWORD_ESCAPED'"    
     $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log    
     if [ $? -ne 0 ]; then 
 	write_email "s9s_sw_update failed" "GRANT failed: $QUERY. Check job messages."
@@ -1138,14 +1139,16 @@ function install_mongodb
 
     remote_cmd $XHOSTNAME "mkdir -p $DATADIR/"
     
-    QUERY="GRANT INSERT,UPDATE,DELETE, SELECT ON $CMON_DB_DB.* TO 'cmon'@'$XHOSTNAME' IDENTIFIED BY '$CMON_PASSWORD'"    
+    CMON_PASSWORD_ESCAPED=$(printf '%q' $CMON_PASSWORD)
+    QUERY="GRANT INSERT,UPDATE,DELETE, SELECT ON $CMON_DB_DB.* TO 'cmon'@'$XHOSTNAME' IDENTIFIED BY '$CMON_PASSWORD_ESCAPED'"    
     $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log    
     if [ $? -ne 0 ]; then 
 	log_job_message "FAILED: $QUERY" 1
 	log_job 'FAILED' 'job failed' 1
 	exit 1
     fi	
-    QUERY="GRANT SUPER ON *.* TO 'cmon'@'$XHOSTNAME' IDENTIFIED BY '$CMON_PASSWORD'"    
+    CMON_PASSWORD_ESCAPED=$(printf '%q' $CMON_PASSWORD)
+    QUERY="GRANT SUPER ON *.* TO 'cmon'@'$XHOSTNAME' IDENTIFIED BY '$CMON_PASSWORD_ESCAPED'"    
     $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log    
     if [ $? -ne 0 ]; then 
 	log_job_message "FAILED: $QUERY" 1
