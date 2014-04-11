@@ -348,10 +348,10 @@ function change_root_password_cmoncnf
 	fi
 	exist=$(remote_cmd_getreply $h "grep monitored_mysql_root $tmp_configfile")
 	if [ "$exist" = "OK" ]; then
-	    remote_cmd $h "sed -i \"s/monitored_mysql_root_password=.*/monitored_mysql_root_password=\'$non_escaped\'/\" $tmp_configfile"
+	    remote_cmd $h "sed -i \"s/monitored_mysql_root_password=.*/monitored_mysql_root_password=\'$new_password\'/\" $tmp_configfile"
 	    remote_cmd $h "rm -rf ${configfile}*bak"
 	else
-	    remote_cmd $h "echo \"monitored_mysql_root_password=\'$non_escaped\'\" >> $tmp_configfile"
+	    remote_cmd $h "echo \"monitored_mysql_root_password=\'$new_password\'\" >> $tmp_configfile"
 	fi
     done
 }
