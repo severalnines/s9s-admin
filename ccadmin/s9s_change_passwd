@@ -416,7 +416,7 @@ function change_cmon_password
     QUERY="select count(id) from cluster_state WHERE status!='STARTED'"
     c_cnt=`$MYSQL_BIN -B -N --host=$CMON_DB_HOST --port=$CMON_DB_PORT --user=cmon --password=$CMON_PASSWORD --database=$CMON_DB_DB -e "$QUERY"`
     
-    if [ $c_cnt -ne 0 ];
+    if [ $c_cnt -ne 0 ]; then
 	echo "Not all clusters are started. Aborting"
 	exit 1
     fi
@@ -439,7 +439,7 @@ function change_cmon_password
 
 
     if [ -z "$mysql_hostnames" ]; then
-       echo "No hostnames found."
+	echo "No hostnames found."
        exit 1
     fi
 
@@ -564,7 +564,7 @@ function change_root_password
     QUERY="select count(id) from cluster_state WHERE status!='STARTED'"
     c_cnt=`$MYSQL_BIN -B -N --host=$CMON_DB_HOST --port=$CMON_DB_PORT --user=cmon --password=$CMON_PASSWORD --database=$CMON_DB_DB -e "$QUERY"`
     
-    if [ $c_cnt -ne 0 ];
+    if [ $c_cnt -ne 0 ]; then
 	echo "Not all clusters are started. Aborting"
         exit 1
     fi
