@@ -11,8 +11,8 @@ LOCKFILE="/tmp/s9s_change_passwd.lock"
 
 function init
 {
-    FILES=`ls /etc/cmon.cnf 2>&1`
-    FILES2=`ls /etc/cmon.d/*.cnf 2>&1`
+    FILES=`ls /etc/cmon.cnf 2>/dev/null`
+    FILES2=`ls /etc/cmon.d/*.cnf 2>/dev/null`
     FILES="$FILES $FILES2"
     configfile=""
     for f in $FILES
@@ -268,8 +268,9 @@ function change_password_mysql
     local new_password=$3
     local old_password=$4
     new_password=$(printf '%q' $new_password)
-##    QUERY="UPDATE mysql.user SET password=password('$new_password') WHERE user='$user' AND password=password('${old_password}'); FLUSH PRIVILEGES;"
-    QUERY="UPDATE mysql.user SET password=password('$new_password') WHERE user='$user'; FLUSH PRIVILEGES;"
+    old_password=$(printf '%q' $old_password)
+    QUERY="UPDATE mysql.user SET password=password('$new_password') WHERE user='$user' AND password=password('${old_password}'); FLUSH PRIVILEGES;"
+
     echo "$h: executing: $QUERY"
    `$MYSQL_BIN -B -N --host=$h --port=$MONITORED_MYSQL_PORT --user=cmon --password=$CMON_PASSWORD --database=mysql -e "$QUERY"`
     if [ $? -ne 0 ]; then
@@ -316,12 +317,18 @@ function change_password_cmoncnf
     local h=$1
     local new_password=$2
     new_password=$(printf '%q' $new_password)
-    tmp_configfile=$configfile
-    if [ "$h" != "$CMON_HOSTNAME" ]; then
-        tmp_configfile=/etc/cmon.cnf
-    fi
-    remote_cmd $h "sed -i \"s/mysql_password=.*/mysql_password=\'$new_password\'/\" $tmp_configfile"
-    remote_cmd $h "rm -rf ${configfile}*bak"
+    FILES=`ls /etc/cmon.cnf 2>/dev/null`
+    FILES2=`ls /etc/cmon.d/*.cnf 2>/dev/null`
+    FILES="$FILES $FILES2"
+    for f in $FILES 
+    do
+	tmp_configfile=$f
+	if [ "$h" != "$CMON_HOSTNAME" ]; then
+            tmp_configfile=/etc/cmon.cnf
+	fi
+	remote_cmd $h "sed -i \"s/mysql_password=.*/mysql_password=\'$new_password\'/\" $tmp_configfile"
+	remote_cmd $h "rm -rf ${configfile}*bak"
+    done
 }
 
 function change_root_password_cmoncnf
@@ -330,16 +337,22 @@ function change_root_password_cmoncnf
     local new_password=$2
     new_password=$(printf '%q' $new_password)
     tmp_configfile=$configfile
-    if [ "$h" != "$CMON_HOSTNAME" ]; then
-        tmp_configfile=/etc/cmon.cnf
-    fi
-    exist=$(remote_cmd_getreply $h "grep monitored_mysql_root $tmp_configfile")
-    if [ "$exist" = "OK" ]; then
-	remote_cmd $h "sed -i \"s/monitored_mysql_root_password=.*/monitored_mysql_root_password=\'$new_password\'/\" $tmp_configfile"
-	remote_cmd $h "rm -rf ${configfile}*bak"
-    else
-	remote_cmd $h "echo 'monitored_mysql_root_password=\'$new_password\'' >> $tmp_configfile"
-    fi
+    FILES=`ls /etc/cmon.cnf 2>/dev/null`
+    FILES2=`ls /etc/cmon.d/*.cnf 2>/dev/null`
+    FILES="$FILES $FILES2"
+    for f in $FILES 
+    do
+	if [ "$h" != "$CMON_HOSTNAME" ]; then
+            tmp_configfile=/etc/cmon.cnf
+	fi
+	exist=$(remote_cmd_getreply $h "grep monitored_mysql_root $tmp_configfile")
+	if [ "$exist" = "OK" ]; then
+	    remote_cmd $h "sed -i \"s/monitored_mysql_root_password=.*/monitored_mysql_root_password=\'$new_password\'/\" $tmp_configfile"
+	    remote_cmd $h "rm -rf ${configfile}*bak"
+	else
+	    remote_cmd $h "echo 'monitored_mysql_root_password=\'$new_password\'' >> $tmp_configfile"
+	fi
+    done
 }
 
 function change_cmon_password
