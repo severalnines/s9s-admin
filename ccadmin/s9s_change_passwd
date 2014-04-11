@@ -356,6 +356,8 @@ function change_root_password_cmoncnf
     done
 }
 
+
+
 function change_cmon_password
 {
     LB_NODE_LIST=""
@@ -409,16 +411,25 @@ function change_cmon_password
     fi
 
 
+
     load_opts $CLUSTER_ID
-    QUERY="select group_concat(h.hostname SEPARATOR ' ') from mysql_server m, hosts h WHERE m.id=h.id and h.cid=m.cid and h.ping_status>0 and connected=1 and m.cid=$CLUSTER_ID"
+    QUERY="select count(id) from cluster_state WHERE status!='STARTED'"
+    c_cnt=`$MYSQL_BIN -B -N --host=$CMON_DB_HOST --port=$CMON_DB_PORT --user=cmon --password=$CMON_PASSWORD --database=$CMON_DB_DB -e "$QUERY"`
+    
+    if [ $c_cnt -ne 0 ];
+	echo "Not all clusters are started. Aborting"
+	exit 1
+    fi
+    
+    QUERY="select group_concat(h.hostname SEPARATOR ' ') from mysql_server m, hosts h WHERE m.id=h.id and h.cid=m.cid and h.ping_status>0 and connected=1"
     mysql_hostnames=`$MYSQL_BIN -B -N --host=$CMON_DB_HOST --port=$CMON_DB_PORT --user=cmon --password=$CMON_PASSWORD --database=$CMON_DB_DB -e "$QUERY"`
 
-    QUERY="select group_concat(h.hostname SEPARATOR ' ') from hosts h WHERE h.cid=$CLUSTER_ID AND h.ping_status>0"
+    QUERY="select group_concat(h.hostname SEPARATOR ' ') from hosts h WHERE h.ping_status>0"
     all_hostnames=`$MYSQL_BIN -B -N --host=$CMON_DB_HOST --port=$CMON_DB_PORT --user=cmon --password=$CMON_PASSWORD --database=$CMON_DB_DB -e "$QUERY"`
 
-    QUERY="select count(id) from hosts h WHERE h.cid=$CLUSTER_ID AND h.ping_status>0"
+    QUERY="select count(id) from hosts h WHERE h.ping_status>0"
     c_cnt=`$MYSQL_BIN -B -N --host=$CMON_DB_HOST --port=$CMON_DB_PORT --user=cmon --password=$CMON_PASSWORD --database=$CMON_DB_DB -e "$QUERY"`
-    QUERY="select count(id) from hosts h WHERE h.cid=$CLUSTER_ID"
+    QUERY="select count(id) from hosts h"
     a_cnt=`$MYSQL_BIN -B -N --host=$CMON_DB_HOST --port=$CMON_DB_PORT --user=cmon --password=$CMON_PASSWORD --database=$CMON_DB_DB -e "$QUERY"`
 
     if [ $a_cnt -ne $c_cnt ]; then
@@ -549,6 +560,15 @@ function change_root_password
 
 
     load_opts $CLUSTER_ID
+    
+    QUERY="select count(id) from cluster_state WHERE status!='STARTED'"
+    c_cnt=`$MYSQL_BIN -B -N --host=$CMON_DB_HOST --port=$CMON_DB_PORT --user=cmon --password=$CMON_PASSWORD --database=$CMON_DB_DB -e "$QUERY"`
+    
+    if [ $c_cnt -ne 0 ];
+	echo "Not all clusters are started. Aborting"
+        exit 1
+    fi
+    
     QUERY="select group_concat(h.hostname SEPARATOR ' ') from mysql_server m, hosts h WHERE m.id=h.id and h.cid=m.cid and h.ping_status>0 and connected=1 and m.cid=$CLUSTER_ID"
     mysql_hostnames=`$MYSQL_BIN -B -N --host=$CMON_DB_HOST --port=$CMON_DB_PORT --user=cmon --password=$CMON_PASSWORD --database=$CMON_DB_DB -e "$QUERY"`
 
