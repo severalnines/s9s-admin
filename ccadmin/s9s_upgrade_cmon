@@ -693,9 +693,12 @@ upgradeCcUi()
             echo "define('CMON_API', APP_URL .'/cmonapi');" | sudo tee -a ${repo_dir}/cc-ui-${version}/bootstrap.php &>/dev/null
         fi
         new_version=$(sed -n "s/^define('CC_UI_VERSION'.*'\(.*\)'.*/\1/p" ${repo_dir}/cc-ui-${version}/bootstrap.php.default)
-        [[ -z $new_version ]] && new_version=$version 
+        if [[ -z $new_version ]]; then
+            new_version=$version 
+            echo "define('CC_UI_VERSION', '${new_version}');" | sudo tee -a $repo_dir/cc-ui-${version}/bootstrap.php &>/dev/null
+        fi
+        sed -i "s|^define('CC_UI_VERSION'.*|define('CC_UI_VERSION', '${new_version}');|g" $repo_dir/cc-ui-${version}/bootstrap.php &>/dev/null
 	sed -i "s|^define('CC_API_VERSION'.*|define('CC_API_VERSION', '${new_version}');|g" $repo_dir/cc-ui-${version}/bootstrap.php &>/dev/null
-	sed -i "s|^define('CC_UI_VERSION'.*|define('CC_UI_VERSION', '${new_version}');|g" $repo_dir/cc-ui-${version}/bootstrap.php &>/dev/null
 
 	commandStatus "Copying CMONAPI to $wwwroot" "cp -rf $repo_dir/cc-cmonapi-${version} $wwwroot/"
 	commandStatus "Copying ClusterControl UI to $wwwroot" "cp -rf $repo_dir/cc-ui-${version} $wwwroot/"
