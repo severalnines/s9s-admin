@@ -269,7 +269,11 @@ function change_password_mysql
     local old_password=$4
     new_password=$(printf '%q' $new_password)
     old_password=$(printf '%q' $old_password)
-    QUERY="UPDATE mysql.user SET password=password('$new_password') WHERE user='$user' AND password=password('${old_password}'); FLUSH PRIVILEGES;"
+    if [ "$user" = "cmon" ]; then
+	QUERY="UPDATE mysql.user SET password=password('$new_password') WHERE user='$user'; FLUSH PRIVILEGES;"
+    else
+	QUERY="UPDATE mysql.user SET password=password('$new_password') WHERE user='$user' AND password=password('${old_password}'); FLUSH PRIVILEGES;"
+    fi
 
     echo "$h: executing: $QUERY"
    `$MYSQL_BIN -B -N --host=$h --port=$MONITORED_MYSQL_PORT --user=cmon --password=$CMON_PASSWORD --database=mysql -e "$QUERY"`

@@ -5,8 +5,8 @@
 
 function init
 {
-    FILES=`ls /etc/cmon.cnf 2>&1`
-    FILES2=`ls /etc/cmon.d/*.cnf 2>&1`    
+    FILES=`ls /etc/cmon.cnf 2>/dev/null`
+    FILES2=`ls /etc/cmon.d/*.cnf 2>/dev/null`    
     FILES="$FILES $FILES2"
     configfile=""
     for f in $FILES 
@@ -382,7 +382,8 @@ function change_ip
     echo "Updating IP"
 
     QUERY="BEGIN; UPDATE hosts SET hostname='$NEW_HOSTNAME', ip='$NEW_IP'  WHERE cid=$CLUSTER_ID AND (hostname='$OLD_HOSTNAME' OR ip='$OLD_IP')"
-    QUERY="$QUERY;UPDATE mysql_server SET hostname='$NEW_HOSTNAME'   WHERE cid=$CLUSTER_ID AND (hostname='$OLD_HOSTNAME'); COMMIT"
+    QUERY="$QUERY;UPDATE mysql_server SET hostname='$NEW_HOSTNAME'   WHERE cid=$CLUSTER_ID AND (hostname='$OLD_HOSTNAME');"
+    QUERY="$QUERY;UPDATE mongodb_server SET hostname='$NEW_HOSTNAME'   WHERE cid=$CLUSTER_ID AND (hostname='$OLD_HOSTNAME'); COMMIT"
     $MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=127.0.0.1 --port=$CMON_DB_PORT -e "$QUERY"
     if [ $? -ne 0 ]; then
         echo "updating server addresses failed"
@@ -396,10 +397,11 @@ function change_ip
         *)
 	  ;;
     esac
-    remote_cmd $NEW_HOSTNAME "sed -i.bak 's#^hostname=.*#hostname=$NEW_HOSTNAME#g' /etc/cmon.cnf"
+    if [ $AGENTLESS -eq 0 ]; then
+	remote_cmd $NEW_HOSTNAME "sed -i.bak 's#^hostname=.*#hostname=$NEW_HOSTNAME#g' /etc/cmon.cnf"
+    fi
 
-    QUERY="select group_concat(hostname)from ${CMON_DB_DB}.mysql_server where cid=${CLUSTER_ID}"
-    SERVER_LIST=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$CMON_DB_PORT --auto-vertical-output -Bse "$QUERY"  2>/dev/null`
+
     if [ -z "$OS" ]; then
         if [ `hash /usr/sbin/update-rc.d 2>/dev/null`  ]; then
             OS="redhat"
@@ -425,7 +427,13 @@ function change_ip
             sleep 60
           ;;
     esac
-    sed -i.bak "s#mysql_server_address=.*#mysql_server_addresses=${SERVER_LIST}#g" /etc/cmon.cnf
+    
+    
+    
+    sed -i.bak "s#$OLD_IP#$NEW_IP#g" /etc/cmon.cnf
+    sed -i.bak "s#$OLD_HOSTNAME#$NEW_HOSTNAME#g" /etc/cmon.cnf
+   
+    
     GRANT="GRANT ALL ON *.* TO 'cmon'@'$NEW_HOSTNAME' IDENTIFIED BY '$CMON_PASSWORD'"
     $MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --database=mysql --host=$NEW_HOSTNAME --port=$MONITORED_MYSQL_PORT -e "$GRANT"
     if [ $? -ne 0 ]; then
@@ -446,7 +454,7 @@ function change_ip
     if [ $? -ne 0 ]; then
         echo "granting failed"
         exit 1
-     fi
+    fi
 
 }
 function check_mysql_client()
