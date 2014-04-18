@@ -5,7 +5,7 @@
 
 
 DEBUG=1
-TEMP=`getopt -o h,l,f,i:,t:,b:,d:,r:,n,a,b --long help,latest,force,id:,topdir:,backup:,backupdir:,restore:,backup-db,agent-based,beta -n 's9s_upgrade_cmon' -- "$@"`
+TEMP=`getopt -o h,l,f,i:,t:,b:,d:,r:,n,a,z --long help,latest,force,id:,topdir:,backup:,backupdir:,restore:,backup-db,agent-based,beta -n 's9s_upgrade_cmon' -- "$@"`
 eval set -- "$TEMP"
 
 
@@ -21,7 +21,7 @@ while true ; do
 		-d|--backupdir) backup_dir="$2" ; shift 2 ;;
 		-r|--restore) restore="$2" ; shift 2 ;;
 		-a|--agent-based) agent_based="1"; shift ;;
-		-b|--beta) beta="1"; shift ;;
+		-z|--beta) beta="1"; shift ;;
 		--) shift ; break ;;
 		*) echo "$0: error - unrecognized option -$OPTARG" 1>&2; exit 1;;
 	esac
@@ -41,7 +41,7 @@ helpMenu()
         echo '-d, --backupdir           : Custom path for ClusterControl backup directory (default: /tmp/s9s_backup_{time})'
         echo "-r, --restore             : Restore from ClusterControl backup (all|controller|agent)"
 	echo "-a, --agent-based         : Remain the agent-based deployment upgrade (default: agentless)"
-	echo "-b, --beta                : Upgrade ClusterControl to beta release"
+	echo "-z, --beta                : Upgrade ClusterControl to beta release"
         echo "-h, --help                : Print help"
         echo ""
 	echo "For more information, kindly go to http://support.severalnines.com/entries/24053181-Upgrade-ClusterControl-to-Latest-Version"
