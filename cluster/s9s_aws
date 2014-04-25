@@ -5,8 +5,8 @@
 
 function init
 {
-    FILES=`ls /etc/cmon.cnf 2>&1`
-    FILES2=`ls /etc/cmon.d/*.cnf 2>&1`    
+    FILES=`ls /etc/cmon.cnf 2>/dev/null`
+    FILES2=`ls /etc/cmon.d/*.cnf 2>/dev/null`    
     FILES="$FILES $FILES2"
     configfile=""
     for f in $FILES 
@@ -96,13 +96,13 @@ function remote_copy()
    desthost=$2
    destfile=$3
    printf "%-4s: Copying '%s' " "$desthost" "$srcfile"
-   scp $SSH_OPTS2 $srcfile $os_user@$desthost:$destfile >> $HOME/s9s_deploy.log  2>/dev/null
+   scp $SSH_OPTS2 $srcfile $SSH_USER@$desthost:$destfile >> $HOME/s9s_deploy.log 
    if [ $? -eq 0 ]; then
       printf "\033[32m[ok]\033[0m\n"
       return 0
    else
-      log_job_message "copying fileed $srcfile --> $desthost:$destfile" 1
-      log_job 'FAILED' 'backup failed' 1
+      log_job_message "copying filed $srcfile --> $desthost:$destfile" 1
+      log_job 'FAILED' 'command failed' 1
       printf "\033[31m[failed]\033[0m\n"
       exit 1
    fi
@@ -201,6 +201,7 @@ function load_opts
     echo "load opts $CLUSTER_ID"
     OS=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='OS' AND cid=$CLUSTER_ID" 2>/dev/null`
     CONFIGDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='CONFIGDIR' AND cid=$CLUSTER_ID" 2>/dev/null`
+    AGENTLESS=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='AGENTLESS' AND cid=$CLUSTER_ID"`
     MYSQL_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MYSQL_PORT' AND cid=$CLUSTER_ID" 2>/dev/null`
     MONITORED_MYSQL_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MONITORED_MYSQL_PORT' AND cid=$CLUSTER_ID" 2>/dev/null`
     GALERA_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='GALERA_PORT' AND cid=$CLUSTER_ID" 2>/dev/null`
@@ -218,8 +219,14 @@ function load_opts
     DATADIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon.cluster_config where variable='datadir' and cid=1 order by id asc limit 1" 2>/dev/null`
     MYCNF=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select data  from cmon.cluster_configuration where cid=1 limit 1" 2>/dev/null`
 
+    MONGODB_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MONGODB_PORT' AND cid=$CLUSTER_ID"`
+    if [ -z "$MONGODB_PORT" ]; then
+       MONGODB_PORT=27018
+    fi
 
-    echo $MYCNF |  sed 's#\\n#\n\r#g' > /tmp/my.cnf
+    MONGODB_DATADIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select dbpath from  mongodb_server where node_type=0 and cid=$CLUSTER_ID limit 1"`
+    MONGODB_BASEDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MONGODB_BASEDIR' AND cid=$CLUSTER_ID"`
+    
     if [ "$MONITORED_MYSQL_PORT" = "" ] || [ "$MONITORED_MYSQL_PORT" = "NULL" ];  then
         MONITORED_MYSQL_PORT="3306"
     fi
@@ -247,6 +254,11 @@ function load_opts
 	S9S_TMPDIR="/tmp/"
 	TMPDIR="/tmp/"
     fi
+
+    if [ "AGENTLESS" = "" ] || [ "$AGENTLESS" = "NULL" ];  then
+        AGENTLESS="0"
+    fi
+    
     SSH_OPTS2=" -p$SSH_PORT $SSH_OPTS"
     SSH_OPTS="$SSH_OPTSX -p$SSH_PORT $SSH_OPTS"
 }
@@ -271,13 +283,19 @@ function valid_ip()
 function change_ip
 {
     KILLSIG=15
-    args=`getopt p:P:h:k:N:j:i:n: $*`
+    args=`getopt p:P:h:k:N:j:i:n:c:u: $*`
     set -- $args
     for i
     do
 	case "$i" in
-            -p)
+            -c)
 		CMON_PASSWORD="$2"; shift;
+		shift;;
+            -p)
+		ROOT_PASSWORD="$2"; shift;
+		shift;;
+            -u)
+		MYSQL_USER="$2"; shift;
 		shift;;
             -i)
 		CLUSTER_ID="$2"; shift;
@@ -307,10 +325,11 @@ function change_ip
     fi
     init 
     if [ -z "$CMON_PASSWORD" ]; then
-      echo "s9s_aws --change-ip -p <cmon_password>  missing"
+      echo "s9s_aws --change-ip -c <cmon_password>  missing"
       exit 1
     fi
 
+    
 
     if [ -z "$OLD_HOSTNAME" ]; then
       echo "s9s_aws --change-ip -h <old_hostname>  missing"
@@ -321,23 +340,28 @@ function change_ip
       exit 1
     fi
 
+    GRANT_MYSQL=1
+    if [ -z "$MYSQL_USER" ]; then
+	echo "-u <mysql user> not specified, will NOT attempt to update 'cmon' PRIVILEGES (grants) on $NEW_HOSTNAME"
+	echo "If you have a MySQL server running on $NEW_HOSTNAME you are RECOMMENDED to update the PRIVILEGETS"
+	GRANT_MYSQL=0
+	read -p "Proceed? (y/n):  " yn
+	case $yn in
+            [Yy]* ) ;;
+            [Nn]* ) exit;;
+            * ) echo "Please answer Y or N."; exit ;;
+	esac
+    fi
+    
 
 
-
-    case $CLUSTER_TYPE in
-	galera)
-	    ;;
-	*)
-	    echo "$CLUSTER_TYPE not supported"
-#	    exit;
-    esac
 
     check_cluster_id $CLUSTER_ID
     load_opts $CLUSTER_ID
 
     QUERY="select ip from ${CMON_DB_DB}.hosts where cid=${CLUSTER_ID} and (hostname='$OLD_HOSTNAME' OR ip='$OLD_HOSTNAME')"
     OLD_IP=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$CMON_DB_PORT --auto-vertical-output -Bse "$QUERY"  2>/dev/null`
-
+    
     [ -z $OLD_IP ] && echo "Unable to find old host/ip address $OLD_HOSTNAME, please check that it's correct." && exit 1
 
     if [ -z "$OS" ]; then
@@ -380,9 +404,10 @@ function change_ip
     remote_cmd $NEW_IP "echo 2>&1"
 
     echo "Updating IP"
-
+    
     QUERY="BEGIN; UPDATE hosts SET hostname='$NEW_HOSTNAME', ip='$NEW_IP'  WHERE cid=$CLUSTER_ID AND (hostname='$OLD_HOSTNAME' OR ip='$OLD_IP')"
-    QUERY="$QUERY;UPDATE mysql_server SET hostname='$NEW_HOSTNAME'   WHERE cid=$CLUSTER_ID AND (hostname='$OLD_HOSTNAME'); COMMIT"
+    QUERY="$QUERY;UPDATE mysql_server SET hostname='$NEW_HOSTNAME'   WHERE cid=$CLUSTER_ID AND (hostname='$OLD_HOSTNAME');"
+    QUERY="$QUERY;UPDATE mongodb_server SET hostname='$NEW_HOSTNAME'   WHERE cid=$CLUSTER_ID AND (hostname='$OLD_HOSTNAME'); COMMIT"
     $MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=127.0.0.1 --port=$CMON_DB_PORT -e "$QUERY"
     if [ $? -ne 0 ]; then
         echo "updating server addresses failed"
@@ -396,10 +421,11 @@ function change_ip
         *)
 	  ;;
     esac
-    remote_cmd $NEW_HOSTNAME "sed -i.bak 's#^hostname=.*#hostname=$NEW_HOSTNAME#g' /etc/cmon.cnf"
+    if [ $AGENTLESS -eq 0 ]; then
+	remote_cmd $NEW_HOSTNAME "sed -i.bak 's#^hostname=.*#hostname=$NEW_HOSTNAME#g' /etc/cmon.cnf"
+    fi
 
-    QUERY="select group_concat(hostname)from ${CMON_DB_DB}.mysql_server where cid=${CLUSTER_ID}"
-    SERVER_LIST=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$CMON_DB_PORT --auto-vertical-output -Bse "$QUERY"  2>/dev/null`
+
     if [ -z "$OS" ]; then
         if [ `hash /usr/sbin/update-rc.d 2>/dev/null`  ]; then
             OS="redhat"
@@ -407,48 +433,114 @@ function change_ip
             OS="debian"
         fi
     fi
-    case $CLUSTER_TYPE in
-        galera)
-           echo "Starting galera node on $NEW_HOSTNAME"
-           QUERY="select hostname from ${CMON_DB_DB}.mysql_server where cid=${CLUSTER_ID} and status=0"
-           DONOR=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$CMON_DB_PORT --auto-vertical-output -Bse "$QUERY"  2>/dev/null`
 
-            if [ "$DONOR" = "NULL" ] || [ "$DONOR" = "" ]; then
-               echo "could not find donor"
-               exit 1
-            fi
-            ./s9s_galera --start-node -i $CLUSTER_ID -h $NEW_HOSTNAME -d $DONOR -w
-            sleep 2
-        ;;
-        *)
-            echo "Waiting for node to start"
-            sleep 60
-          ;;
-    esac
-    sed -i.bak "s#mysql_server_address=.*#mysql_server_addresses=${SERVER_LIST}#g" /etc/cmon.cnf
-    GRANT="GRANT ALL ON *.* TO 'cmon'@'$NEW_HOSTNAME' IDENTIFIED BY '$CMON_PASSWORD'"
-    $MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --database=mysql --host=$NEW_HOSTNAME --port=$MONITORED_MYSQL_PORT -e "$GRANT"
+
+
+    if [ -n "$configfile" ]; then
+	sed -i.bak "s#$OLD_IP#$NEW_IP#g" $configfile
+	sed -i.bak "s#$OLD_HOSTNAME#$NEW_HOSTNAME#g" $configfile
+	rm -rf ${configfile}*bak
+    else
+	echo "No config file found"
+	exit 1
+    fi
+
+    
+    ##1. UPDATE CMON_DB
+    QUERY="UPDATE mysql.user SET host='$NEW_HOSTNAME' WHERE host='$OLD_HOSTNAME'; FLUSH PRIVILEGES;"
+    $MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --database=mysql --host=127.0.0.1 --port=$CMON_DB_PORT -e "$QUERY"
     if [ $? -ne 0 ]; then
-        echo "granting failed"
+        echo "Updating privileges failed."
         exit 1
-     fi
-    GRANT="GRANT ALL ON *.* TO 'cmon'@'$NEW_IP' IDENTIFIED BY '$CMON_PASSWORD'"
-    $MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --database=mysql --host=$NEW_HOSTNAME --port=$MONITORED_MYSQL_PORT -e "$GRANT"
+    fi    
+    QUERY="UPDATE mysql.user SET host='$NEW_IP' WHERE host='$OLD_IP'; FLUSH PRIVILEGES;"
+    $MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --database=mysql --host=127.0.0.1 --port=$CMON_DB_PORT -e "$QUERY"
     if [ $? -ne 0 ]; then
-        echo "granting failed"
+        echo "Updating privileges failed."
         exit 1
-     fi
-    GRANT="GRANT SUPER ON *.* TO 'cmon'@'$NEW_HOSTNAME' IDENTIFIED BY '$CMON_PASSWORD'"
-    GRANT="$GRANT; GRANT SUPER ON *.* TO 'cmon'@'$NEW_IP' IDENTIFIED BY '$CMON_PASSWORD'"
-    GRANT="$GRANT; GRANT INSERT,DELETE,UPDATE,SELECT ON $CMON_DB_DB.* TO 'cmon'@'$NEW_HOSTNAME' IDENTIFIED BY '$CMON_PASSWORD'"
-    GRANT="$GRANT; GRANT INSERT,DELETE,UPDATE,SELECT ON $CMON_DB_DB.* TO 'cmon'@'$NEW_IP' IDENTIFIED BY '$CMON_PASSWORD'"
-    $MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --database=mysql --host=127.0.0.1 --port=$MYSQL_PORT -e "$GRANT"
-    if [ $? -ne 0 ]; then
-        echo "granting failed"
-        exit 1
-     fi
+    fi    
+
+    #2. If GRANT_MYSQL
+    
+    if [ $GRANT_MYSQL -eq 1 ]; then
+	QUERY="UPDATE mysql.user SET host='$NEW_HOSTNAME' WHERE host='$OLD_HOSTNAME' FLUSH PRIVILEGES;"
+	GRANT_CMD='$MYSQL_BIN $MYSQL_OPTS --user=$MYSQL_USER --password=$ROOT_PASSWORD --database=mysql --host=127.0.0.1 --port=$MONITORED_MYSQL_PORT -e \"$QUERY\"'
+	remote_cmd $NEW_HOSTNAME "$GRANT_CMD"
+
+	QUERY="UPDATE mysql.user SET host='$NEW_HOSTNAME' WHERE host='$OLD_HOSTNAME' FLUSH PRIVILEGES;"
+	GRANT_CMD='$MYSQL_BIN $MYSQL_OPTS --user=$MYSQL_USER --password=$ROOT_PASSWORD --database=mysql --host=127.0.0.1 --port=$MONITORED_MYSQL_PORT -e \"$QUERY\"'
+	remote_cmd $NEW_HOSTNAME "$GRANT_CMD"
+	
+    fi
+    killall -9 cmon
+    service cmon restart
 
 }
+
+
+function rs_change_ip
+{
+    KILLSIG=15
+    args=`getopt p:P:h:k:N:j:i:n:c:u: $*`
+    set -- $args
+    for i
+    do
+	case "$i" in
+            -i)
+		CLUSTER_ID="$2"; shift;
+		shift;;
+            -j)
+		jobid="$2"; shift;
+		shift;;
+            -h)
+		OLD_IP="$2"; shift;
+		shift;;
+            -n)
+		NEW_IP="$2"; shift;
+		shift;;
+            --)
+		shift; break;;
+		esac
+    done
+
+
+
+    if [ -z "$CLUSTER_ID" ]; then
+      echo "s9s_aws --rs-change-ip -i <clusterid>  missing"
+      exit 1
+    fi
+    init 
+
+    if [ -z "$OLD_IP" ]; then
+      echo "s9s_aws --rs-change-ip -h <old server address>  missing"
+      exit 1
+    fi
+    if [ -z "$NEW_IP" ]; then
+      echo "s9s_aws --rs-change-ip -n <new server address>  missing"
+      exit 1
+    fi
+
+
+    check_cluster_id $CLUSTER_ID
+    load_opts $CLUSTER_ID
+
+    QUERY="select concat(hostname , ':', port) from mongodb_server where cid=1 and node_type=0 and status=1 and rs_name in (select rs_name from mongodb_server where hostname='$NEW_IP');"
+
+    PRIMARY_MONGO=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --database=$CMON_DB_DB --port=$CMON_DB_PORT --auto-vertical-output -Bse "$QUERY"  2>/dev/null`
+    [ -z $PRIMARY_MONGO ] && echo "Unable to find PRIMAY in replica set that $NEW_IP is part of." && exit 1
+    
+    echo "rs.add('$NEW_IP:$MONGODB_PORT');" > /tmp/add_remove_node_js
+    echo "rs.remove('$OLD_IP:$MONGODB_PORT');" >> /tmp/add_remove_node_js
+    remote_cmd $NEW_IP "mkdir -p $MONGODB_DATADIR"
+#    remote_cmd $NEW_IP "mv $MONGODB_DATADIR  ${MONGODB_DATADIR}_OLD"
+    remote_cmd $NEW_IP "mkdir -p $MONGODB_DATADIR"
+    $MONGODB_BASEDIR/bin/mongo $PRIMARY_MONGO /tmp/add_remove_node_js
+    
+    
+    killall -9 cmon
+    service cmon restart
+}
+
 function check_mysql_client()
 {
    if [ ! -f $MYSQL_BIN ]; then
@@ -477,9 +569,13 @@ if [ ! -f $LOCKFILE ]; then
 	--change-ip)
 	    change_ip  $*
 	    ;;
+	--rs-change-ip)
+	    rs_change_ip $*
+	    ;;
+
 	*)
 	    echo "Usage: "
-	    echo "s9s_aws --[change-ip] <options follows>"
+	    echo "s9s_aws --[change-ip|rs-change-ip] <options follows>"
 	    exit 1
 	    ;;
     esac
