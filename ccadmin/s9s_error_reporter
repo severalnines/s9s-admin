@@ -2,10 +2,6 @@
 # All files in this package is subject to the GPL v2 license
 # More information is in the COPYING file in the top directory of this package.
 # Copyright (C) 2011 severalnines.com
-
-#!/bin/bash
-
-# Copyright 2012 Severalnines AB
 #
 # MODIFY THE BELOW TO SUIT YOU ENV:
 JOBID=0
@@ -45,7 +41,7 @@ function init
     
     OSUSER=$USER
     if [ "$USER" != "root" ]; then
-	echo "must be executed as 'root' or with 'sudo'"
+	echo "must be executed as 'root' or with 'sudo'  ( you are logged in as $USER )."
 	exit 1
     fi
     MYSQL_BIN=$mysql_basedir/bin//mysql
@@ -268,8 +264,12 @@ function collect_controller()
     $MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "SELECT * FROM cmon_job_message WHERE cid=$CLUSTER_ID" > $tmpsavedir/cmon_job_messages
     $MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "SELECT * FROM cmon_job WHERE cid=$CLUSTER_ID" > $tmpsavedir/cmon_job
     
+    echo $configfile
     cp $configfile $tmpsavedir
     CMON_LOG=`grep logfile $configfile |grep -v '#' | awk -F '=' '{print $2;}'`
+    if [ -z "$CMON_LOG" ]; then
+	CMON_LOG=/var/log/cmon.log
+    fi
     cp ${CMON_LOG}* $tmpsavedir    
 }
 

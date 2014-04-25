@@ -627,6 +627,8 @@ function create_cluster
 	log_job_message "Don't forget to detach cluster, by running:" 0
 	log_job_message " s9s_clone --detach -i $TARGET_CLUSTER_ID -h $TARGET_HOSTNAME " 0    
     fi
+    QUERY="UPDATE cluster SET parent_id=${CLUSTER_ID} WHERE id=$TARGET_CLUSTER_ID"
+    $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
     log_job 'FINISHED' 's9s_clone --create finished successfully' 0
     echo ""
     killall -HUP cmon
@@ -751,7 +753,9 @@ function delete_cluster
     if [ "$SERVER_LIST" != "NULL" ]; then
 	for host in $SERVER_LIST
 	do
-	    remote_cmd_nofail $host "rm -rf $DATADIR"
+	    if [ -n "$DATADIR" ]; then
+		remote_cmd_nofail $host "rm -rf $DATADIR"
+	    fi
 	    remote_cmd_nofail $host "rm -rf /var/log/cmon_*"
 	    remote_cmd_nofail $host "rm -rf /etc/cmon.cnf*"
 	done
@@ -902,6 +906,7 @@ function move_node
 	    exit 1
 	fi
     else	    
+	DATADIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --host=$SOURCE_HOSTNAME --port=$MONITORED_MYSQL_PORT -e "SHOW GLOBAL VARIABLES LIKE 'datadir'" | awk '{print $2;}'`
 	log_job_message "Stopping mysql server on $SOURCE_HOSTNAME - ClusterControl will resync it" 0
 	remote_cmd_nofail $SOURCE_HOSTNAME "killall -q -15 mysqld mysqld_safe"
     fi
@@ -926,13 +931,29 @@ function move_node
 	    sed -i.bak "s#mysql_server_addresses=.*#mysql_server_addresses=${SERVERS}#g" /etc/cmon.cnf
 	fi
     else
-	sed -i.bak "s#mysql_server_addresses=.*#mysql_server_addresses=${SERVERS}#g" /etc/cmon_${TARGET_CLUSTER_ID}.cnf
+	sed -i.bak "s#mysql_server_addresses=.*#mysql_server_addresses=${SERVERS}#g" /etc/cmon.d/cmon_${TARGET_CLUSTER_ID}.cnf
     fi
 
-    remote_cmd_nofail $SOURCE_HOSTNAME "rm -rf ${DATADIR}/grastate.dat"
+    QUERY="SELECT GROUP_CONCAT(hostname) FROM mysql_server WHERE cid=$SOURCE_CLUSTER_ID"
+    SERVERS=`$MYSQL_BIN $MYSQL_OPTS -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"`
+    if [ $? -ne 0 ]; then
+	log_job_message "Failed to get mysql_server list" 1
+	log_job 'FAILED' 's9s_clone --move-node failed' 1
+	exit 1
+    fi
+    if [ -f /etc/cmon.d/cmon_${SOURCE_CLUSTER_ID}.cnf ]; then 
+	sed -i.bak "s#mysql_server_addresses=.*#mysql_server_addresses=${SERVERS}#g" /etc/cmon.d/cmon_${SOURCE_CLUSTER_ID}.cnf
+    else
+	sed -i.bak "s#mysql_server_addresses=.*#mysql_server_addresses=${SERVERS}#g" /etc/cmon.cnf
+    fi
+
+    if [ -n "$DATADIR" ]; then
+	remote_cmd_nofail $SOURCE_HOSTNAME "rm -rf ${DATADIR}/grastate.dat"
+    fi
+    
     rm -rf /etc/cmon.d/cmon*.bak
     rm -rf /etc/cmon.cnf.bak
-    
+    killall -HUP cmon
     log_job_message "Node moved - follow recovery progress in GUI" 0
     log_job 'FINISHED' 's9s_clone --move-node finished successfully' 0
 }

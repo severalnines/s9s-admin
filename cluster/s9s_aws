@@ -434,8 +434,6 @@ function change_ip
         fi
     fi
 
-
-
     if [ -n "$configfile" ]; then
 	sed -i.bak "s#$OLD_IP#$NEW_IP#g" $configfile
 	sed -i.bak "s#$OLD_HOSTNAME#$NEW_HOSTNAME#g" $configfile

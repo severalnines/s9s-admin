@@ -5,7 +5,7 @@
 
 
 DEBUG=1
-TEMP=`getopt -o h,l,f,i:,t:,b:,d:,r:,n,a --long help,latest,force,id:,topdir:,backup:,backupdir:,restore:,backup-db,agent-based -n 's9s_upgrade_cmon' -- "$@"`
+TEMP=`getopt -o h,l,f,i:,t:,b:,d:,r:,n,a,z --long help,latest,force,id:,topdir:,backup:,backupdir:,restore:,backup-db,agent-based,beta -n 's9s_upgrade_cmon' -- "$@"`
 eval set -- "$TEMP"
 
 
@@ -21,6 +21,7 @@ while true ; do
 		-d|--backupdir) backup_dir="$2" ; shift 2 ;;
 		-r|--restore) restore="$2" ; shift 2 ;;
 		-a|--agent-based) agent_based="1"; shift ;;
+		-z|--beta) beta="1"; shift ;;
 		--) shift ; break ;;
 		*) echo "$0: error - unrecognized option -$OPTARG" 1>&2; exit 1;;
 	esac
@@ -40,6 +41,7 @@ helpMenu()
         echo '-d, --backupdir           : Custom path for ClusterControl backup directory (default: /tmp/s9s_backup_{time})'
         echo "-r, --restore             : Restore from ClusterControl backup (all|controller|agent)"
 	echo "-a, --agent-based         : Remain the agent-based deployment upgrade (default: agentless)"
+	echo "-z, --beta                : Upgrade ClusterControl to beta release"
         echo "-h, --help                : Print help"
         echo ""
 	echo "For more information, kindly go to http://support.severalnines.com/entries/24053181-Upgrade-ClusterControl-to-Latest-Version"
@@ -338,6 +340,7 @@ collectInfo()
 	cmon_monitor_address=`$MYSQL_BIN -ucmon -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT -A -Bse "$query_cmon_monitor_address" 2>/dev/null`
 	query_cmon_agent_hosts="SELECT hostname FROM cmon.hosts WHERE (hostname<>'$cmon_monitor_address' OR ip<>'$cmon_monitor_address') AND cid=$CLUSTER_ID;"
 	version_url="$DOWNLOAD_URL/version.txt"
+	[ "$beta" == "1" ] && version_url="$DOWNLOAD_URL/version_beta.txt"
 	CMON_VERSION_DB=`$MYSQL_BIN -ucmon -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT -A -Bse "$query_cmon_version" 2>/dev/null`
 	INSTALL_METHOD=`$MYSQL_BIN -ucmon -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT -A -Bse "$query_cmon_install_method" 2>/dev/null`
 	CMON_DB_TABLES=`$MYSQL_BIN -ucmon -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT -A -Bse "$query_cmon_tables" 2>/dev/null`
@@ -413,6 +416,7 @@ collectInfo()
 	diffVersion $CMON_VERSION $LATEST_CMON_VERSION_SCHEMA
 
 	cmon_package="cmon-$LATEST_CMON_VERSION-64bit-glibc23-mc70.tar.gz"
+	#cmon_package="cmon-$LATEST_CMON_VERSION-x86_64.tar.gz"
 	rpm_controller="cmon-controller-$LATEST_CMON_VERSION-x86_64.rpm"
         rpm_agent="cmon-agent-$LATEST_CMON_VERSION-x86_64.rpm"
 	cc_package="s9s-clustercontrol-$LATEST_CCUI_VERSION.tar.gz"
@@ -694,8 +698,14 @@ upgradeCcUi()
         fi
         new_version=$(sed -n "s/^define('CC_UI_VERSION'.*'\(.*\)'.*/\1/p" ${repo_dir}/cc-ui-${version}/bootstrap.php.default)
         [[ -z $new_version ]] && new_version=$version 
+	$(grep -q "'CC_UI_VERSION'" ${repo_dir}/cc-ui-${version}/bootstrap.php)
+	if [[ $? -eq 1 ]]; then
+                echo "define('CC_UI_VERSION', '${new_version}');" | sudo tee -a ${repo_dir}/cc-ui-${version}/bootstrap.php &>/dev/null
+        else
+                sed -i "s|^define('CC_UI_VERSION'.*|define('CC_UI_VERSION', '${new_version}');|g" ${repo_dir}/cc-ui-${version}/bootstrap.php &>/dev/null &>/dev/null
+        fi
 	sed -i "s|^define('CC_API_VERSION'.*|define('CC_API_VERSION', '${new_version}');|g" $repo_dir/cc-ui-${version}/bootstrap.php &>/dev/null
-	sed -i "s|^define('CC_UI_VERSION'.*|define('CC_UI_VERSION', '${new_version}');|g" $repo_dir/cc-ui-${version}/bootstrap.php &>/dev/null
+	#sed -i "s|^define('CC_UI_VERSION'.*|define('CC_UI_VERSION', '${new_version}');|g" $repo_dir/cc-ui-${version}/bootstrap.php &>/dev/null
 
 	commandStatus "Copying CMONAPI to $wwwroot" "cp -rf $repo_dir/cc-cmonapi-${version} $wwwroot/"
 	commandStatus "Copying ClusterControl UI to $wwwroot" "cp -rf $repo_dir/cc-ui-${version} $wwwroot/"
@@ -752,7 +762,12 @@ upgradeCmon()
                         commandStatus "Upgrading CMON cron file" "cp $install_dir_cmon/etc/cron.d/cmon /etc/cron.d/cmon"
                         #commandStatus 'Upgrading CMON web app' "cp -rf $install_dir_cmon/www/*  $wwwroot/"
                         #commandStatus "Applying user permission (web)" "chown -R www-data:www-data $wwwroot/cmon"
-                fi
+			dpkg --get-selections | grep -v deinstall | grep php5-ldap &> /dev/null
+			if [ $? -ne 0 ]; then
+				commandStatus "Updating apt-get" "$HTTP_PROXY apt-get update -qq"
+				commandStatus "Installing PHP LDAP" "$HTTP_PROXY apt-get install -y -qq php5-ldap"
+			fi
+	        fi
         else
 		rpm_name=cmon-$mode
 		[ "$mode" == "dual" ] && rpm_name=cmon-controller
@@ -768,6 +783,8 @@ upgradeCmon()
                         commandStatus 'Upgrading CMON controller' "rpm -Uh $repo_dir/$rpm_controller"
                         #commandStatus 'Upgrading CMON web app' "rpm -Uh $repo_dir/$rpm_www"
                         #commandStatus "Applying user permission (web)" "chown -R apache:apache $wwwroot/cmon"
+			rpm -qa php-ldap &> /dev/null
+			[ $? -ne 0 ] && commandStatus 'Installing PHP LDAP' "$HTTP_PROXY yum install -y --quiet php-ldap"
                 else
                         commandStatus 'Upgrading CMON agent' "rpm -Uh $repo_dir/$rpm_agent"
                 fi
@@ -1186,13 +1203,15 @@ performUpgrade()
 			if [ ! -z "$agent_based" ]; then
 				upgradeAgent
 			else
-				[ $same_version -ne 1 ] && disableAgents
+				([ $agentless -ne 1 ] && [ $same_version -ne 1 ]) && disableAgents
 			fi
 		fi
 		echo ""
 		echo "========================================="
 		echo " Upgrade Has Been Successfully Completed"
 		echo "========================================="
+		echo ""
+		echo "Please relogin the current ClusterControl UI session!"
 		echo ""
 		[ "$install_cc_ui" == 1 ] && echo -e "\nNew ClusterControl web app installed!!\nKindly go to http://${CMON_DB_HOST}/install to finalize the installation"
 	fi

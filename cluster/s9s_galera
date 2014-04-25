@@ -620,26 +620,27 @@ if [ -n "$MYSQL_HOSTNAME" ]; then
 fi
 EOF
 
-    if [ "$SERVER_LIST" != "NULL" ]; then
-	for S in $SERVER_LIST
-	do
-	    HNAME=$S
-	    remote_cmd_nofail $HNAME "mkdir -p $S9S_TMPDIR"
-	    remote_cmd $HNAME "chown -R $SSH_USER:$SSH_USER $S9S_TMPDIR"
-	    remote_copy $S9S_TMPDIR/wsrep_notify_cc ${HNAME} ${S9S_TMPDIR}/wsrep_notify_cc
-	    remote_cmd $HNAME "sed -i.bak 's#.*CMON_DB_HOST=.*#CMON_DB_HOST=$CMON_DB_HOST#g' ${S9S_TMPDIR}/wsrep_notify_cc"
-	    remote_cmd $HNAME "sed -i.bak 's#.*CMON_DB_PORT=.*#CMON_DB_PORT=$CMON_DB_PORT#g' ${S9S_TMPDIR}/wsrep_notify_cc"
-	    remote_cmd $HNAME "sed -i.bak 's#.*CMON_PASSWORD=.*#CMON_PASSWORD=$CMON_PASSWORD#g' ${S9S_TMPDIR}/wsrep_notify_cc"
-	    remote_cmd $HNAME "sed -i.bak 's#.*CLUSTER_ID=.*#CLUSTER_ID=$CLUSTER_ID#g' ${S9S_TMPDIR}/wsrep_notify_cc"
-	    remote_cmd $HNAME "sed -i.bak 's#.*MYSQL_BIN=.*#MYSQL_BIN=$MYSQL_BIN#g' ${S9S_TMPDIR}/wsrep_notify_cc"
-	    remote_cmd $HNAME "sed -i.bak 's#.*MYSQL_HOSTNAME=.*#MYSQL_HOSTNAME=$HNAME#g' ${S9S_TMPDIR}/wsrep_notify_cc"
-	    remote_cmd $HNAME "mv -f ${S9S_TMPDIR}/wsrep_notify_cc /usr/bin"
-	    remote_cmd $HNAME "chown mysql:mysql /usr/bin//wsrep_notify_cc"
-	    remote_cmd $HNAME "chmod u+x /usr/bin/wsrep_notify_cc"
-	    remote_cmd $HNAME "chmod 755 /usr/bin/wsrep_notify_cc"
-	    remote_cmd $HNAME "sed -i.bak 's#.*wsrep_notify_cmd=.*#wsrep_notify_cmd=/usr/bin/wsrep_notify_cc#g' $CONFIGDIR/my.cnf"
-	done
-    fi
+  CMON_PASSWORD_ESC=$(printf '%q' $CMON_PASSWORD)
+  if [ "$SERVER_LIST" != "NULL" ]; then
+      for S in $SERVER_LIST
+      do
+	  HNAME=$S
+	  remote_cmd_nofail $HNAME "mkdir -p $S9S_TMPDIR"
+	  remote_cmd $HNAME "chown -R $SSH_USER:$SSH_USER $S9S_TMPDIR"
+	  remote_copy $S9S_TMPDIR/wsrep_notify_cc ${HNAME} ${S9S_TMPDIR}/wsrep_notify_cc
+	  remote_cmd $HNAME "sed -i.bak 's#.*CMON_DB_HOST=.*#CMON_DB_HOST=$CMON_DB_HOST#g' ${S9S_TMPDIR}/wsrep_notify_cc"
+	  remote_cmd $HNAME "sed -i.bak 's#.*CMON_DB_PORT=.*#CMON_DB_PORT=$CMON_DB_PORT#g' ${S9S_TMPDIR}/wsrep_notify_cc"
+	  remote_cmd $HNAME "sed -i.bak \"s#.*CMON_PASSWORD=.*#CMON_PASSWORD=\'$CMON_PASSWORD_ESC\'#g\" ${S9S_TMPDIR}/wsrep_notify_cc"
+	  remote_cmd $HNAME "sed -i.bak 's#.*CLUSTER_ID=.*#CLUSTER_ID=$CLUSTER_ID#g' ${S9S_TMPDIR}/wsrep_notify_cc"
+	  remote_cmd $HNAME "sed -i.bak 's#.*MYSQL_BIN=.*#MYSQL_BIN=$MYSQL_BIN#g' ${S9S_TMPDIR}/wsrep_notify_cc"
+	  remote_cmd $HNAME "sed -i.bak 's#.*MYSQL_HOSTNAME=.*#MYSQL_HOSTNAME=$HNAME#g' ${S9S_TMPDIR}/wsrep_notify_cc"
+	  remote_cmd $HNAME "mv -f ${S9S_TMPDIR}/wsrep_notify_cc /usr/bin"
+	  remote_cmd $HNAME "chown mysql:mysql /usr/bin//wsrep_notify_cc"
+	  remote_cmd $HNAME "chmod u+x /usr/bin/wsrep_notify_cc"
+	  remote_cmd $HNAME "chmod 755 /usr/bin/wsrep_notify_cc"
+	  remote_cmd $HNAME "sed -i.bak 's#.*wsrep_notify_cmd=.*#wsrep_notify_cmd=/usr/bin/wsrep_notify_cc#g' $CONFIGDIR/my.cnf"
+      done
+  fi
 
 }
 
