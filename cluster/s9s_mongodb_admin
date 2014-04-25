@@ -274,7 +274,7 @@ function load_opts
     SSH_OPTS="-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY"
     SSH_OPTS2="-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY"
     if [ "$SSH_USER" != "root" ]; then
-	SSH_OPTS=" -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY"
+	SSH_OPTS="-t -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY"
 	if [ "$SUDO" = "" ] || [ "$SUDO" = "NULL" ];  then
            SUDO=sudo
         fi
@@ -405,7 +405,6 @@ function remove_lockfile
   #    exit 0
   #fi    
 }
-
 
 function add_shard
 {
@@ -711,7 +710,52 @@ function rolling_restart
 
 function install_mongodb
 {
-    local xhost=$1
+    RESTART_CMON=1
+    args=`getopt i:h:N:m:j:f: $*`
+    set -- $args
+    for i
+    do
+	case "$i" in
+	    -i)
+		CLUSTER_ID="$2"; shift;
+		shift;;
+	    -j)
+		JOBID="$2"; shift;
+		shift;;
+            -h)
+		SERVER1="$2"; shift;
+		shift;;
+            -f)
+		TGZ_FILE="$2"; shift;
+		shift;;
+            --)
+		shift; break;;
+	esac
+    done    
+
+    if [ -z "$CLUSTER_ID" ]; then
+	echo "s9s_mongodb_admin --install-mongodb -i <cluster id>"
+	exit 1
+    fi
+    init 
+    if [ -z "$SERVER1" ]; then
+	echo "s9s_mongodb_admin --install-mongodb -h <hostname>"
+	exit 1
+    fi
+    load_opts $CLUSTER_ID
+    case $VENDOR in
+	tokutek)
+	    if [ -z "$TGZ_FILE" ]; then 
+		echo "s9s_mongodb_admin --install-mongodb -f <path to tokumx tar.gz file is missing>"
+		exit 1
+	    fi
+	    ;;
+	*)
+	    ;;
+    esac
+    
+
+    local xhost=$SERVER1
 
     remote_cmd_nofail $xhost "killall -9 cmon mongod"
     remote_cmd_nofail $xhost "rm -rf /etc/mongodb.conf"
@@ -721,12 +765,14 @@ function install_mongodb
     remote_cmd_nofail $xhost "rm -rf ${MONGODB_DATADIR}"
     case $VENDOR in
 	tokutek)
-	    TGZ_FILE=$2
+	    LN_NAME=`basename $TGZ_FILE .tar.gz`
+	    ## strip the -main..
+	    LN_NAME=`basename $LN_NAME -main`
 	    remote_copy $TGZ_FILE $xhost $S9S_TMPDIR/ 
 	    remote_cmd_nofail $xhost "chown -R $SSH_USER:$SSH_USER  $S9S_TMPDIR"
 	    remote_cmd $xhost  "tar xfz $S9S_TMPDIR/`basename $TGZ_FILE` -C /usr/local"
 	    remote_cmd $xhost  "rm -rf /usr/local/tokumx"
-	    remote_cmd $xhost  "ln -s --force /usr/local/`basename $TGZ_FILE .tgz`  /usr/local/tokumx" 
+	    remote_cmd $xhost  "ln -s --force /usr/local/${LN_NAME}  /usr/local/tokumx" 
 	    remote_cmd $xhost  "test -f /usr/local/tokumx/bin/mongod" 
 	    ;;
 	10gen)
@@ -1601,6 +1647,124 @@ EOF
   exit 0
 }
 
+
+
+## ADD SECONDARY
+function add_secondary
+{        
+    args=`getopt i:N:P:j:d:h:k: $*`
+    set -- $args
+    for i
+    do
+	case "$i" in
+	    -i)
+		CLUSTER_ID="$2"; shift;
+		shift;;
+	    -j)
+		JOBID="$2"; shift;
+		shift;;
+	    -N)
+		RS_NAME="$2"; shift;
+		shift;;
+	    -h)
+		XHOSTNAME="$2"; shift;
+		shift;;
+	    -P)
+		MONGODB_PORT="$2"; shift;
+		shift;;
+            --)
+		shift; break;;
+	esac
+    done    
+
+
+  if [ -z "$CLUSTER_ID" ]; then
+      echo "s9s_mongodb_admin --add-secondary -i <cluster id>"
+      exit 1
+  fi
+  init 
+  if [ -z "$RS_NAME" ]; then
+      echo "s9s_mongodb_admin --add-secondary -N <replica set name to add the arbiter to>"
+      exit 1
+  fi
+
+  if [ -z "$XHOSTNAME" ]; then
+      echo "s9s_mongodb_admin --add-secondary -h <secondary hostname>"
+      exit 1
+  fi
+
+  echo $CLUSTER_ID
+  load_opts $CLUSTER_ID
+  
+  if [ -z "$MONGODB_PORT" ]; then
+      echo "s9s_mongodb_admin --add-secondary -P <secondary port>"
+      exit 1
+  fi
+
+
+  SERVERID=$(check_host_exists $CLUSTER_ID $XHOSTNAME)
+  if [ $? -eq 1 ]; then
+      log_job_message "Server $XHOSTNAME does not exists - you must add the host in the UI first" 1
+      exit 1
+  fi
+
+    
+  
+  cat << 'EOF' > /tmp/addSecondary.js
+   rs.add('XHOSTNAME:MONGODB_PORT')
+
+EOF
+
+
+  TYPE="shardsvr"
+  RS_VICTIM_LIST=$(get_rs_primary $RS_NAME)
+  if [ "$RS_VICTIM_LIST" != "NULL" ]; then
+      for r in $RS_VICTIM_LIST
+      do	 
+	  RS_HNAME=`echo $r | awk -F ',' '{print $1};'`
+	  RS_NODEID=`echo $r | awk -F ',' '{print $2};'`
+	  RS_PORT=`echo $r | awk -F ',' '{print $3};'`
+      done
+  else
+      log_job_message "No PRIMARY found in replica set $RS_NAME" 1      
+      exit 1
+  fi
+  
+  sed  -i.bak "s#XHOSTNAME#${XHOSTNAME}#g"  /tmp/addSecondary.js
+  sed  -i.bak "s#MONGODB_PORT#${MONGODB_PORT}#g"  /tmp/addSecondary.js
+  
+    echo "Creating secondary"
+    ${MONGODB_BASEDIR}/bin/mongo ${RS_HNAME}:${RS_PORT} --quiet  /tmp/addArbiter.js
+    
+
+    if [ $? -ne 0 ]; then
+	echo "failed to create secondary on $XHOSTNAME"
+	exit 1
+    fi      
+    
+    
+    if [ -z "$mongoarbiter_server_addresses" ]; then 
+	echo "mongoarbiter_server_addresses=${ARBIT_HOSTNAME}:${ARBIT_PORT}" >> /etc/cmon.cnf
+    else
+	x=`cat /etc/cmon.cnf |grep ${ARBIT_HOSTNAME}:${ARBIT_PORT}`
+      if [ -z "$x" ]; then
+	  sed  -i.bak "s#mongoarbiter_server_addresses=.*#mongoarbiter_server_addresses=${mongoarbiter_server_addresses},$ARBIT_HOSTNAME:$ARBIT_PORT#g"  /etc/cmon.cnf
+      fi
+  fi
+
+  QUERY="REPLACE INTO mongodb_server(cid, serverid , hostname, port, report_ts, status, arbiter, hidden, votes, slave_delay, username, password, node_type, rs_name, dbpath,logpath, shardsvr, pidfilepath,cmdline)"
+  QUERY="$QUERY VALUES ($CLUSTER_ID, $SERVERID, '$ARBIT_HOSTNAME', $ARBIT_PORT, now(), $mystate, 1, 0,1,0,'','',3,'$RS_NAME', '$ARBIT_DATADIR', '/var/log/mongodb/arbiter_${ARBIT_PORT}.log', 0, '$PIDFILE', '$CMDLINE')"
+  $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
+  if [ $? -ne 0 ]; then
+      echo "Failed: $QUERY"
+      echo "You must restart cmon contoller: service cmon restart"
+      exit 1
+  fi
+  
+  
+  exit 0
+}
+
 ## ADD ARBITER
 function add_arbiter
 {        
@@ -1761,10 +1925,10 @@ EOF
 	echo "mongoarbiter_server_addresses=${ARBIT_HOSTNAME}:${ARBIT_PORT}" >> /etc/cmon.cnf
     else
 	x=`cat /etc/cmon.cnf |grep ${ARBIT_HOSTNAME}:${ARBIT_PORT}`
-      if [ -z "$x" ]; then
-	  sed  -i.bak "s#mongoarbiter_server_addresses=.*#mongoarbiter_server_addresses=${mongoarbiter_server_addresses},$ARBIT_HOSTNAME:$ARBIT_PORT#g"  /etc/cmon.cnf
-      fi
-  fi
+	if [ -z "$x" ]; then
+	    sed  -i.bak "s#mongoarbiter_server_addresses=.*#mongoarbiter_server_addresses=${mongoarbiter_server_addresses},$ARBIT_HOSTNAME:$ARBIT_PORT#g"  /etc/cmon.cnf
+	fi
+    fi
 
   QUERY="REPLACE INTO mongodb_server(cid, serverid , hostname, port, report_ts, status, arbiter, hidden, votes, slave_delay, username, password, node_type, rs_name, dbpath,logpath, shardsvr, pidfilepath,cmdline)"
   QUERY="$QUERY VALUES ($CLUSTER_ID, $SERVERID, '$ARBIT_HOSTNAME', $ARBIT_PORT, now(), $mystate, 1, 0,1,0,'','',3,'$RS_NAME', '$ARBIT_DATADIR', '/var/log/mongodb/arbiter_${ARBIT_PORT}.log', 0, '$PIDFILE', '$CMDLINE')"
@@ -1986,6 +2150,9 @@ case $ARG in
     --backup)
 	backup_cluster $*
 	;;
+    --add-secondary)
+	add_secondary $*
+	;;
     --add-arbiter)
 	add_arbiter $*
 	;;
@@ -1994,6 +2161,9 @@ case $ARG in
 	;;
     --add-shard)
 	add_shard $*
+	;;
+    --install-mongodb)
+	install_mongodb $*
 	;;
     --upgrade-mongodb)
 	upgrade_mongodb $*
