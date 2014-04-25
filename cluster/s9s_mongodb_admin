@@ -232,16 +232,17 @@ function load_opts
 
     MONGODB_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MONGODB_PORT' AND cid=$CLUSTER_ID"`
     MONGOS_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MONGOS_PORT' AND cid=$CLUSTER_ID"`
-    MONGODB_DATADIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select dbpath from  mongodb_server where node_type=0 and cid=$CLUSTER_ID limit 1"`
-    MONGODB_PIDFILEDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select pidfilepath from  mongodb_server where node_type=0 and cid=$CLUSTER_ID limit 1"`
+    MONGODB_DATADIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select dbpath from  mongodb_server where node_type=0 AND dbpath<>'' and cid=$CLUSTER_ID limit 1"`
+    MONGODB_PIDFILEDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select pidfilepath from  mongodb_server where node_type=0 and pidfilepath<>'' and cid=$CLUSTER_ID limit 1"`
+    MONGODB_PIDFILEPATH=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select pidfilepath from  mongodb_server where node_type=0 and pidfilepath<>'' and cid=$CLUSTER_ID limit 1"`
     MONGODB_PIDFILEDIR=`dirname $MONGODB_PIDFILEDIR`
-    MONGODB_LOGDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select logpath from  mongodb_server where node_type=0 and cid=$CLUSTER_ID limit 1"`
+    MONGODB_LOGDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select logpath from  mongodb_server where node_type=0 and logpath<>'' and cid=$CLUSTER_ID limit 1"`
     MONGODB_LOGDIR=`dirname $MONGODB_LOGDIR`
     MONGODB_BASEDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MONGODB_BASEDIR' AND cid=$CLUSTER_ID"`
     MONGODB_CONFIGDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MONGODB_CONFIGDIR' AND cid=$CLUSTER_ID"`
 #    MONGODB_CNF=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select data  from cmon.cluster_configuration_templates where cid=${CLUSTER_ID} limit 1"`
-    MONGODB_CNF=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select data  from cmon.cluster_configuration where cid=${CLUSTER_ID} AND filename='mongodb.27018.conf' limit 1"`
-    
+    MONGODB_CNF=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select data  from cmon.cluster_configuration_templates where cid=$CLUSTER_ID and filename='mongodb.0.conf' limit 1" 2>/dev/null`
+
     if [ -z "$MONGODB_PORT" ]; then
        MONGODB_PORT=27018
     fi
@@ -262,6 +263,8 @@ function load_opts
     
     mkdir -p $S9S_TMPDIR
     echo $MONGODB_CNF |  sed 's#\\n#\n\r#g' > $S9S_TMPDIR/mongodb.conf
+
+    ########
 
     OS_USER_HOME=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='OS_USER_HOME' AND cid=$CLUSTER_ID"`
 
@@ -832,13 +835,25 @@ function start_rs
     for xhost in ${RS_MEMBERS}
     do
 	echo "Copying configuation"
+	TMP_DATADIR=`grep dbpath $S9S_TMPDIR/mongodb.conf |grep -v '#'  |tr -d ' ' | awk -F = '{print $2}'`
+	if [ -n "$TMP_DATADIR" ]; then
+	    MONGODB_DATADIR=$TMP_DATADIR
+	fi
 	remote_copy $S9S_TMPDIR/mongodb.conf ${xhost} $S9S_TMPDIR/mongodb.${MONGODB_PORT}.conf
 	remote_cmd ${xhost} "mv -f $S9S_TMPDIR/mongodb.${MONGODB_PORT}.conf $MONGODB_CONFIGDIR"
-	remote_cmd_nofail ${xhost} "killall -9 mongod"
-	echo "Starting mongodb shard server, this may take a while"
-	remote_cmd3 $xhost "LC_ALL=C $MONGODB_BASEDIR/bin//mongod -f ${MONGODB_CONFIGDIR}/mongodb.${MONGODB_PORT}.conf  --logpath /var/log//mongodb_${MONGODB_PORT}.log --pidfilepath /var/run/mongodb/mongodb_${MONGODB_PORT}.pid --shardsvr"
-        wait_for_ok $xhost ${MONGODB_PORT} 300
+	start_mongodb $xhost
     done
+}
+
+function start_mongodb
+{
+    local xhost=$1
+    remote_cmd_nofail ${xhost} "killall -9 mongod"
+    echo "Starting mongodb shard server, this may take a while"
+    remote_cmd $xhost "mkdir -p $MONGODB_PIDFILEDIR"
+    remote_cmd $xhost "mkdir -p $MONGODB_DATADIR"       
+    remote_cmd3 $xhost "LC_ALL=C $MONGODB_BASEDIR/bin//mongod -f ${MONGODB_CONFIGDIR}/mongodb.${MONGODB_PORT}.conf  --logpath /var/log//mongodb_${MONGODB_PORT}.log --pidfilepath ${MONGODB_PIDFILEDIR}/mongodb_${MONGODB_PORT}.pid --shardsvr"
+    wait_for_ok $xhost ${MONGODB_PORT} 300
 }
 
 
@@ -911,6 +926,17 @@ function stop_node
     local xNODEID=$2    
     local cmdline=$(get_field $xNODEID "cmdline")
     local pidfile=$(get_field $xNODEID "pidfilepath")
+    
+    if [ -z "$cmdline" ]; then 
+	echo "could not read cmdline argument"
+	exit 1
+    fi
+
+    if [ -z "$pidfile" ]; then 
+	echo "could not read pidfile argument"
+	exit 1
+    fi
+
     PID=$(remote_cmd_getreply $xHNAME "cat $pidfile")
     if [ -n "$PID" ]; then
 	remote_cmd_nofail $xHNAME "kill -15 $PID"
@@ -1684,7 +1710,7 @@ function add_secondary
   fi
   init 
   if [ -z "$RS_NAME" ]; then
-      echo "s9s_mongodb_admin --add-secondary -N <replica set name to add the arbiter to>"
+      echo "s9s_mongodb_admin --add-secondary -N <replica set name to add the secondary to>"
       exit 1
   fi
 
@@ -1707,9 +1733,24 @@ function add_secondary
       log_job_message "Server $XHOSTNAME does not exists - you must add the host in the UI first" 1
       exit 1
   fi
+  if [ ! -f  $S9S_TMPDIR/mongodb.conf ]; then
+      log_job_message "$S9S_TMPDIR/mongodb.conf does not exist" 1
+      exit 1
+  fi
 
-    
+  if [ ! -s  $S9S_TMPDIR/mongodb.conf ]; then
+      log_job_message "$S9S_TMPDIR/mongodb.conf exists but is 0 bytes" 1
+      exit 1
+  fi
   
+  TMP_DATADIR=`grep dbpath $S9S_TMPDIR/mongodb.conf |grep -v '#'  |tr -d ' ' | awk -F = '{print $2}'`
+  if [ -n "$TMP_DATADIR" ]; then
+      MONGODB_DATADIR=$TMP_DATADIR
+  fi
+  
+  remote_copy ${S9S_TMPDIR}/mongodb.conf $XHOSTNAME ${S9S_TMPDIR}/mongodb.${MONGODB_PORT}.conf
+  remote_cmd $XHOSTNAME "mv -f  ${S9S_TMPDIR}/mongodb.${MONGODB_PORT}.conf  ${MONGODB_CONFIGDIR}/mongodb.${MONGODB_PORT}.conf"
+
   cat << 'EOF' > /tmp/addSecondary.js
    rs.add('XHOSTNAME:MONGODB_PORT')
 
@@ -1730,11 +1771,13 @@ EOF
       exit 1
   fi
   
+  start_mongodb $XHOSTNAME
+  
   sed  -i.bak "s#XHOSTNAME#${XHOSTNAME}#g"  /tmp/addSecondary.js
   sed  -i.bak "s#MONGODB_PORT#${MONGODB_PORT}#g"  /tmp/addSecondary.js
   
     echo "Creating secondary"
-    ${MONGODB_BASEDIR}/bin/mongo ${RS_HNAME}:${RS_PORT} --quiet  /tmp/addArbiter.js
+    ${MONGODB_BASEDIR}/bin/mongo ${RS_HNAME}:${RS_PORT} --quiet  /tmp/addSecondary.js
     
 
     if [ $? -ne 0 ]; then
@@ -1743,17 +1786,17 @@ EOF
     fi      
     
     
-    if [ -z "$mongoarbiter_server_addresses" ]; then 
-	echo "mongoarbiter_server_addresses=${ARBIT_HOSTNAME}:${ARBIT_PORT}" >> /etc/cmon.cnf
-    else
-	x=`cat /etc/cmon.cnf |grep ${ARBIT_HOSTNAME}:${ARBIT_PORT}`
-      if [ -z "$x" ]; then
-	  sed  -i.bak "s#mongoarbiter_server_addresses=.*#mongoarbiter_server_addresses=${mongoarbiter_server_addresses},$ARBIT_HOSTNAME:$ARBIT_PORT#g"  /etc/cmon.cnf
-      fi
-  fi
-
-  QUERY="REPLACE INTO mongodb_server(cid, serverid , hostname, port, report_ts, status, arbiter, hidden, votes, slave_delay, username, password, node_type, rs_name, dbpath,logpath, shardsvr, pidfilepath,cmdline)"
-  QUERY="$QUERY VALUES ($CLUSTER_ID, $SERVERID, '$ARBIT_HOSTNAME', $ARBIT_PORT, now(), $mystate, 1, 0,1,0,'','',3,'$RS_NAME', '$ARBIT_DATADIR', '/var/log/mongodb/arbiter_${ARBIT_PORT}.log', 0, '$PIDFILE', '$CMDLINE')"
+    x=`cat /etc/cmon.cnf |grep ${XHOSTNAME}:${MONGODB_PORT}`
+    if [ -z "$x" ]; then
+	sed  -i.bak "s#mongodb_server_addresses=.*#mongodb_server_addresses=${mongodb_server_addresses},$XHOSTNAME:$MONGODB_PORT#g"  /etc/cmon.cnf
+	if [ $? -ne 0 ]; then
+	    echo "updating /etc/cmon.cnf failed."
+	    exit 1
+	fi      
+    fi
+    
+  QUERY="REPLACE INTO mongodb_server(cid, serverid , hostname, port, report_ts, node_type, rs_name, arbiter)"
+  QUERY="$QUERY VALUES ($CLUSTER_ID, $SERVERID, '$XHOSTNAME', $MONGODB_PORT, now(), 0,'$RS_NAME',0)"
   $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
   if [ $? -ne 0 ]; then
       echo "Failed: $QUERY"
@@ -2028,28 +2071,28 @@ EOF
   TYPE="'shardsvr','arbiter'"
   SERVER_LIST=$(get_servers2 $TYPE)
   FOUND=0
-  if [ "$SERVER_LIST" != "NULL" ]; then
-      for r in $SERVER_LIST
-      do
-	  HNAME=`echo $r | awk -F ',' '{print $1};'`
-	  NODEID=`echo $r | awk -F ',' '{print $2};'`
-	  PORT=`echo $r | awk -F ',' '{print $3};'`
-	  if [ "$HNAME" = "$XHOSTNAME" ] && [ "$PORT" = "$XPORT" ]; then
-	      stop_node $HNAME $NODEID
-	      FOUND=1
-	  fi
-      done
-  else
-      exit 1
-  fi  
+#  if [ "$SERVER_LIST" != "NULL" ]; then
+#      for r in $SERVER_LIST
+#      do
+#	  HNAME=`echo $r | awk -F ',' '{print $1};'`
+#	  NODEID=`echo $r | awk -F ',' '{print $2};'`
+#	  PORT=`echo $r | awk -F ',' '{print $3};'`
+#	  if [ "$HNAME" = "$XHOSTNAME" ] && [ "$PORT" = "$XPORT" ]; then
+#	      stop_node $HNAME $NODEID
+#	      FOUND=1
+#	  fi
+#     done
+#  else
+#      exit 1
+#  fi  
 
 
- if [ $FOUND -eq 0 ]; then
-     echo "$XHOSTNAME:$XPORT was not found in mongodb_server, cannot remove."
-     exit 1
- fi
+## if [ $FOUND -eq 0 ]; then
+#     echo "$XHOSTNAME:$XPORT was not found in mongodb_server, cannot remove."
+#     exit 1
+# fi
 
- sleep 10
+  sleep 2
   TYPE="shardsvr"
   RS_VICTIM_LIST=$(get_rs_primary $RS_NAME)
   if [ "$RS_VICTIM_LIST" != "NULL" ]; then
@@ -2080,17 +2123,8 @@ EOF
 	  fi
       fi
   fi      
-
-
-  QUERY="DELETE FROM mongodb_server WHERE cid=$CLUSTER_ID AND hostname='$XHOSTNAME' AND port=$XPORT AND nodeid=$NODEID"
-  $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
-  if [ $? -ne 0 ]; then
-      echo "Failed: $QUERY"
-      echo "You must restart cmon contoller: service cmon restart"
-      exit 1
-  fi
   
-  QUERY="SELECT GROUP_CONCAT(concat(hostname,':',port) ORDER BY serverid) FROM mongodb_server WHERE cid=$CLUSTER_ID and node_type=0"
+  QUERY="SELECT GROUP_CONCAT(concat(hostname,':',port) ORDER BY serverid) FROM mongodb_server WHERE cid=$CLUSTER_ID and node_type=0 and hostname <> 'XHOSTNAME' "
   SERVERS=`$MYSQL_BIN $MYSQL_OPTS -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"`    
   if [ $? -ne 0 ]; then
       log_job_message "Failed to get mongodb_server list" 1
