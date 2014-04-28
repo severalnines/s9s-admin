@@ -24,7 +24,7 @@ function init
 	exit 1
     fi
    
-    source $configfile;
+    source $configfile
 
 
     CID=$cluster_id
@@ -521,7 +521,7 @@ function add_shard
   if [ $RS_SIZE -eq 2 ]; then
      SERVERS="$SERVERS,$SERVER1:$MONGODB_PORT,$SERVER2:$MONGODB_PORT"  
   fi
-  sed -i.bak "s#mongodb_server_addresses=.*#mongodb_server_addresses=${SERVERS}#g" /etc/cmon.cnf
+  sed -i.bak "s#mongodb_server_addresses=.*#mongodb_server_addresses=${SERVERS}#g" $configfile
   
   if [ $RESTART_CMON -eq 1 ]; then
       service cmon restart
@@ -996,7 +996,7 @@ function check_node_up
     local xNODEID=$2    
     local cmdline=$(get_field $xNODEID "cmdline")
     local pidfile=$(get_field $xNODEID "pidfilepath")
-    PID=$(remote_cmd_getreply $xHNAME "pgrep \"${cmdline}\"")
+    PID=$(remote_cmd_getreply $xHNAME "pgrep -f  '${cmdline}'")
     if [ -n "$PID" ]; then
 	echo "UP"
 	return
@@ -1068,6 +1068,17 @@ function get_all_servers
 	exit 1
     fi
     echo "$SERVER_LIST"
+}
+
+function get_nodeid
+{
+    local QUERY="select m.nodeid from mongodb_server m WHERE m.cid=$CLUSTER_ID AND m.hostname='$1' AND m.port=$2"
+    local SERVER=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=127.0.0.1 --port=$CMON_DB_PORT -N -Bse "$QUERY"`   
+    if [ $? -ne 0 ]; then
+	echo "getting server list failed"
+	exit 1
+    fi
+    echo "$SERVER"
 }
 
 function get_servers2
@@ -1786,11 +1797,11 @@ EOF
     fi      
     
     
-    x=`cat /etc/cmon.cnf |grep ${XHOSTNAME}:${MONGODB_PORT}`
+    x=`cat $configfile |grep ${XHOSTNAME}:${MONGODB_PORT}`
     if [ -z "$x" ]; then
-	sed  -i.bak "s#mongodb_server_addresses=.*#mongodb_server_addresses=${mongodb_server_addresses},$XHOSTNAME:$MONGODB_PORT#g"  /etc/cmon.cnf
+	sed  -i.bak "s#mongodb_server_addresses=.*#mongodb_server_addresses=${mongodb_server_addresses},$XHOSTNAME:$MONGODB_PORT#g"  $configfile
 	if [ $? -ne 0 ]; then
-	    echo "updating /etc/cmon.cnf failed."
+	    echo "updating $configfile failed."
 	    exit 1
 	fi      
     fi
@@ -1909,8 +1920,9 @@ EOF
   if [ "$VENDOR" != "tokutek" ]; then
      MORE_OPTS="--smallfiles"
   fi
-  CMDLINE="$MONGODB_BASEDIR/bin/mongod --port $ARBIT_PORT --dbpath $ARBIT_DATADIR --replSet $RS_NAME  --logpath /var/log/mongodb/arbiter_${ARBIT_PORT}.log --pidfilepath $PIDFILE $MORE_OPTS $KEYFILE $AUTH"
 
+  CMDLINE="$MONGODB_BASEDIR/bin/mongod --port $ARBIT_PORT --dbpath $ARBIT_DATADIR --replSet $RS_NAME  --logpath /var/log/mongodb/arbiter_${ARBIT_PORT}.log --pidfilepath $PIDFILE $MORE_OPTS $KEYFILE $AUTH"
+  CMDLINE=`echo $CMDLINE | sed 's/[ \t]*$//'`
   remote_cmd3 $ARBIT_HOSTNAME "$CMDLINE"
   
   sed  -i.bak "s#ARBIT_HOSTNAME#${ARBIT_HOSTNAME}#g"  /tmp/addArbiter.js
@@ -1941,38 +1953,40 @@ EOF
 	exit 1
     fi      
     
-    max_retries=60
-    retry=0
-    echo "Waiting for arbiter to join"
-    while [ $retry -lt $max_retries  ];
-    do
-	mystate=`${MONGODB_BASEDIR}/bin//mongo  $ARBIT_HOSTNAME:$ARBIT_PORT --quiet  --eval "printjson(rs.status().myState)" 2>&1`
-	if [ "$mystate" = "7" ]; then
-	    break
-	fi   
-	echo -n "."
-	sleep 1
-	retry=`expr $retry + 1`
-    done
-    echo ""
+   # max_retries=60
+   # retry=0
+   # echo "Waiting for arbiter to join"
+   # while [ $retry -lt $max_retries  ];
+   # do
+#	mystate=`${MONGODB_BASEDIR}/bin//mongo  $ARBIT_HOSTNAME:$ARBIT_PORT --quiet  --eval "printjson(rs.status().myState)" 2>&1`
+#	if [ "$mystate" = "7" ]; then
+#	    break
+#	fi   
+#	echo -n "."
+#	sleep 1
+#	retry=`expr $retry + 1`
+ #   done
+  #  echo ""
     
-    if [ $mystate -ne 7 ]; then
-	echo "failed to create arbiter on $ARBIT_HOSTNAME"
-	exit 1
-    fi
+   # if [ $mystate -ne 7 ]; then
+#	echo "failed to create arbiter on $ARBIT_HOSTNAME"
+#	exit 1
+#    fi
     
-    
+    mystate=6
 
-    
-    if [ -z "$mongoarbiter_server_addresses" ]; then 
-	echo "mongoarbiter_server_addresses=${ARBIT_HOSTNAME}:${ARBIT_PORT}" >> /etc/cmon.cnf
-    else
-	x=`cat /etc/cmon.cnf |grep ${ARBIT_HOSTNAME}:${ARBIT_PORT}`
-	if [ -z "$x" ]; then
-	    sed  -i.bak "s#mongoarbiter_server_addresses=.*#mongoarbiter_server_addresses=${mongoarbiter_server_addresses},$ARBIT_HOSTNAME:$ARBIT_PORT#g"  /etc/cmon.cnf
+    x=`cat $configfile |grep ${ARBIT_HOSTNAME}:${ARBIT_PORT}`
+    if [ -z "$x" ]; then 
+	y=`cat $configfile |grep mongoarbiter_server_addresses`
+	if [ -z "$y" ]; then
+	    echo "mongoarbiter_server_addresses=${ARBIT_HOSTNAME}:${ARBIT_PORT}" >> $configfile
+	else
+	    sed  -i.bak "s#mongoarbiter_server_addresses=.*#mongoarbiter_server_addresses=$ARBIT_HOSTNAME:$ARBIT_PORT#g"  $configfile
 	fi
+    else
+	sed  -i.bak "s#mongoarbiter_server_addresses=.*#mongoarbiter_server_addresses=${mongoarbiter_server_addresses},$ARBIT_HOSTNAME:$ARBIT_PORT#g"  $configfile
     fi
-
+    rm ${configfile}*bak
   QUERY="REPLACE INTO mongodb_server(cid, serverid , hostname, port, report_ts, status, arbiter, hidden, votes, slave_delay, username, password, node_type, rs_name, dbpath,logpath, shardsvr, pidfilepath,cmdline)"
   QUERY="$QUERY VALUES ($CLUSTER_ID, $SERVERID, '$ARBIT_HOSTNAME', $ARBIT_PORT, now(), $mystate, 1, 0,1,0,'','',3,'$RS_NAME', '$ARBIT_DATADIR', '/var/log/mongodb/arbiter_${ARBIT_PORT}.log', 0, '$PIDFILE', '$CMDLINE')"
   $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
@@ -1981,6 +1995,7 @@ EOF
       echo "You must restart cmon contoller: service cmon restart"
       exit 1
   fi
+  
   
   
   exit 0
@@ -2106,6 +2121,22 @@ EOF
       log_job_message "No PRIMARY found in replica set $RS_NAME" 1      
       exit 1
   fi
+###
+  NODEID=$(get_nodeid $XHOSTNAME $XPORT)
+
+  if [ -z "$NODEID" ] || [ "$NODEID" = "NULL" ]; then 
+      log_job_message "Failed to get NODEID" 1      
+      exit 1
+  fi
+  STATE=$(check_node_up $XHOSTNAME $NODEID)
+
+  if [ "$STATE" != "DOWN" ]; then
+      ${MONGODB_BASEDIR}/bin/mongo ${XHOSTNAME}:${XPORT} --eval "db.shutdownServer()"      
+      if [ $? -ne 0 ];  then
+	  log_job_message "No PRIMARY found in replica set $RS_NAME" 1      
+	  exit 1
+      fi
+  fi
 
   sed  -i.bak "s#ARBIT_HOSTNAME#${XHOSTNAME}#g"  /tmp/remove.js
   sed  -i.bak "s#ARBIT_PORT#${XPORT}#g"  /tmp/remove.js
@@ -2124,25 +2155,62 @@ EOF
       fi
   fi      
   
-  QUERY="SELECT GROUP_CONCAT(concat(hostname,':',port) ORDER BY serverid) FROM mongodb_server WHERE cid=$CLUSTER_ID and node_type=0 and hostname <> 'XHOSTNAME' "
-  SERVERS=`$MYSQL_BIN $MYSQL_OPTS -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"`    
+  QUERY="DELETE FROM mongodb_server WHERE cid=$CLUSTER_ID AND hostname='$XHOSTNAME' AND port=$XPORT"
+  $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"    
   if [ $? -ne 0 ]; then
-      log_job_message "Failed to get mongodb_server list" 1
-      exit 1
-  fi
-  sed -i.bak "s#mongodb_server_addresses=.*#mongodb_server_addresses=${SERVERS}#g" /etc/cmon.cnf
-  QUERY="SELECT GROUP_CONCAT(concat(hostname,':',port) ORDER BY serverid) FROM mongodb_server WHERE cid=$CLUSTER_ID and node_type=3"
-  SERVERS=`$MYSQL_BIN $MYSQL_OPTS -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"`    
-  if [ $? -ne 0 ]; then
-      log_job_message "Failed to get mongodb_server list" 1
+      echo "Failed: $QUERY"
+      echo "You must restart cmon contoller: service cmon restart"
       exit 1
   fi
 
-  if [ -n "$SERVERS" ] && [ "$SERVERS" != "NULL" ]; then
-      sed -i.bak "s#mongoarbiter_server_addresses=.*#mongoarbiter_server_addresses=${SERVERS}#g" /etc/cmon.cnf
-  else
-      sed -i.bak '/mongoarbiter_server_addresses/d'  /etc/cmon.cnf
+  QUERY="SELECT GROUP_CONCAT(concat(hostname,':',port) ORDER BY serverid) FROM mongodb_server WHERE cid=$CLUSTER_ID and node_type=0 "
+  SERVERS=`$MYSQL_BIN $MYSQL_OPTS -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"`    
+  if [ $? -ne 0 ]; then
+      log_job_message "Failed to get mongodb_server list" 1
+      exit 1
   fi
+  if [ "$SERVERS" = "NULL" ]; then
+      SERVERS=""
+  fi
+  sed -i.bak "s#mongodb_server_addresses=.*#mongodb_server_addresses=${SERVERS}#g" $configfile
+  rm /etc/cmon*bak
+  QUERY="SELECT GROUP_CONCAT(concat(hostname,':',port) ORDER BY serverid) FROM mongodb_server WHERE cid=$CLUSTER_ID and node_type=1"
+  SERVERS=`$MYSQL_BIN $MYSQL_OPTS -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"`    
+  if [ $? -ne 0 ]; then
+      log_job_message "Failed to get mongodb_server list" 1
+      exit 1
+  fi
+  if [ "$SERVERS" = "NULL" ]; then
+      SERVERS=""
+  fi
+  sed -i.bak "s#mongocfg_server_addresses=.*#mongocfg_server_addresses=${SERVERS}#g" $configfile
+  rm /etc/cmon*bak
+
+
+  QUERY="SELECT GROUP_CONCAT(concat(hostname,':',port) ORDER BY serverid) FROM mongodb_server WHERE cid=$CLUSTER_ID and node_type=2"
+  SERVERS=`$MYSQL_BIN $MYSQL_OPTS -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"`    
+  if [ $? -ne 0 ]; then
+      log_job_message "Failed to get mongodb_server list (2)" 1
+      exit 1
+  fi
+  if [ "$SERVERS" = "NULL" ]; then
+      SERVERS=""
+  fi
+  sed -i.bak "s#mongos_server_addresses=.*#mongos_server_addresses=${SERVERS}#g" $configfile
+  rm /etc/cmon*bak
+      
+
+  QUERY="SELECT GROUP_CONCAT(concat(hostname,':',port) ORDER BY serverid) FROM mongodb_server WHERE cid=$CLUSTER_ID and node_type=3"
+  SERVERS=`$MYSQL_BIN $MYSQL_OPTS -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"`    
+  if [ $? -ne 0 ]; then
+      log_job_message "Failed to get mongodb_server list (3)" 1
+      exit 1
+  fi
+  if [ "$SERVERS" = "NULL" ]; then
+      SERVERS=""
+  fi
+  sed -i.bak "s#mongoarbiter_server_addresses=.*#mongoarbiter_server_addresses=${SERVERS}#g" $configfile
+  rm /etc/cmon*bak
   exit 0
 }
 
