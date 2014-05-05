@@ -27,6 +27,7 @@ while true ; do
 	esac
 done
 
+#
 helpMenu()
 {
         echo "ClusterControl Auto Updater"
