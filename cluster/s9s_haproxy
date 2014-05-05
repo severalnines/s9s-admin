@@ -720,7 +720,7 @@ function load_opts
     if [ "$SSH_USER" != "root" ]; then
 	#SSH_OPTS_EXTRA="-ft"
 	if [ -z "$SSH_OPTSX" ] || [ "SSH_OPTSX" = "NULL" ]; then
-	    SSH_OPTSX="-t"
+	    SSH_OPTSX="-tt"
 	fi
 
 	SSH_OPTS="-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY"
