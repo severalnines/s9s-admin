@@ -440,6 +440,32 @@ function collect_mongodb_logs()
     done
 }
 
+function collect_ui_logs() 
+{
+    mkdir -p $savedir/ui/clustercontrol/logs
+    mkdir -p $savedir/ui/cmonapi/config
+    # use apache regardless distro
+    mkdir -p $savedir/ui/apache/log
+    apache_log_dir="/var/log/apache2"
+    # do not use WWWROOT, not sure if UI install loc and CMONDB is same sometimes atm
+    # depends on version and upgrade method
+    if [[ -d /var/www/html ]]; then
+        UI_WWWROOT="/var/www/html"
+        [[ -d /var/log/httpd ]] && apache_log_dir="/var/www/httpd"
+    else
+        [[ -d /var/www ]] && UI_WWWROOT="/var/www"
+    fi
+
+    if [[ -z $UI_WWWROOT ]]; then
+        log_job_message "Unable to collect ui logs. No web root found (/var/www/html or /var/www)." 1
+    fi
+
+    cp -rf $UI_WWWROOT/clustercontrol/app/tmp/logs/*.log $savedir/ui/clustercontrol/logs/ &>/dev/null
+    cp -f $UI_WWWROOT/clustercontrol/bootstrap.php $savedir/ui/clustercontrol/ &>/dev/null
+    cp -rf $UI_WWWROOT/cmonapi/config/bootstrap.php $UI_WWWROOT/cmonapi/config/database.php $savedir/ui/cmonapi/config/ &>/dev/null
+    cp -f $apache_log_dir/*.log $savedir/ui/apache/log/ &>/dev/null
+}
+
 function create_report
 {
     init 
@@ -490,6 +516,7 @@ function create_report
     if [ "$CLUSTER_TYPE" = "mongodb" ]; then
 	collect_mongodb_logs
     fi    
+    collect_ui_logs
 
     currdir=`pwd`
     cd $S9S_TMPDIR
@@ -541,3 +568,4 @@ if [ -z "$CLUSTER_ID" ]; then
 fi
 
 create_report
+
