@@ -451,7 +451,7 @@ function collect_ui_logs()
     # depends on version and upgrade method
     if [[ -d /var/www/html ]]; then
         UI_WWWROOT="/var/www/html"
-        [[ -d /var/log/httpd ]] && apache_log_dir="/var/www/httpd"
+        [[ -d /var/log/httpd ]] && apache_log_dir="/var/log/httpd"
     else
         [[ -d /var/www ]] && UI_WWWROOT="/var/www"
     fi
