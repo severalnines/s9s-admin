@@ -27,7 +27,6 @@ while true ; do
 	esac
 done
 
-#
 helpMenu()
 {
         echo "ClusterControl Auto Updater"
@@ -154,7 +153,9 @@ install_config_path=/etc
 tmp_dir=~/s9s_backup/s9s_backup_${now}
 [ "$os_user" != "root" ] && tmp_dir=/home/$os_user/s9s_backup/s9s_backup_${now}
 if [ -z "$wwwroot" ]; then
-	[ "$os" == "debian" ] && wwwroot=/var/www
+	if [ "$os" == "debian" ]; then
+	       [ -e /var/www/html/clustercontrol ] && wwwroot=/var/www/html ||  wwwroot=/var/www
+	fi
 	[ "$os" == "redhat" ] && wwwroot=/var/www/html
 fi
 
