@@ -228,6 +228,12 @@ function load_opts
     SUDO=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SUDO' AND cid=$CLUSTER_ID"`
     VENDOR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='VENDOR' AND cid=$CLUSTER_ID"`
     S9S_TMPDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='STAGING_DIR' AND cid=$CLUSTER_ID"`
+    CLUSTER_TYPE=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select type FROM cluster WHERE id=$CLUSTER_ID"`
+    if [ "${CLUSTER_TYPE}" != "mongodb" ]; then
+	log_job_message "This is not a mongodb cluster, aborting. " 1
+	exit 1
+    fi
+
     BACKUPDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='BACKUPDIR' AND cid=$CLUSTER_ID"`
 
     MONGODB_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MONGODB_PORT' AND cid=$CLUSTER_ID"`
@@ -235,8 +241,20 @@ function load_opts
     MONGODB_DATADIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select dbpath from  mongodb_server where node_type=0 AND dbpath<>'' and cid=$CLUSTER_ID limit 1"`
     MONGODB_PIDFILEDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select pidfilepath from  mongodb_server where node_type=0 and pidfilepath<>'' and cid=$CLUSTER_ID limit 1"`
     MONGODB_PIDFILEPATH=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select pidfilepath from  mongodb_server where node_type=0 and pidfilepath<>'' and cid=$CLUSTER_ID limit 1"`
+    if [ -z ${MONGODB_PIDFILEPATH} ]; then
+	log_job_message "Failed to MONGODB_PIDFILEPATH " 1
+	exit 1
+    fi
+    if [ -z ${MONGODB_PIDFILEDIR} ]; then
+	log_job_message "Failed to MONGODB_PIDFILEDIR " 1
+	exit 1
+    fi
     MONGODB_PIDFILEDIR=`dirname $MONGODB_PIDFILEDIR`
     MONGODB_LOGDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select logpath from  mongodb_server where node_type=0 and logpath<>'' and cid=$CLUSTER_ID limit 1"`
+    if [ -z ${MONGODB_LOGDIR} ]; then
+	log_job_message "Failed to MONGODB_LOGDIR " 1
+	exit 1
+    fi
     MONGODB_LOGDIR=`dirname $MONGODB_LOGDIR`
     MONGODB_BASEDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MONGODB_BASEDIR' AND cid=$CLUSTER_ID"`
     MONGODB_CONFIGDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MONGODB_CONFIGDIR' AND cid=$CLUSTER_ID"`
@@ -929,7 +947,7 @@ function stop_node
     local xNODEID=$2    
     local cmdline=$(get_field $xNODEID "cmdline")
     local pidfile=$(get_field $xNODEID "pidfilepath")
-    
+
     if [ -z "$cmdline" ]; then 
 	echo "could not read cmdline argument"
 	exit 1
@@ -999,12 +1017,17 @@ function check_node_up
     local xNODEID=$2    
     local cmdline=$(get_field $xNODEID "cmdline")
     local pidfile=$(get_field $xNODEID "pidfilepath")
-    PID=$(remote_cmd_getreply $xHNAME "pgrep -f  '${cmdline}'")
-    if [ -n "$PID" ]; then
+    if [ "$cmdline" != "" ]; then	
+	PID=$(remote_cmd_getreply $xHNAME "pgrep -f  '${cmdline}'")
+	if [ -n "$PID" ]; then
+	    echo "UP"
+	    return
+	fi
+	echo "DOWN"
+    else
+	## If we dont have a cmdline, then assume the node is up
 	echo "UP"
-	return
     fi
-    echo "DOWN"
 }
 
 function check_node_up2
@@ -1710,7 +1733,7 @@ function add_secondary
 		XHOSTNAME="$2"; shift;
 		shift;;
 	    -P)
-		MONGODB_PORT="$2"; shift;
+		XMONGODB_PORT="$2"; shift;
 		shift;;
             --)
 		shift; break;;
@@ -1735,12 +1758,16 @@ function add_secondary
 
   echo $CLUSTER_ID
   load_opts $CLUSTER_ID
+
+  if [ -n "$XMONGODB_PORT" ]; then
+      MONGODB_PORT=$XMONGODB_PORT
+  fi
   
   if [ -z "$MONGODB_PORT" ]; then
       echo "s9s_mongodb_admin --add-secondary -P <secondary port>"
       exit 1
   fi
-
+  
 
   SERVERID=$(check_host_exists $CLUSTER_ID $XHOSTNAME)
   if [ $? -eq 1 ]; then
@@ -2085,7 +2112,7 @@ EOF
       log_job_message "No PRIMARY found in replica set $RS_NAME" 1      
       exit 1
   fi
-    
+
   TYPE="'shardsvr','arbiter'"
   SERVER_LIST=$(get_servers2 $TYPE)
   FOUND=0
@@ -2124,6 +2151,7 @@ EOF
       log_job_message "No PRIMARY found in replica set $RS_NAME" 1      
       exit 1
   fi
+
 ###
   NODEID=$(get_nodeid $XHOSTNAME $XPORT)
 
@@ -2134,10 +2162,12 @@ EOF
   STATE=$(check_node_up $XHOSTNAME $NODEID)
 
   if [ "$STATE" != "DOWN" ]; then
-      ${MONGODB_BASEDIR}/bin/mongo ${XHOSTNAME}:${XPORT} --eval "db.shutdownServer()"      
+      OUT=`${MONGODB_BASEDIR}/bin/mongo ${XHOSTNAME}:${XPORT} --quiet --eval "db.shutdownServer()" `
       if [ $? -ne 0 ];  then
-	  log_job_message "No PRIMARY found in replica set $RS_NAME" 1      
-	  exit 1
+	  log_job_message "Could not shutdown server" 1      
+	  if [ echo '$OUT' | grep 'connect failed' ]; then
+	      exit 1
+	  fi
       fi
   fi
 
