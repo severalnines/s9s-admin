@@ -464,7 +464,7 @@ stopCmon()
 {
 	cmon_pid=`pgrep cmon`
 	if [ ! -z "$cmon_pid" ]; then
-		commandStatus 'Stopping CMON service: ' "/etc/init.d/cmon stop"
+		commandStatus 'Stopping CMON service: ' "killall -9 cmon"
 	else
 		echo "** CMON service is not running"
 	fi
