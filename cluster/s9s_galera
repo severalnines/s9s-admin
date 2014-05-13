@@ -277,8 +277,8 @@ function load_opts
     S9S_TMPDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='STAGING_DIR' AND cid=$CLUSTER_ID"`
     VENDOR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='VENDOR' AND cid=$CLUSTER_ID" 2>/dev/null`
     CLUSTER_RECOVERY=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='ENABLE_CLUSTER_AUTORECOVERY' AND cid=$CLUSTER_ID" 2>/dev/null`
-    DATADIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon.cluster_config where variable='datadir' and cid=1 order by id asc limit 1" 2>/dev/null`
-    MYCNF=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select data  from cmon.cluster_configuration where cid=1 limit 1" 2>/dev/null`
+    DATADIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon.cluster_config where variable='datadir' and cid=$CLUSTER_ID order by id asc limit 1" 2>/dev/null`
+    MYCNF=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select data  from cmon.cluster_configuration where cid=$CLUSTER_ID limit 1" 2>/dev/null`
 
 
     echo $MYCNF |  sed 's#\\n#\n\r#g' > /tmp/my.cnf

@@ -410,7 +410,7 @@ function remove_lockfile
   
   load_opts $CLUSTER_ID
 
-  QUERY="select dbpath from mongodb_server m, hosts h,mongodb_nodetype_map n  where h.id=m.serverid and m.cid=1 and (h.hostname='$XHOSTNAME' or h.ip='$XHOSTNAME') and m.node_type=n.id and n.name='$TYPE'"
+  QUERY="select dbpath from mongodb_server m, hosts h,mongodb_nodetype_map n  where h.id=m.serverid and m.cid=$CLUSTER_ID and (h.hostname='$XHOSTNAME' or h.ip='$XHOSTNAME') and m.node_type=n.id and n.name='$TYPE'"
   
   DBPATH=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"`
 
