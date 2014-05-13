@@ -951,9 +951,9 @@ function install_garbd
 	    if [ -z "$XFILENAME" ]; then
 		
 		if [ "$OS" = "redhat" ]; then
-		    QUERY="select concat(path, filename) from cmon_uploads a , cmon_sw_package b where a.packageid=b.packageid and a.cid=b.cid and a.cid=1 and b.selected=1 and (filename like 'galera%.rpm')"
+		    QUERY="select concat(path, filename) from cmon_uploads a , cmon_sw_package b where a.packageid=b.packageid and a.cid=b.cid and a.cid=${CLUSTER_ID} and b.selected=1 and (filename like 'galera%.rpm')"
 		else
-		    QUERY="select concat(path, filename) from cmon_uploads a , cmon_sw_package b where a.packageid=b.packageid and a.cid=b.cid and a.cid=1 and b.selected=1 and (filename like 'galera%.deb')"
+		    QUERY="select concat(path, filename) from cmon_uploads a , cmon_sw_package b where a.packageid=b.packageid and a.cid=b.cid and a.cid=${CLUSTER_ID} and b.selected=1 and (filename like 'galera%.deb')"
 		fi
 		
 		XFILENAME=`$MYSQL_BIN -B -N $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$CMON_DB_HOST --port=$CMON_DB_PORT --database=$CMON_DB_DB  -e "$QUERY"`

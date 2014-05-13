@@ -789,6 +789,48 @@ function install_mongodb
     remote_cmd_nofail $xhost "rm -rf ${MONGODB_DATADIR}"
     case $VENDOR in
 	tokutek)
+	    if [ -z "$TGZ_FILE" ]; then
+		if [ -z "$PKG_NAME" ]; then
+		## default to MYSQL_INITIAL_DEPLOY if not set
+		    PKG_NAME="MONGODB_INITIAL_DEPLOY"
+		fi
+		QUERY="SELECT packageid FROM ${CMON_DB}.cmon_sw_package WHERE name='$PKG_NAME' AND cid=$CLUSTER_ID"
+		PID=`$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY"`	
+		if [ -z "$PID" ]; then
+		    log_job_message "Invalid package name $PKG_NAME" 1
+		    log_job 'FAILED' 'job failed' 1
+		    write_email "s9s_mongodb_admin failed" "Invalid package name $PKG_NAME. Check job messages."
+		    exit 1
+		fi
+		QUERY="SELECT group_concat(concat(path,',', filename) SEPARATOR ' ') FROM ${CMON_DB}.cmon_uploads WHERE packageid='$PID' AND cid=$CLUSTER_ID"
+		FILELIST=`$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY"`	    
+		if [ -z "$FILELIST" ]; then
+		    log_job_message "No files in package $PKG_NAME" 1
+		    log_job 'FAILED' 'job failed' 1
+		    write_email "s9s_sw_update failed" "No files in $PKG_NAME. Check job messages."
+		    exit 1	    
+		fi
+		
+		if [ "$FILELIST" = "NULL" ]; then
+		    log_job_message "No files in package $PKG_NAME" 1
+		    log_job 'FAILED' 'job failed' 1
+		    write_email "s9s_sw_update failed" "No files in $PKG_NAME. Check job messages."
+		    exit 1	    
+		fi
+		
+		
+		remote_cmd $XHOSTNAME "mkdir -p $S9S_TMPDIR"
+		remote_cmd $XHOSTNAME "chown  -R $SSH_USER:$SSH_USER $S9S_TMPDIR"
+		
+		for f in $FILELIST 
+		do
+		    path=`echo $f | awk -F, '{print $1;}'`
+		    filename=`echo $f | awk -F, '{print $2;}'`	 
+		    TGZ_FILE="$path/$filename $XHOSTNAME $S9S_TMPDIR"
+		done
+		
+	    fi
+	    
 	    LN_NAME=`basename $TGZ_FILE .tar.gz`
 	    ## strip the -main..
 	    LN_NAME=`basename $LN_NAME -main`
@@ -802,12 +844,17 @@ function install_mongodb
 	10gen)
 	    case $OS in
 		redhat)
-		    echo "not supported yet"
-		    exit 1
-		    remote_copy 10gen.repo $xhost $S9S_TMPDIR/ 
+		    cat << 'EOF' > $S9S_TMPDIR/10gen.repo
+[mongodb]
+name=MongoDB Repository
+baseurl=http://downloads-distro.mongodb.org/repo/redhat/os/x86_64/
+gpgcheck=0
+enabled=1
+EOF
+		    remote_copy $S9S_TMPDIR/10gen.repo $xhost $S9S_TMPDIR/ 
 		    remote_cmd $xhost "mv $S9S_TMPDIR/10gen.repo /etc/yum.repos.d/"
-		    remote_cmd_nofail $xhost "$HTTP_PROXY yum -y remove mongo-10gen mongo-10gen-server"
-		    remote_cmd_nofail $xhost "$HTTP_PROXY yum -y install mongo-10gen mongo-10gen-server"
+		    remote_cmd_nofail $xhost "$HTTP_PROXY yum -y remove mongodb*"
+		    remote_cmd_nofail $xhost "$HTTP_PROXY yum -y install mongodb-org"
 		    remote_cmd $xhost  "chown 755 /etc/init.d/mongod"
 		    remote_cmd $xhost  "/sbin/chkconfig --add mongod"
 		    ;;

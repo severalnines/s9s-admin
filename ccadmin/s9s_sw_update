@@ -1074,12 +1074,12 @@ function install_mongodb
     done    
     
     if [ -z "$XHOSTNAME" ]; then
-	log_job_message 'Syntax: s9s_sw_update --install-mysql -i <clusterid> -n <package_name> -h <hostname>' 1
+	log_job_message 'Syntax: s9s_sw_update --install-mongodb -i <clusterid> -n <package_name> -h <hostname>' 1
 	log_job 'FAILED' 'job failed' 1
 	exit 1
     fi
     if [ -z "$CLUSTER_ID" ]; then
-	log_job_message 'Syntax: s9s_sw_update --install-mysql -i <clusterid> -n <package_name> -h <hostname>' 1
+	log_job_message 'Syntax: s9s_sw_update --install-mongodb -i <clusterid> -n <package_name> -h <hostname>' 1
 	log_job 'FAILED' 'job failed' 1
 	exit 1
     fi
