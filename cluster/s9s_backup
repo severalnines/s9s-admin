@@ -120,8 +120,8 @@ function load_opts
     fi
     SCP_OPTS="-P$SSH_PORT $SCP_OPTS"    
     if [ "$S9S_TMPDIR" = "" ] || [ "$TMPDIR" = "NULL" ];  then
-	S9S_TMPDIR="/tmp/"
-	TMPDIR="/tmp/"
+	    S9S_TMPDIR="/tmp/"
+	    TMPDIR="/tmp/"
     fi
 }
 
@@ -133,7 +133,8 @@ function write_email
   cat $BACKUP_LOGFILE | sed  -e "s/'/\\\'/g" -e 's/"/\\"/g' > /tmp/s9s_backup_log_escaped
   MSG="$MSG \nBackup log follows:\n `cat /tmp/s9s_backup_log_escaped`" 
   QUERY="INSERT INTO simple_email(cid,subject,message) VALUES($CLUSTER_ID, \"$SUBJECT\", \"$MSG\")"
-  $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
+  echo $QUERY > ${S9S_TMPDIR}/query.sql
+  $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT < ${S9S_TMPDIR}/query.sql 2>&1 >/tmp/err.log
 }
 
 function log_job_message
@@ -171,10 +172,14 @@ function write_logfile
    SIZE=`stat --printf='%s' /tmp/s9s_backup_log_escaped`
    HNAME=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$MONITORED_MYSQL_PORT -e "SHOW GLOBAL VARIABLES LIKE 'hostname'" | awk '{print $2;}'`
    QUERY="REPLACE INTO cmon_host_log(cid, hostname, filename, result_len, result, report_ts,description, tag) VALUES ($CLUSTER_ID,'$HNAME', '$BACKUP_LOGFILE', $SIZE, \"$LOG_CONTENT\", NOW(), 's9s_backup log', 's9s_backup')"
-   $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
+
+   echo $QUERY > ${S9S_TMPDIR}/query.sql
+
+   $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT < ${S9S_TMPDIR}/query.sql 2>&1 >/tmp/err.log
    
    QUERY="UPDATE mysql_backup SET logfile=\"$LOG_CONTENT\" WHERE cid=$CLUSTER_ID and backupid=$BACKUPID "
-   $MYSQL_BIN --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"  2>&1 >/tmp/err.log
+   echo $QUERY > ${S9S_TMPDIR}/query.sql
+   $MYSQL_BIN --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT < ${S9S_TMPDIR}/query.sql  2>&1 >/tmp/err.log
    rm -rf /tmp/s9s_backup_log_escaped
 }
 
@@ -277,6 +282,11 @@ function start_backup
         MONITORED_MYSQL_PORT="3306"
     fi
     test_connection 127.0.0.1 $MONITORED_MYSQL_PORT
+
+    if [ "$S9S_TMPDIR" = "" ] || [ "$TMPDIR" = "NULL" ];  then
+	    S9S_TMPDIR="/tmp/"
+	    TMPDIR="/tmp/"
+    fi
 
     if [ -z "$BACKUPDIR" ]; then
 	BACKUPDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='BACKUPDIR' AND cid=$CLUSTER_ID" 2>/dev/null`
