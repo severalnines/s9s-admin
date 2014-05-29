@@ -885,6 +885,8 @@ downloadLatest(){
 		fi
 	fi
 
+	[[ -e $wwwroot/clustercontrol/app/webroot/img/login/logo_percona.gif ]] && DOWNLOAD_URL=http://www.severalnines.com/downloads/percona
+
 	$wget --spider -q $DOWNLOAD_URL/$cc_package
 	if [ $? -eq 0 ]; then
 		($wget -q -O $repo_dir/$cc_package $DOWNLOAD_URL/$cc_package) &
