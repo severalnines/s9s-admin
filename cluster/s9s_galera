@@ -940,7 +940,7 @@ function install_garbd
 		    remote_cmd $XHOSTNAME "$HTTP_PROXY LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::='--force-confnew' -y -q install percona-xtradb-cluster-garbd-3.x"
 		fi
 		if [ "$GALERA_VERSION" = "2.x" ]; then
-		    remote_cmd $XHOSTNAME "$HTTP_PROXY LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::='--force-confnew' -y -q install  percona-xtradb-cluster-galera-2.x"
+		    remote_cmd $XHOSTNAME "$HTTP_PROXY LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::='--force-confnew' -y -q install percona-xtradb-cluster-garbd-2.x"
 		fi
 
 		remote_cmd $XHOSTNAME "sync"
