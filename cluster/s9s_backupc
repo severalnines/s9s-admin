@@ -74,7 +74,8 @@ function write_email
   df -h > /tmp/s9s_diskspace_${CLUSTER_ID}
   MSG="$MSG \nBackup log follows:\n `cat /tmp/s9s_backup_log_escaped_${CLUSTER_ID}`\n\n`cat /tmp/s9s_diskspace_${CLUSTER_ID}`" 
   QUERY="INSERT INTO simple_email(cid,subject,message) VALUES($CLUSTER_ID, \"$SUBJECT\", \"$MSG\")"
-  $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
+  echo "$QUERY" > /tmp/query.sql
+  $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  < /tmp/query.sql 2>&1 >/tmp/err.log
 }
 
 function log_job_message
@@ -83,13 +84,13 @@ function log_job_message
     EXIT_CODE=$2
     QUERY="INSERT INTO cmon_job_message(cid, jobid,message,exit_code,report_ts) VALUES($CLUSTER_ID,$jobid,'$MSG',$EXIT_CODE,now())"
     if [ $jobid -ne 0 ]; then 
-	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
+	    $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
     else
-	if [ $EXIT_CODE -eq 0 ]; then
-	    echo "$MSG"
-	else
-	    echo "Failed: $MSG"
-	fi
+	    if [ $EXIT_CODE -eq 0 ]; then
+	        echo "$MSG"
+	    else
+	        echo "Failed: $MSG"
+	    fi
     fi
 }
 
@@ -120,11 +121,19 @@ function write_logfile
    cat $BACKUP_LOGFILE | sed  -e "s/'/\\\'/g" -e 's/"/\\"/g' > /tmp/s9s_backup_log_escaped_${CLUSTER_ID}
    LOG_CONTENT=`cat /tmp/s9s_backup_log_escaped_${CLUSTER_ID}`
    SIZE=`stat --printf='%s' /tmp/s9s_backup_log_escaped_${CLUSTER_ID}`
+   
    QUERY="REPLACE INTO cmon_host_log(cid, hostname, filename, result_len, result, report_ts,description, tag) VALUES ($CLUSTER_ID,'$BACKUP_HOSTNAME', '$BACKUP_LOGFILE', $SIZE, \"$LOG_CONTENT\", NOW(), 's9s_backup log', 's9s_backup')"
-   $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
+
+   echo "$QUERY" > /tmp/query.sql
+   
+   $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  < /tmp/query.sql 2>&1 >/tmp/err.log
    
    QUERY="UPDATE mysql_backup SET logfile=\"$LOG_CONTENT\" WHERE cid=$CLUSTER_ID and backupid=$BACKUPID "
-   $MYSQL_BIN --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"  2>&1 >/tmp/err.log
+
+   echo "$QUERY" > /tmp/query.sql
+   
+   $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  < /tmp/query.sql 2>&1 >/tmp/err.log
+
    rm -rf /tmp/s9s_backup_log_escaped_${CLUSTER_ID}
 }
 
@@ -254,7 +263,7 @@ function start_backup
   ##Where to store the backup
 
 	FAIL=0
-
+    I=0
 	while [ $I -lt 5 ]; 
 	do
 	    log_job 'RUNNING' 'Job is running' 0
@@ -488,7 +497,7 @@ function start_backup
 	    log_job_message "Backup failed, innobackupex failed" 1
 	    ret=1
 	fi
-        wait $pid  || let "FAIL=1"
+    wait $pid  || let "FAIL=1"
 	log_job_message "wait $pid  --> FAIL=$FAIL" 0
 	scp -q $SCP_OPTS  $SSH_USER@$BACKUP_HOSTNAME:$BACKUP_LOGFILE  $BACKUP_LOGFILE	
 	write_logfile $ID
@@ -498,7 +507,7 @@ function start_backup
 	    SIZE=0
 	    ret=1
 	    FILENAME=''
-            write_email "Backup failed" "s9s_backupc failed, s9s_backupc_wd failed"
+        write_email "Backup failed" "s9s_backupc failed, s9s_backupc_wd failed"
 	    log_job_message "Backup failed, s9s_backupc_wd failed" 1
 	    log_job 'FAILED' 'backup failed' 1
 	else
