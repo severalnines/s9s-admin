@@ -99,7 +99,7 @@ function remote_cmd_getreply()
    x=`ssh -q $SSH_OPTS $SSH_USER@$desthost "$SUDO $xcommand"`
    if [ $? -ne 0 ]; then
        echo "Command failed: ssh -q $SSH_OPTS $SSH_USER@$desthost \"$SUDO $xcommand\""
-       log_job_message "FAILED: ${desthost}@${xcommand}" 1
+       log_job_message "FAILED: $ssh -q $SSH_OPTS ${SSH_USER}@${desthost} $SUDO ${xcommand}" 1
        exit 1
    fi
    x=`echo $x | grep -v "password"`
@@ -177,7 +177,7 @@ function remote_cmd()
       ssh -q $SSH_OPTS $SSH_USER@$desthost " sync " 2>&1  >> $HOME/s9s_deploy.log
       sleep 1
    done
-   log_job_message "FAILED: ${desthost}@${xcommand}" 1
+   log_job_message "FAILED: $ssh -q $SSH_OPTS ${SSH_USER}@${desthost} $SUDO ${xcommand}" 1
    printf "\033[31m[failed]\033[0m\n"
    echo $x
    echo 'The following command failed:'
