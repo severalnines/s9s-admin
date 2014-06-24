@@ -261,6 +261,8 @@ function collect_controller()
     tmpsavedir=$savedir/controller
     $MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "SELECT * FROM mysql_server WHERE cid=$CLUSTER_ID" > $tmpsavedir/mysql_server
     $MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "SELECT * FROM hosts WHERE cid=$CLUSTER_ID" > $tmpsavedir/hosts
+    $MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "SELECT * FROM processes WHERE cid=$CLUSTER_ID" > $tmpsavedir/processes
+    $MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "SELECT * FROM cmon_configuration WHERE cid=$CLUSTER_ID" > $tmpsavedir/cmon_configuration
     $MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "SELECT * FROM cmon_job_message WHERE cid=$CLUSTER_ID" > $tmpsavedir/cmon_job_messages
     $MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "SELECT * FROM cmon_job WHERE cid=$CLUSTER_ID" > $tmpsavedir/cmon_job
     
