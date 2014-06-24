@@ -244,7 +244,7 @@ function remote_copy_from_r2()
    desthost=$1
    destfile=$3
    printf "%-4s: Copying '%s' to '%s'" "$desthost" "$srcfile" "$destfile"
-   scp $SSH_OPTS2 -r $SSH_USER@$desthost:$srcfile $destfile   2>/dev/null
+   scp $SSH_OPTS2 -p -r $SSH_USER@$desthost:$srcfile $destfile   2>/dev/null
    if [ $? -eq 0 ]; then
       printf "\033[32m[ok]\033[0m\n"
       return 0
@@ -265,12 +265,12 @@ function collect_controller()
     $MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "SELECT * FROM cmon_job WHERE cid=$CLUSTER_ID" > $tmpsavedir/cmon_job
     
     echo $configfile
-    cp $configfile $tmpsavedir
+    cp  -a $configfile $tmpsavedir
     CMON_LOG=`grep logfile $configfile |grep -v '#' | awk -F '=' '{print $2;}'`
     if [ -z "$CMON_LOG" ]; then
 	CMON_LOG=/var/log/cmon.log
     fi
-    cp ${CMON_LOG}* $tmpsavedir    
+    cp -a ${CMON_LOG}* $tmpsavedir    
 }
 
 
@@ -302,12 +302,12 @@ function collect_mysql_logs()
 		exit 1
 	    fi
 	fi
-	remote_cmd_nofail $host "cp $CONFIGDIR/my.cnf /tmp"
-	remote_cmd_nofail $host "cp $ERRLOG /tmp"
+	remote_cmd_nofail $host "cp -a $CONFIGDIR/my.cnf /tmp"
+	remote_cmd_nofail $host "cp -a $ERRLOG /tmp"
 	if [ "$CLUSTER_TYPE" = "galera" ]; then
-	    remote_cmd_nofail $host "cp $DATADIR/GRA* /tmp"
-	    remote_cmd_nofail $host "cp $DATADIR/inno*.log /tmp"
-	    remote_cmd_nofail $host "cp $DATADIR/sst.err /tmp"
+	    remote_cmd_nofail $host "cp -a $DATADIR/GRA* /tmp"
+	    remote_cmd_nofail $host "cp -a $DATADIR/inno*.log /tmp"
+	    remote_cmd_nofail $host "cp -a $DATADIR/sst.err /tmp"
 	    remote_cmd_nofail $host "chown $SSH_USER /tmp/inno*.log"
 	    remote_cmd_nofail $host "chown $SSH_USER /tmp/sst.err"
 	    remote_cmd_nofail $host "chown $SSH_USER /tmp/GRA*"
@@ -325,7 +325,7 @@ function collect_mysql_logs()
 	remote_copy_from_r2 $host /tmp/mysql*.log $tmpsavedir/
 	remote_copy_from_r2 $host /tmp/my.cnf $tmpsavedir/
 	if [ $AGENTLESS -eq 0 ]; then 
-	   remote_cmd_nofail $host "cp /var/log/cmon.log* /tmp"
+	   remote_cmd_nofail $host "cp -a /var/log/cmon.log* /tmp"
 	   remote_cmd_nofail $host "chown $SSH_USER /tmp/cmon.log*"
 	   remote_copy_from_r2 $host /tmp/cmon.log $tmpsavedir/cmon.log
 	   for i in 1 2 3 4 5 
@@ -353,8 +353,8 @@ function collect_ndb_logs()
 	ndbd_datadir=`echo $tup |awk '{split($0,a,","); print a[2]}'`
 	mkdir -p $savedir/$host
 	tmpsavedir=$savedir/$host
-	remote_cmd_nofail $host "cp $ndbd_datadir/ndb*log* /tmp"
-	remote_cmd_nofail $host "cp $ndbd_datadir/ndb*trace* /tmp"
+	remote_cmd_nofail $host "cp -a $ndbd_datadir/ndb*log* /tmp"
+	remote_cmd_nofail $host "cp -a $ndbd_datadir/ndb*trace* /tmp"
 	remote_cmd_nofail $host "chown $SSH_USER /tmp/ndb*log*"
 	remote_cmd_nofail $host "chown $SSH_USER /tmp/ndb*trace*"
 	remote_copy_from_r2 $host /tmp/ndb*log* $tmpsavedir/
@@ -362,7 +362,7 @@ function collect_ndb_logs()
 	remote_cmd_nofail $host "rm /tmp/ndb*log*"
 	remote_cmd_nofail $host "rm /tmp/ndb*trace*"
 	if [ $AGENTLESS -eq 0 ]; then 
-	    remote_cmd_nofail $host "cp /var/log/cmon.log /tmp"
+	    remote_cmd_nofail $host "cp -a /var/log/cmon.log /tmp"
 	    remote_cmd_nofail $host "chown $SSH_USER /tmp/cmon.log"
 	    remote_copy_from_r2 $host /tmp/cmon.log $tmpsavedir/cmon.log.$host
 	    remote_cmd_nofail $host "rm /tmp/cmon.log"
@@ -384,13 +384,13 @@ function collect_mgm_logs()
 	ndbd_datadir=`echo $tup |awk '{split($0,a,","); print a[2]}'`
 	mkdir -p $savedir/$host
 	tmpsavedir=$savedir/$host
-	remote_cmd_nofail $host "cp $ndbd_datadir/ndb*log* /tmp"
+	remote_cmd_nofail $host "cp -a $ndbd_datadir/ndb*log* /tmp"
 	remote_cmd_nofail $host "chown $SSH_USER /tmp/ndb*log*"
 	remote_copy_from_r2 $host /tmp/ndb*log* $tmpsavedir/
 	remote_copy_from_r2 $host /tmp/ndb*trace* $tmpsavedir/
 	remote_cmd_nofail $host "rm /tmp/ndb*log*"
 	if [ $AGENTLESS -eq 0 ]; then 
-	   remote_cmd_nofail $host "cp /var/log/cmon.log /tmp"
+	   remote_cmd_nofail $host "cp -a /var/log/cmon.log /tmp"
 	   remote_cmd_nofail $host "chown $SSH_USER /tmp/cmon.log"
 	   remote_copy_from_r2 $host /tmp/cmon.log $tmpsavedir/
 	   remote_cmd_nofail $host "rm /tmp/cmon.log"
@@ -413,14 +413,14 @@ function collect_mongodb_logs()
 	mkdir -p $savedir/$host
 	tmpsavedir=$savedir/$host
 	
-	remote_cmd_nofail $host "cp /var/log/mongodb/m*.log /tmp"
+	remote_cmd_nofail $host "cp -a /var/log/mongodb/m*.log /tmp"
 	remote_cmd_nofail $host "chown $SSH_USER /tmp/m*.log"
 	remote_copy_from_r2 $host /tmp/m*.log  $tmpsavedir/
 	sleep 1
 	remote_cmd_nofail $host "rm /tmp/m*.log"
 
 	if [ $AGENTLESS -eq 0 ]; then 
-	    remote_cmd_nofail $host "cp /var/log/cmon.log* /tmp"
+	    remote_cmd_nofail $host "cp -a /var/log/cmon.log* /tmp"
 	    remote_cmd_nofail $host "chown $SSH_USER /tmp/cmon.log*"
 	    remote_copy_from_r2 $host /tmp/cmon.log $tmpsavedir/cmon.log
 	    for i in 1 2 3 4 5 
@@ -489,10 +489,10 @@ function collect_ui_logs()
         log_job_message "Unable to collect ui logs. No web root found (/var/www/html or /var/www)." 1
     fi
 
-    cp -rf $UI_WWWROOT/clustercontrol/app/tmp/logs/*.log $savedir/ui/clustercontrol/logs/ &>/dev/null
-    cp -f $UI_WWWROOT/clustercontrol/bootstrap.php $savedir/ui/clustercontrol/ &>/dev/null
-    cp -rf $UI_WWWROOT/cmonapi/config/bootstrap.php $UI_WWWROOT/cmonapi/config/database.php $savedir/ui/cmonapi/config/ &>/dev/null
-    cp -f $apache_log_dir/*.log $savedir/ui/apache/log/ &>/dev/null
+    cp -arf $UI_WWWROOT/clustercontrol/app/tmp/logs/*.log $savedir/ui/clustercontrol/logs/ &>/dev/null
+    cp -af $UI_WWWROOT/clustercontrol/bootstrap.php $savedir/ui/clustercontrol/ &>/dev/null
+    cp -arf $UI_WWWROOT/cmonapi/config/bootstrap.php $UI_WWWROOT/cmonapi/config/database.php $savedir/ui/cmonapi/config/ &>/dev/null
+    cp -af $apache_log_dir/*.log $savedir/ui/apache/log/ &>/dev/null
 }
 
 function create_report
