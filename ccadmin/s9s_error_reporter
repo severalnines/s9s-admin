@@ -289,6 +289,7 @@ function collect_mysql_logs()
 	tmpsavedir=$savedir/$host
 	$MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --port=$MONITORED_MYSQL_PORT -h$host -e "SHOW GLOBAL STATUS" > $tmpsavedir/show_status
 	$MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --port=$MONITORED_MYSQL_PORT -h$host -e "SHOW GLOBAL VARIABLES" > $tmpsavedir/show_variables
+	$MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --port=$MONITORED_MYSQL_PORT -h$host -e "SHOW FULL PROCESSLIST" > $tmpsavedir/show_processlist
 	if [ -z "$XDATADIR" ]; then
 	    DATADIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e " select value from mysql_variables mv, hosts h where h.cid=mv.cid and mv.id=h.id and h.hostname='$host' and h.cid=${CLUSTER_ID} and mv.var='datadir'" 2>/dev/null`
 	    if [ $? -ne 0 ]; then
