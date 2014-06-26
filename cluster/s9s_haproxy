@@ -328,7 +328,7 @@ ERR_FILE="/dev/shm/mysqlchk.$$.err"
 FORCE_FAIL="/dev/shm/proxyoff"
 MYSQL_BIN=$MYSQL_BIN
 CHECK_QUERY="show global status where variable_name='wsrep_local_state'"
-CHECK_QUERY2="show global status where variable_name='wsrep_sst_method'"
+CHECK_QUERY2="show global variables where variable_name='wsrep_sst_method'"
 preflight_check()
 {
     for I in "$TMP_FILE" "$ERR_FILE"; do
