@@ -699,6 +699,9 @@ function install_mysql
 	    
 	    remote_cmd $XHOSTNAME "mkdir -p $S9S_TMPDIR"
 	    remote_cmd $XHOSTNAME "chown  -R $SSH_USER:$SSH_USER $S9S_TMPDIR"
+	    if [ "$VENDOR" = "codership" ] && [ "$OS" = "debian" ]; then
+		    remote_cmd_nofail $XHOSTNAME "LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::='--force-confnew' -y -q install mysql-client"
+	    fi
 	    
 	    for f in $FILELIST 
 	    do
@@ -741,82 +744,122 @@ function install_mysql
 	    fi
 	    remote_cmd $XHOSTNAME "test -f ${MYSQL_BASEDIR}/bin/mysql"	    
 	    ;;
-	mariadb)
-	    if [ "$OS" = "redhat" ]; then
-		cat << 'EOF' > $S9S_TMPDIR/MariaDB.centos5
+	    mariadb)
+	        if [ "$OS" = "redhat" ]; then
+                if [ "$GALERA_VERSION" = "2.x" ]; then
+		            cat << 'EOF' > $S9S_TMPDIR/MariaDB.centos5
 [mariadb]
 name = MariaDB
 baseurl = http://yum.mariadb.org/5.5/centos5-amd64
 gpgkey=https://yum.mariadb.org/RPM-GPG-KEY-MariaDB
 gpgcheck=1                 
 EOF
-		cat << 'EOF' > $S9S_TMPDIR/MariaDB.centos6
+		            cat << 'EOF' > $S9S_TMPDIR/MariaDB.centos6
 [mariadb]
 name = MariaDB
 baseurl = http://yum.mariadb.org/5.5/centos6-amd64
 gpgkey=https://yum.mariadb.org/RPM-GPG-KEY-MariaDB
 gpgcheck=1                 
 EOF
-		cat << 'EOF' > $S9S_TMPDIR/MariaDB.rhel5
+		            cat << 'EOF' > $S9S_TMPDIR/MariaDB.rhel5
 [mariadb]
 name = MariaDB
 baseurl = http://yum.mariadb.org/5.5/rhel5-amd64
 gpgkey=https://yum.mariadb.org/RPM-GPG-KEY-MariaDB
 gpgcheck=1                 
 EOF
-		cat << 'EOF' > $S9S_TMPDIR/MariaDB.rhel6
+		            cat << 'EOF' > $S9S_TMPDIR/MariaDB.rhel6
 [mariadb]
 name = MariaDB
 baseurl = http://yum.mariadb.org/5.5/rhel6-amd64
 gpgkey=https://yum.mariadb.org/RPM-GPG-KEY-MariaDB
 gpgcheck=1                 
 EOF
-		if [ -f /etc/system-release ]; then
-		    RHEL=6
-		    OS2='rhel'		    
-		else
-		    RHEL=$(cat /etc/redhat-release | egrep "[0-9]" -o | head -1)
-		    OS2=$(awk '{print $1}' /etc/redhat-release | tr '[:upper:]' '[:lower:]')
-		fi
-		remote_cmd_nofail $XHOSTNAME "chown  -R $SSH_USER:$SSH_USER $S9S_TMPDIR"
-		remote_copy ${S9S_TMPDIR}/MariaDB.${OS2}${RHEL} $XHOSTNAME ${S9S_TMPDIR}/MariaDB.${OS2}${RHEL}.tmp
-		remote_cmd $XHOSTNAME "mv -f ${S9S_TMPDIR}/MariaDB.${OS2}${RHEL}.tmp /etc/yum.repos.d/MariaDB.repo"
+                fi
+                if [ "$GALERA_VERSION" = "3.x" ]; then
+		            cat << 'EOF' > $S9S_TMPDIR/MariaDB.centos5
+[mariadb]
+name = MariaDB
+baseurl = http://yum.mariadb.org/10.0/centos5-amd64
+gpgkey=https://yum.mariadb.org/RPM-GPG-KEY-MariaDB
+gpgcheck=1                 
+EOF
+		            cat << 'EOF' > $S9S_TMPDIR/MariaDB.centos6
+[mariadb]
+name = MariaDB
+baseurl = http://yum.mariadb.org/10.0/centos6-amd64
+gpgkey=https://yum.mariadb.org/RPM-GPG-KEY-MariaDB
+gpgcheck=1                 
+EOF
+		            cat << 'EOF' > $S9S_TMPDIR/MariaDB.rhel5
+[mariadb]
+name = MariaDB
+baseurl = http://yum.mariadb.org/10.0/rhel5-amd64
+gpgkey=https://yum.mariadb.org/RPM-GPG-KEY-MariaDB
+gpgcheck=1                 
+EOF
+		            cat << 'EOF' > $S9S_TMPDIR/MariaDB.rhel6
+[mariadb]
+name = MariaDB
+baseurl = http://yum.mariadb.org/10.0/rhel6-amd64
+gpgkey=https://yum.mariadb.org/RPM-GPG-KEY-MariaDB
+gpgcheck=1                 
+EOF
+                fi
+		        if [ -f /etc/system-release ]; then
+		            RHEL=6
+		            OS2='rhel'		    
+		        else
+		            RHEL=$(cat /etc/redhat-release | egrep "[0-9]" -o | head -1)
+		            OS2=$(awk '{print $1}' /etc/redhat-release | tr '[:upper:]' '[:lower:]')
+		        fi
+		        remote_cmd_nofail $XHOSTNAME "chown  -R $SSH_USER:$SSH_USER $S9S_TMPDIR"
+		        remote_copy ${S9S_TMPDIR}/MariaDB.${OS2}${RHEL} $XHOSTNAME ${S9S_TMPDIR}/MariaDB.${OS2}${RHEL}.tmp
+		        remote_cmd $XHOSTNAME "mv -f ${S9S_TMPDIR}/MariaDB.${OS2}${RHEL}.tmp /etc/yum.repos.d/MariaDB.repo"
                 remote_cmd $XHOSTNAME "$HTTP_PROXY yum -y install MariaDB-Galera-server.x86_64 MariaDB-client.x86_64 galera"
-		remote_cmd $XHOSTNAME "$HTTP_PROXY rpm -Uhv --force http://www.percona.com/downloads/percona-release/percona-release-0.0-1.x86_64.rpm"
-		remote_cmd $XHOSTNAME "$HTTP_PROXY yum -y install percona-xtrabackup"
-	    else
-		remote_cmd_nofail $XHOSTNAME "killall -9 mysqld mysqld_safe mysql mysql_chk ndb_mgmd ndbmtd ndbd cmon"
-		$HTTP_PROXY wget --no-check-certificate --tries=5  -O ${S9S_TMPDIR}/RPM-GPG-KEY-percona http://www.percona.com/redir/downloads/RPM-GPG-KEY-percona
-		remote_copy ${S9S_TMPDIR}/RPM-GPG-KEY-percona ${XHOSTNAME} ${S9S_TMPDIR}/RPM-GPG-KEY-percona
-		remote_cmd $XHOSTNAME "gpg --import ${S9S_TMPDIR}/RPM-GPG-KEY-percona"
-		remote_cmd $XHOSTNAME "/bin/sh -c 'gpg -a --export CD2EFD2A | apt-key add -'"
-		remote_cmd $XHOSTNAME "apt-key adv --recv-keys --keyserver keyserver.ubuntu.com 0xcbcb082a1bb943db"
-		remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"deb http://ftp.osuosl.org/pub/mariadb/repo/5.5/`lsb_release -i -s | tr '[A-Z]' '[a-z]'` `lsb_release -c -s` main\" > /etc/apt/sources.list.d/MariaDB.list'"
-		remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"deb-src http://ftp.osuosl.org/pub/mariadb/repo/5.5/`lsb_release -i -s | tr '[A-Z]' '[a-z]'` `lsb_release -c -s` main\" >> /etc/apt/sources.list.d/MariaDB.list'"
-		remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"Package: *\nPin: origin osuosl.org\nPin-Priority: 1000\n\nPackage: *\nPin: origin ftp.osuosl.org\nPin-Priority: 1000\n\nPackage: libmysqlclient18\nPin: origin ftp.osuosl.org\nPin-Priority: 1000\" > /etc/apt/preferences.d/00MariaDB.pref'"
-		remote_cmd $XHOSTNAME "apt-get -q -y update"
-		remote_cmd $XHOSTNAME "LC_ALL=C DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::='--force-confnew' --force-yes -y -q install  galera  mariadb-galera-server-5.5 mariadb-client-5.5 libmariadbclient18 mariadb-client-core-5.5 rsync netcat-openbsd"		
-		remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"deb http://repo.percona.com/apt `lsb_release -c -s` main\" >> /etc/apt/sources.list'"
-		remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"deb-src http://repo.percona.com/apt `lsb_release -c -s` main\" >> /etc/apt/sources.list'"
-		remote_cmd $XHOSTNAME "apt-get -q -y update"
-		remote_cmd $XHOSTNAME "LC_ALL=C DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::='--force-confnew' --force-yes -y -q install percona-xtrabackup percona-toolkit"
-		remote_cmd $XHOSTNAME "sed -i.bak 's#==#=#' /usr/bin/mysqld_safe"
-		remote_cmd_nofail $XHOSTNAME "killall -9 mysqld mysqld_safe mysql mysql_chk ndb_mgmd ndbmtd ndbd"
-		remote_cmd_nofail $XHOSTNAME "rm -rf /etc/my.cnf"
-		remote_cmd $XHOSTNAME  "chown 755 /etc/init.d/mysql"
-		remote_cmd $XHOSTNAME  "sed -i.bak 's#MYSQLD_STARTUP_TIMEOUT:-30#MYSQLD_STARTUP_TIMEOUT:-3600#g' /etc/init.d/mysql"
-		remote_cmd $XHOSTNAME  "/usr/sbin/update-rc.d mysql defaults"
-	    fi
-	    remote_cmd $XHOSTNAME "test -f /usr/sbin/mysqld"
-	    remote_cmd $XHOSTNAME "test -f /etc/init.d/mysql"
-	    ;;
-	*)
-	    log_job_message "Not a supported vendor" 1
-	    log_job 'FAILED' 'job failed' 1
-	    write_email "s9s_sw_update failed" "Not a supported vendor. Check job messages."
-	    exit 1;	           	     
+		        remote_cmd $XHOSTNAME "$HTTP_PROXY rpm -Uhv --force http://www.percona.com/downloads/percona-release/percona-release-0.0-1.x86_64.rpm"
+		        remote_cmd $XHOSTNAME "$HTTP_PROXY yum -y install percona-xtrabackup"
+	        else
+		        remote_cmd_nofail $XHOSTNAME "killall -9 mysqld mysqld_safe mysql mysql_chk ndb_mgmd ndbmtd ndbd cmon"
+		        $HTTP_PROXY wget --no-check-certificate --tries=5  -O ${S9S_TMPDIR}/RPM-GPG-KEY-percona http://www.percona.com/redir/downloads/RPM-GPG-KEY-percona
+		        remote_copy ${S9S_TMPDIR}/RPM-GPG-KEY-percona ${XHOSTNAME} ${S9S_TMPDIR}/RPM-GPG-KEY-percona
+		        remote_cmd $XHOSTNAME "gpg --import ${S9S_TMPDIR}/RPM-GPG-KEY-percona"
+		        remote_cmd $XHOSTNAME "/bin/sh -c 'gpg -a --export CD2EFD2A | apt-key add -'"
+		        remote_cmd $XHOSTNAME "apt-key adv --recv-keys --keyserver keyserver.ubuntu.com 0xcbcb082a1bb943db"
+		        if [ "$GALERA_VERSION" = "2.x" ]; then
+		            remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"deb http://ftp.osuosl.org/pub/mariadb/repo/5.5/`lsb_release -i -s | tr '[A-Z]' '[a-z]'` `lsb_release -c -s` main\" > /etc/apt/sources.list.d/MariaDB.list'"
+		            remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"deb-src http://ftp.osuosl.org/pub/mariadb/repo/5.5/`lsb_release -i -s | tr '[A-Z]' '[a-z]'` `lsb_release -c -s` main\" >> /etc/apt/sources.list.d/MariaDB.list'"
+		            remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"Package: *\nPin: origin osuosl.org\nPin-Priority: 1000\n\nPackage: *\nPin: origin ftp.osuosl.org\nPin-Priority: 1000\n\nPackage: libmysqlclient18\nPin: origin ftp.osuosl.org\nPin-Priority: 1000\" > /etc/apt/preferences.d/00MariaDB.pref'"
+		            remote_cmd $XHOSTNAME "apt-get -q -y update"
+		            remote_cmd $XHOSTNAME "LC_ALL=C DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::='--force-confnew' --force-yes -y -q install  galera  mariadb-galera-server-5.5 mariadb-client-5.5 libmariadbclient18 mariadb-client-core-5.5 rsync netcat-openbsd"		
+                fi
+		        if [ "$GALERA_VERSION" = "3.x" ]; then
+		            remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"deb http://ftp.osuosl.org/pub/mariadb/repo/10.0/`lsb_release -i -s | tr '[A-Z]' '[a-z]'` `lsb_release -c -s` main\" > /etc/apt/sources.list.d/MariaDB.list'"
+		            remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"deb-src http://ftp.osuosl.org/pub/mariadb/repo/10.0/`lsb_release -i -s | tr '[A-Z]' '[a-z]'` `lsb_release -c -s` main\" >> /etc/apt/sources.list.d/MariaDB.list'"
+		            remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"Package: *\nPin: origin osuosl.org\nPin-Priority: 1000\n\nPackage: *\nPin: origin ftp.osuosl.org\nPin-Priority: 1000\n\nPackage: libmysqlclient18\nPin: origin ftp.osuosl.org\nPin-Priority: 1000\" > /etc/apt/preferences.d/00MariaDB.pref'"
+		            remote_cmd $XHOSTNAME "apt-get -q -y update"
+		            remote_cmd $XHOSTNAME "LC_ALL=C DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::='--force-confnew' --force-yes -y -q install mariadb-galera-server galera mariadb-client galera rsync netcat-openbsd"		
+                fi
+		        remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"deb http://repo.percona.com/apt `lsb_release -c -s` main\" >> /etc/apt/sources.list'"
+		        remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"deb-src http://repo.percona.com/apt `lsb_release -c -s` main\" >> /etc/apt/sources.list'"
+		        remote_cmd $XHOSTNAME "apt-get -q -y update"
+		        remote_cmd $XHOSTNAME "LC_ALL=C DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::='--force-confnew' --force-yes -y -q install percona-xtrabackup percona-toolkit"
+		        remote_cmd_nofail $XHOSTNAME "killall -9 mysqld mysqld_safe mysql mysql_chk ndb_mgmd ndbmtd ndbd"
+		        remote_cmd_nofail $XHOSTNAME "rm -rf /etc/my.cnf"
+		        remote_cmd $XHOSTNAME  "chown 755 /etc/init.d/mysql"
+		        remote_cmd $XHOSTNAME  "sed -i.bak 's#MYSQLD_STARTUP_TIMEOUT:-30#MYSQLD_STARTUP_TIMEOUT:-3600#g' /etc/init.d/mysql"
+		        remote_cmd $XHOSTNAME  "/usr/sbin/update-rc.d mysql defaults"
+	        fi
+	        remote_cmd $XHOSTNAME "test -f /usr/sbin/mysqld"
+	        remote_cmd $XHOSTNAME "test -f /etc/init.d/mysql"
+	        ;;
+	    *)
+	        log_job_message "Not a supported vendor" 1
+	        log_job 'FAILED' 'job failed' 1
+	        write_email "s9s_sw_update failed" "Not a supported vendor. Check job messages."
+	        exit 1;	           	     
     esac
-
+    
     
     remote_cmd_nofail $XHOSTNAME "killall -9 mysqld mysqld_safe mysql mysql_chk ndb_mgmd ndbmtd ndbd "
     remote_cmd_nofail $XHOSTNAME "rm -rf /etc/my.cnf"
@@ -824,23 +867,23 @@ EOF
     remote_cmd_nofail $XHOSTNAME "rm -rf /var/lib/mysql"
     remote_cmd_nofail $XHOSTNAME "rm -rf /var/run/mysqld"
     # remote_cmd_nofail $XHOSTNAME "rm -rf /etc/init.d/mysql"
-
+    
     if [ -n "$DATADIR" ]; then
-	if [ "$DATADIR" != "/" ]; then
-	    remote_cmd_nofail $XHOSTNAME "rm -rf $DATADIR/*"	    
-	fi
+	    if [ "$DATADIR" != "/" ]; then
+	        remote_cmd_nofail $XHOSTNAME "rm -rf $DATADIR/*"	    
+	    fi
     else
-	log_job_message "datadir is not set in my.cnf - aborting" 1
-	log_job 'FAILED' 'job failed' 1
-	write_email "s9s_sw_update failed" "datadir is not set in my.cnf. Check job messages."
-	exit 1
+	    log_job_message "datadir is not set in my.cnf - aborting" 1
+	    log_job 'FAILED' 'job failed' 1
+	    write_email "s9s_sw_update failed" "datadir is not set in my.cnf. Check job messages."
+	    exit 1
     fi
-
+    
    # if [ -n "$CONFIGDIR" ]; then
 	#remote_cmd_nofail $XHOSTNAME "rm -rf /etc/mysql/*"
     #fi
-
-
+    
+    
     remote_cmd_nofail $XHOSTNAME "mkdir -p $S9S_TMPDIR"
     remote_cmd_nofail $XHOSTNAME "chown  -R $SSH_USER:$SSH_USER $S9S_TMPDIR"
     remote_cmd $XHOSTNAME "chown -R $SSH_USER:$SSH_USER $S9S_TMPDIR"
@@ -850,9 +893,9 @@ EOF
     remote_cmd $XHOSTNAME "mv -f $S9S_TMPDIR/my.cnf $CONFIGDIR/"
     remote_cmd $XHOSTNAME "chmod 600 $CONFIGDIR/my.cnf"
     remote_cmd_nofail $XHOSTNAME "chown mysql.mysql $CONFIGDIR/my.cnf"
-
+    
     case $CLUSTER_TYPE in
-	galera)
+	    galera)
 	    if [ "$VENDOR" != "percona_nonet" ]; then
 		$HTTP_PROXY wget --no-check-certificate --tries=5  -O ${S9S_TMPDIR}/RPM-GPG-KEY-percona http://www.percona.com/redir/downloads/RPM-GPG-KEY-percona
 		if [ $? -ne 0 ]; then
@@ -900,7 +943,12 @@ EOF
 		remote_cmd $XHOSTNAME "/sbin/chkconfig --add mysql "
 		remote_cmd $XHOSTNAME "/sbin/chkconfig mysql off --level 2345"
 	    else
-		remote_cmd $XHOSTNAME "cp $MYSQL_BASEDIR/support-files/mysql.server  /etc/init.d/mysql"
+		MYSQL_BASEDIR=$(readlink -m $MYSQL_BASEDIR)
+		if [ "$MYSQL_BASEDIR" = "/usr" ]; then
+  		    remote_cmd $XHOSTNAME "cp $MYSQL_BASEDIR/share/mysql/mysql.server /etc/init.d/mysql"
+		else
+		    remote_cmd $XHOSTNAME "cp $MYSQL_BASEDIR/support-files/mysql.server  /etc/init.d/mysql"
+		fi
 		remote_cmd $XHOSTNAME "chmod 755 /etc/init.d/mysql"
 		remote_cmd_nofail $XHOSTNAME "/usr/sbin/update-rc.d -f mysql remove"
 		remote_cmd_nofail $XHOSTNAME "/usr/sbin/update-rc.d mysql stop 20 0 1 6 ."
