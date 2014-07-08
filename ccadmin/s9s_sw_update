@@ -700,9 +700,16 @@ function install_mysql
 	    remote_cmd $XHOSTNAME "mkdir -p $S9S_TMPDIR"
 	    remote_cmd $XHOSTNAME "chown  -R $SSH_USER:$SSH_USER $S9S_TMPDIR"
 	    if [ "$VENDOR" = "codership" ] && [ "$OS" = "debian" ]; then
-		    remote_cmd_nofail $XHOSTNAME "LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::='--force-confnew' -y -q install mysql-client"
+		    remote_cmd_nofail $XHOSTNAME "LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::='--force-confnew' -y -q install mysql-client"            
+		    remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"deb http://repo.percona.com/apt `lsb_release -c -s` main\" >> /etc/apt/sources.list'"
+		    remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"deb-src http://repo.percona.com/apt `lsb_release -c -s` main\" >> /etc/apt/sources.list'"
+		    remote_cmd $XHOSTNAME "apt-get -q -y update"
+		    remote_cmd $XHOSTNAME "LC_ALL=C DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::='--force-confnew' --force-yes -y -q install percona-xtrabackup percona-toolkit"
 	    fi
-	    
+	    if [ "$VENDOR" = "codership" ] && [ "$OS" = "redhat" ]; then
+            remote_cmd $XHOSTNAME "$HTTP_PROXY rpm -Uhv --force http://www.percona.com/downloads/percona-release/percona-release-0.0-1.x86_64.rpm"
+		    remote_cmd $XHOSTNAME "$HTTP_PROXY yum -y install percona-xtrabackup"
+        fi
 	    for f in $FILELIST 
 	    do
 		path=`echo $f | awk -F, '{print $1;}'`
@@ -860,7 +867,7 @@ EOF
 	        exit 1;	           	     
     esac
     
-    
+                
     remote_cmd_nofail $XHOSTNAME "killall -9 mysqld mysqld_safe mysql mysql_chk ndb_mgmd ndbmtd ndbd "
     remote_cmd_nofail $XHOSTNAME "rm -rf /etc/my.cnf"
 #    remote_cmd_nofail $XHOSTNAME "rm -rf /etc/mysql/*"
