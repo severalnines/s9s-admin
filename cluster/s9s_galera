@@ -42,10 +42,10 @@ function init
 	MYSQL_BIN=$MYSQL_BIN2
     fi
     if ! test -f $MYSQL_BIN; then
-	    echo "Could not find mysql client binary"
-	    log_job_message "Could not find mysql client binary" 1
-	    log_job 'FAILED' 'job failed' 1
-	    exit 1
+	echo "Could not find mysql client binary"
+	log_job_message "Could not find mysql client binary" 1
+	log_job 'FAILED' 'backup failed' 1
+	exit 1
     fi
 
     CONNECT_TIMEOUT=10
@@ -54,8 +54,8 @@ function init
     OSUSER=$USER
         
     if [ "$OSUSER" != "root" ]; then
-	    echo "must be executed as 'root' or with 'sudo'"
-	    exit 1
+	echo "must be executed as 'root' or with 'sudo'"
+	exit 1
     fi
 }
  
@@ -99,8 +99,7 @@ function remote_cmd_getreply()
    x=`ssh -q $SSH_OPTS $SSH_USER@$desthost "$SUDO $xcommand"`
    if [ $? -ne 0 ]; then
        echo "Command failed: ssh -q $SSH_OPTS $SSH_USER@$desthost \"$SUDO $xcommand\""
-       log_job_message "FAILED: $ssh -q $SSH_OPTS ${SSH_USER}@${desthost} $SUDO ${xcommand}" 1
-	   log_job 'FAILED' 'job failed' 1
+       log_job_message "FAILED: ${desthost}@${xcommand}" 1
        exit 1
    fi
    x=`echo $x | grep -v "password"`
@@ -139,7 +138,7 @@ function remote_cmdx()
       return 0
    else
       log_job_message "command failed: $xcommand" 1
-      log_job 'FAILED' 'job failed' 1
+      log_job 'FAILED' 'backup failed' 1
       printf "\033[31m[failed]\033[0m\n"
       exit 1
    fi
@@ -178,8 +177,7 @@ function remote_cmd()
       ssh -q $SSH_OPTS $SSH_USER@$desthost " sync " 2>&1  >> $HOME/s9s_deploy.log
       sleep 1
    done
-   log_job_message "FAILED: $ssh -q $SSH_OPTS ${SSH_USER}@${desthost} $SUDO ${xcommand}" 1
-   log_job 'FAILED' 'job failed' 1
+   log_job_message "FAILED: ${desthost}@${xcommand}" 1
    printf "\033[31m[failed]\033[0m\n"
    echo $x
    echo 'The following command failed:'
@@ -202,7 +200,6 @@ function remote_cmd3()
    else
       printf "\033[31m[failed]\033[0m\n"
       log_job_message "FAILED: ${desthost}@${xcommand}" 1
-	  log_job 'FAILED' 'job failed' 1
       exit 1
    fi
 }
@@ -834,7 +831,6 @@ function install_garbd
     done    
     if [ -z "$CLUSTER_ID" ]; then
       echo "s9s_galera --install-garbd -i <cluster id> missing"
-	  log_job 'FAILED' 'install garbd failed' 1
       exit 1
     fi
     init     
@@ -852,47 +848,46 @@ function install_garbd
     
     case $CLUSTER_TYPE in
 	galera)
-	        ;;
-	    *)
-	        echo "./s9s_galera -- only galera is supported"
-	        log_job 'FAILED' 'install garbd failed' 1
-	        exit 1;	           	     
+	    ;;
+	*)
+	    echo "./s9s_galera -- only galera is supported"
+	    exit 1;	           	     
     esac
     load_opts $CLUSTER_ID
     if [ -z "$VENDOR" ]; then
 	VENDOR=$XVENDOR
     fi
-    
+
     if [ -z "$VENDOR" ]; then
-	    log_job_message  "No vendor was specified" 1
-	    echo "./s9s-galera --install-garbd -V [percona|mariadb|codership]"
-	    log_job 'FAILED' 'install garbd failed' 1
-	    exit 1
+	log_job_message  "No vendor was specified" 1
+	echo "./s9s-galera --install-garbd -V [percona|mariadb|codership]"
+	log_job 'FAILED' 'install garbd failed' 1
+	exit 1
     fi
     if [ -n "$XGALERA_PORT" ]; then
-	    GALERA_PORT="$XGALERA_PORT"
+	GALERA_PORT="$XGALERA_PORT"
     fi    
     if [ -z "$GALERA_PORT" ]; then
-	    GALERA_PORT=4567
+	GALERA_PORT=4567
     fi
-    
-    
+
+
     sleep 2
     log_job 'RUNNING' 'installing garbd' 0
-    
+
     QUERY="SELECT group_concat(concat(hostname, ':', $GALERA_PORT)) FROM $CMON_DB_DB.mysql_server WHERE cid=${CLUSTER_ID}"
     DONOR_HOSTNAME=`$MYSQL_BIN -B -N $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$CMON_DB_HOST --port=$CMON_DB_PORT --database=$CMON_DB_DB  -e "$QUERY"`
     if [ -z "$DONOR_HOSTNAME" ]; then
-	    echo $QUERY
-	    log_job_message "Could not get a cluster address" 1
-	    log_job 'FAILED' 'install garbd failed' 1
-	    exit 1
+	echo $QUERY
+	log_job_message "Could not get a cluster address" 1
+	log_job 'FAILED' 'install garbd failed' 1
+	exit 1
     fi
 
     ANY_HOSTNAME=`$MYSQL_BIN -B -N $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$CMON_DB_HOST --port=$CMON_DB_PORT --database=$CMON_DB_DB  -e "SELECT hostname FROM $CMON_DB_DB.mysql_server WHERE cid=${CLUSTER_ID} AND status=0 LIMIT 1"`
     if [ -z "$ANY_HOSTNAME" ]; then
-	    log_job_message "Could not get a cluster address" 1
-	    log_job 'FAILED' 'install garbd failed' 1
+	log_job_message "Could not get a cluster address" 1
+	log_job 'FAILED' 'install garbd failed' 1
 	exit 1
     fi
     
@@ -900,11 +895,11 @@ function install_garbd
     CLUSTER_NAME=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$ANY_HOSTNAME --port=$MONITORED_MYSQL_PORT -A -Bse "$QUERY"`
     if [ $? -ne 0 ]; then
         log_job_message "Failed to get wsrep_cluster_name" 1
-	    log_job 'FAILED' 'install garbd failed' 1
+	log_job 'FAILED' 'install garbd failed' 1
         exit 1
     fi
     CLUSTER_NAME=`echo $CLUSTER_NAME | awk   '{print $2;}'`
-    
+
     echo "Hostname: $XHOSTNAME"
     echo "Donor: $DONOR_HOSTNAME"  
     echo "Galera port: $GALERA_PORT"
@@ -915,19 +910,19 @@ function install_garbd
     remote_cmd $XHOSTNAME "chown $SSH_USER:$SSH_USER $S9S_TMPDIR"
     case $VENDOR in
 	percona)
-	        if [ "$OS" = "redhat" ]; then
-		        remote_cmd $XHOSTNAME "rpm -Uhv --force http://www.percona.com/downloads/percona-release/percona-release-0.0-1.x86_64.rpm"
-		        if [ "$GALERA_VERSION" = "3.x" ]; then
-		            remote_cmd $XHOSTNAME "yum -y install Percona-XtraDB-Cluster-garbd-3"
-		        fi
-		        if [ "$GALERA_VERSION" = "2.x" ]; then
-		            remote_cmd $XHOSTNAME "yum -y install Percona-XtraDB-Cluster-garbd-2"
-		        fi
-	        else
-		        remote_cmd $XHOSTNAME "apt-get update"
-		        remote_cmd_nofail $XHOSTNAME "apt-get -y install  libssl0.9.8  wget rsync psmisc"
-		        remote_cmd_nofail $XHOSTNAME "sed -i.bak '/repo.percona.com/d'  /etc/apt/sources.list"
-		        $HTTP_PROXY wget --no-check-certificate --tries=5  -O ${S9S_TMPDIR}/RPM-GPG-KEY-percona http://www.percona.com/redir/downloads/RPM-GPG-KEY-percona
+	    if [ "$OS" = "redhat" ]; then
+		remote_cmd $XHOSTNAME "rpm -Uhv --force http://www.percona.com/downloads/percona-release/percona-release-0.0-1.x86_64.rpm"
+		if [ "$GALERA_VERSION" = "3.x" ]; then
+		    remote_cmd $XHOSTNAME "yum -y install Percona-XtraDB-Cluster-galera-3"
+		fi
+		if [ "$GALERA_VERSION" = "2.x" ]; then
+		    remote_cmd $XHOSTNAME "yum -y install Percona-XtraDB-Cluster-galera-2"
+		fi
+	    else
+		remote_cmd $XHOSTNAME "apt-get update"
+		remote_cmd_nofail $XHOSTNAME "apt-get -y install  libssl0.9.8  wget rsync psmisc"
+		remote_cmd_nofail $XHOSTNAME "sed -i.bak '/repo.percona.com/d'  /etc/apt/sources.list"
+		$HTTP_PROXY wget --no-check-certificate --tries=5  -O ${S9S_TMPDIR}/RPM-GPG-KEY-percona http://www.percona.com/redir/downloads/RPM-GPG-KEY-percona
 		if [ $? -ne 0 ]; then
 		    log_job_message "Failed: $HTTP_PROXY wget --no-check-certificate --tries=5  -O ${S9S_TMPDIR}/RPM-GPG-KEY-percona http://www.percona.com/redir/downloads/RPM-GPG-KEY-percona" 1
 		    log_job 'FAILED' 'install garbd failed' 1
@@ -940,12 +935,12 @@ function install_garbd
 		remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"deb http://repo.percona.com/apt `lsb_release -c -s` main\" >> /etc/apt/sources.list'"
 		remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"deb-src http://repo.percona.com/apt `lsb_release -c -s` main\" >> /etc/apt/sources.list'"
 		remote_cmd $XHOSTNAME "apt-get -q -y update"
-        
+
 		if [ "$GALERA_VERSION" = "3.x" ]; then
 		    remote_cmd $XHOSTNAME "$HTTP_PROXY LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::='--force-confnew' -y -q install percona-xtradb-cluster-garbd-3.x"
 		fi
 		if [ "$GALERA_VERSION" = "2.x" ]; then
-		    remote_cmd $XHOSTNAME "$HTTP_PROXY LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::='--force-confnew' -y -q install percona-xtradb-cluster-garbd-2.x"
+		    remote_cmd $XHOSTNAME "$HTTP_PROXY LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::='--force-confnew' -y -q install  percona-xtradb-cluster-galera-2.x"
 		fi
 
 		remote_cmd $XHOSTNAME "sync"
@@ -1032,22 +1027,21 @@ EOF
 		remote_cmd $XHOSTNAME "mv -f ${S9S_TMPDIR}/MariaDB.${OS2}${RHEL}.tmp /etc/yum.repos.d/MariaDB.repo"
                 remote_cmd $XHOSTNAME "yum -y install galera"
 	    else
-		    wget --no-check-certificate --tries=5  -O ${S9S_TMPDIR}/RPM-GPG-KEY-percona http://www.percona.com/redir/downloads/RPM-GPG-KEY-percona	
-		    remote_copy ${S9S_TMPDIR}/RPM-GPG-KEY-percona ${XHOSTNAME} ${S9S_TMPDIR}/RPM-GPG-KEY-percona
-		    remote_cmd $XHOSTNAME "gpg --import ${S9S_TMPDIR}/RPM-GPG-KEY-percona"
-		    remote_cmd $XHOSTNAME "/bin/sh -c 'gpg -a --export CD2EFD2A | apt-key add -'"
-		    remote_cmd $XHOSTNAME "apt-key adv --recv-keys --keyserver keyserver.ubuntu.com 0xcbcb082a1bb943db"
-		    remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"deb http://ftp.osuosl.org/pub/mariadb/repo/5.5/`lsb_release -i -s | tr '[A-Z]' '[a-z]'` `lsb_release -c -s` main\" > /etc/apt/sources.list.d/MariaDB.list'"
-		    remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"deb-src http://ftp.osuosl.org/pub/mariadb/repo/5.5/`lsb_release -i -s | tr '[A-Z]' '[a-z]'` `lsb_release -c -s` main\" >> /etc/apt/sources.list.d/MariaDB.list'"
-		    remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"Package: *\nPin: origin osuosl.org\nPin-Priority: 1000\n\nPackage: *\nPin: origin ftp.osuosl.org\nPin-Priority: 1000\n\nPackage: libmysqlclient18\nPin: origin ftp.osuosl.org\nPin-Priority: 1000\" > /etc/apt/preferences.d/00MariaDB.pref'"
-		    remote_cmd $XHOSTNAME "apt-get -q -y update"
-		    remote_cmd $XHOSTNAME "LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::='--force-confnew' --force-yes -y -q install  galera "
+		wget --no-check-certificate --tries=5  -O ${S9S_TMPDIR}/RPM-GPG-KEY-percona http://www.percona.com/redir/downloads/RPM-GPG-KEY-percona	
+		remote_copy ${S9S_TMPDIR}/RPM-GPG-KEY-percona ${XHOSTNAME} ${S9S_TMPDIR}/RPM-GPG-KEY-percona
+		remote_cmd $XHOSTNAME "gpg --import ${S9S_TMPDIR}/RPM-GPG-KEY-percona"
+		remote_cmd $XHOSTNAME "/bin/sh -c 'gpg -a --export CD2EFD2A | apt-key add -'"
+		remote_cmd $XHOSTNAME "apt-key adv --recv-keys --keyserver keyserver.ubuntu.com 0xcbcb082a1bb943db"
+		remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"deb http://ftp.osuosl.org/pub/mariadb/repo/5.5/`lsb_release -i -s | tr '[A-Z]' '[a-z]'` `lsb_release -c -s` main\" > /etc/apt/sources.list.d/MariaDB.list'"
+		remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"deb-src http://ftp.osuosl.org/pub/mariadb/repo/5.5/`lsb_release -i -s | tr '[A-Z]' '[a-z]'` `lsb_release -c -s` main\" >> /etc/apt/sources.list.d/MariaDB.list'"
+		remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"Package: *\nPin: origin osuosl.org\nPin-Priority: 1000\n\nPackage: *\nPin: origin ftp.osuosl.org\nPin-Priority: 1000\n\nPackage: libmysqlclient18\nPin: origin ftp.osuosl.org\nPin-Priority: 1000\" > /etc/apt/preferences.d/00MariaDB.pref'"
+		remote_cmd $XHOSTNAME "apt-get -q -y update"
+		remote_cmd $XHOSTNAME "LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::='--force-confnew' --force-yes -y -q install  galera "
 	    fi
 	    ;;
-	    *)
-	        echo "Not a supported vendor"
-	        log_job 'FAILED' 'install garbd failed' 1
-	        exit 1;	           	     
+	*)
+	    echo "Not a supported vendor"
+	    exit 1;	           	     
     esac
     QUERY="INSERT IGNORE INTO cmon_configuration(cid,param,value,report_ts) VALUES($CLUSTER_ID,'VENDOR', '$VENDOR', now())"
     `$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"`
@@ -1828,6 +1822,177 @@ function start_node
     exit 0
 }
 
+function encrypt_replication()
+{
+	args=`getopt i:,o:,b:,s $*`
+	set -- $args
+	for i
+	do
+		case "$i" in
+			-i)
+			CLUSTER_ID="$2"; shift;
+			shift;;
+			-o)
+			OPT="$2"; shift; # enable | disable | status
+			shift;;
+			-s)
+			SKIP="1"; shift;;
+			-b)
+			BIT="$2"; shift; # 1024 | 2048 | 4096
+			shift;;
+			--)
+			shift; break;;
+		esac
+	done
+
+	if [ -z "$CLUSTER_ID" ]; then
+		echo "s9s_galera --encrypt-replication -i <clusterid>  missing"
+		exit 1
+	fi
+	
+	if [ -z "$BIT" ]; then
+		BIT=2048
+	else
+		if [ $BIT -ne 1024 ] && [ $BIT -ne 2048 ] && [ $BIT -ne 4096 ]; then
+			echo "s9s_galera --encrypt-replication -b <1024|2048|4096>. Unaccepted values: $BIT"
+			exit 1
+		fi
+	fi
+	
+	if [ -z "$OPT" ]; then
+		echo "s9s_galera --encrypt-replication -o <enable|disable|status>  missing"
+		exit 1
+	elif [ "$OPT" != "enable" ] && [ "$OPT" != "disable" ] && [ "$OPT" != "status" ]; then
+		echo "s9s_galera --encrypt-replication -o <enable|disable|status>. Unknown option \"$OPT\""
+		exit 1
+	fi
+	
+	if [ "$OPT" != "status" ]; then
+		echo '!!!!  WARNING !!!!'
+		read -p 'This action will restart your Galera cluster. Proceed? [Y/n]: ' ans
+		[ "$ans" == "n" ] || [ "$ans" == "N" ] && echo 'Process cancelled.' && exit 1
+	fi
+	
+	init
+	load_opts $CLUSTER_ID
+	
+	if [ -z "$OS" ]; then
+		[ `hash /usr/sbin/update-rc.d 2>/dev/null`  ] && OS="redhat" || OS="debian"
+	else
+		[ "$OS" == "redhat" ] && MYSQLCNF='/etc/my.cnf'
+		[ "$OS" == "debian" ] && MYSQLCNF='/etc/mysql/my.cnf'
+	fi
+
+	
+	# expiration to 100 years
+	EXPIRE_DAY=36500
+	KEY_NAME=galera_rep.key
+	CERT_NAME=galera_rep.crt
+	CERTKEY_PATH=/etc/ssl/galera
+	
+	KEY_FILE=$CERTKEY_PATH/$KEY_NAME
+	CERT_FILE=$CERTKEY_PATH/$CERT_NAME
+	KEY_OPTION='socket.ssl_key'
+	CERT_OPTION='socket.ssl_cert'
+	
+	openssl_bin=`which openssl`
+	MYSQLADMIN=`which mysqladmin`
+	[ -z "$MYSQLADMIN" ] && MYSQLADMIN="$mysql_basedir/bin/mysqladmin"
+	QUERY="SELECT group_concat(hostname SEPARATOR ' ') FROM ${CMON_DB_DB}.mysql_server WHERE cid=${CLUSTER_ID}"
+	SERVER_LIST=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$CMON_DB_PORT -N -Bse "$QUERY"  2>/tmp/err`
+
+	[ -z "$S9S_TMPDIR" ] && S9S_TMPDIR=$OS_USER_HOME/s9s_tmp
+
+	if [ "$OPT" == "enable" ]; then
+		if [ ! -f $S9S_TMPDIR/$KEY_NAME ] || [ ! -f $S9S_TMPDIR/$CERT_NAME ]; then
+			[ -d $S9S_TMPDIR ] || mkdir -p $S9S_TMPDIR
+			if [ -z "$SKIP" ]; then
+				echo "Updating OpenSSL package.."
+				[ "$OS" == 'redhat' ] && ($HTTP_PROXY yum install -y --quiet openssl) || ($HTTP_PROXY apt-get update -qq && $HTTP_PROXY apt-get install -y -qq openssl)
+				[ $? -ne 0 ] && echo "Updating OpenSSL failed. You can skip update with -s."
+			fi
+			
+			rm -rf $S9S_TMPDIR/$KEY_NAME $S9S_TMPDIR/$CERT_NAME
+			echo "Generating new key and cert"
+			$openssl_bin req -x509 -nodes -days $EXPIRE_DAY \
+				-subj '/C=SE/ST=ST/L=Stockholm/O=Severalnines AB/CN=localhost' \
+					-newkey rsa:$BIT -keyout $S9S_TMPDIR/$KEY_NAME -out $S9S_TMPDIR/$CERT_NAME
+			[ $? -ne 0 ] && echo 'Creating key and cert failed' && exit 1
+			chown $SSH_USER:$SSH_USER $S9S_TMPDIR/$KEY_NAME $S9S_TMPDIR/$CERT_NAME
+			echo "Key generated at: $S9S_TMPDIR/$KEY_NAME"
+			echo "Cert generated at: $S9S_TMPDIR/$CERT_NAME"
+		fi
+		
+		echo "Transferring $KEY_NAME and $CERT_NAME to Galera hosts.."
+		COPY_LIST=$SERVER_LIST
+		for HOST in $COPY_LIST
+		do
+			remote_cmd $HOST "mkdir -p $CERTKEY_PATH"
+			remote_copy $S9S_TMPDIR/$KEY_NAME $HOST $S9S_TMPDIR/$KEY_NAME
+			remote_copy $S9S_TMPDIR/$CERT_NAME $HOST $S9S_TMPDIR/$CERT_NAME
+			remote_cmd $HOST "mv $S9S_TMPDIR/$KEY_NAME $KEY_FILE"
+			remote_cmd $HOST "mv $S9S_TMPDIR/$CERT_NAME $CERT_FILE"
+			remote_cmd $HOST "chown -R mysql:mysql $CERTKEY_PATH"
+			remote_cmd $HOST "chmod -R o-rwx $CERTKEY_PATH"
+		done
+	
+		echo "Stopping cluster.."
+		stop_cluster -i $CLUSTER_ID
+		
+		QUERY="select group_concat(hostname SEPARATOR ' ') from ${CMON_DB_DB}.mysql_server where cid=${CLUSTER_ID}"
+	 	HOST_LIST=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$CMON_DB_PORT -N -Bse "$QUERY"  2>/tmp/err`
+
+		echo "Enabling encyption in wsrep_provider_options.."
+		for ZHOST in $HOST_LIST
+		do
+			QUERY="SELECT hid FROM cmon.cluster_configuration, cmon.mysql_server WHERE mysql_server.hostname = '$ZHOST' AND cluster_configuration.hid = mysql_server.id"
+			HOSTID=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$CMON_DB_PORT -N -Bse "$QUERY"  2>/tmp/err`
+			data=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=127.0.0.1 --port=$CMON_DB_PORT -N -Bse "SELECT data FROM cmon.cluster_configuration WHERE hid=${HOSTID}\\G" | grep wsrep_provider_options | sed -e 's/^[^=]*=//' | tr -d '\"'`
+			new_data="$data socket.ssl_cert=$CERT_FILE; socket.ssl_key=$KEY_FILE;"
+			remote_cmd $ZHOST "sed -i 's|^wsrep_provider_options=.*|wsrep_provider_options=\"$new_data\"|g' $MYSQLCNF"
+			[ $? -ne 0 ] && echo "Error: unable to update $MYSQLCNF" && exit 1
+		done
+		
+		echo "Starting cluster.."
+		start_cluster -d $ZHOST -i $CLUSTER_ID
+		
+		rm -rf $S9S_TMPDIR/$KEY_NAME $S9S_TMPDIR/$CERT_NAME
+	elif [ "$OPT" == "disable" ]; then
+		
+		echo "Stopping cluster.."
+		stop_cluster -i $CLUSTER_ID
+	
+		QUERY="select group_concat(hostname SEPARATOR ' ') from ${CMON_DB_DB}.mysql_server where cid=${CLUSTER_ID}"
+    		HOST_LIST=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$CMON_DB_PORT -N -Bse "$QUERY"  2>/tmp/err`
+	
+		echo 'Removing SSL options in wsrep_provider_options'
+		for HOST in $HOST_LIST
+		do
+			remote_cmd $HOST "sed -i 's|socket.ssl_cert=$CERT_FILE;||g' $MYSQLCNF"
+			remote_cmd $HOST "sed -i 's|socket.ssl_key=$KEY_FILE;||g' $MYSQLCNF"
+			remote_cmd $HOST "rm -rf $CERT_FILE $KEY_FILE"
+		done
+		
+		echo "Starting cluster.."
+		start_cluster -d $HOST -i $CLUSTER_ID
+		
+	else
+		
+		QUERY="select value from ${CMON_DB_DB}.cmon_configuration where param = 'MONITORED_MYSQL_PORT' AND cid = ${CLUSTER_ID}"
+		MONITORED_MYSQL_PORT=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=127.0.0.1 --port=$CMON_DB_PORT -N -Bse "$QUERY"  2>/tmp/err`
+		for HOST in $SERVER_LIST
+		do
+			KEY_LIST=`$MYSQLADMIN -u cmon --password=$CMON_PASSWORD --host=$HOST --port=$MONITORED_MYSQL_PORT variables | grep wsrep_provider_options | tr ';' '\n' | grep $KEY_OPTION | awk {'print $3'} 2>/tmp/err`
+			CERT_LIST=`$MYSQLADMIN -u cmon --password=$CMON_PASSWORD --host=$HOST --port=$MONITORED_MYSQL_PORT variables | grep wsrep_provider_options | tr ';' '\n' | grep $CERT_OPTION | awk {'print $3'} 2>/tmp/err`
+			if [ -z "$KEY_LIST" ] && [ -z "$CERT_LIST" ]; then
+				KEY_LIST='null' && CERT_LIST='null' && ENCRYPT_STATUS='disabled'
+			else
+				ENCRYPT_STATUS='enabled'
+			fi
+			echo "$HOST     key=$KEY_LIST, cert: $CERT_LIST, status: $ENCRYPT_STATUS"
+		done
+	fi
+}
 
 function check_mysql_client()
 {
@@ -1885,9 +2050,12 @@ if [ ! -e $LOCKFILE ]; then
 	--status)
 	    status_cluster $*
 	    ;;
+	--encrypt-replication)
+	    encrypt_replication $*
+	    ;;
 	*)
 	    echo "Usage: "
-	    echo "s9s_galera --[start-cluster|stop-cluster|reinit-cluster|make-primary|start-node|stop-node|status|install-garbd|remove-garbd|install-notifycc] <options follows>"
+	    echo "s9s_galera --[start-cluster|stop-cluster|reinit-cluster|make-primary|start-node|stop-node|status|install-garbd|remove-garbd|install-notifycc|encrypt-replication] <options follows>"
 	    exit 1
 	    ;;
     esac
@@ -1896,4 +2064,3 @@ if [ ! -e $LOCKFILE ]; then
 else
     echo "$LOCKFILE exists, perhaps someone is using s9s_galera? Else remove the lock file if it is spurious"
 fi
-
