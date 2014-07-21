@@ -1948,7 +1948,7 @@ function encrypt_replication()
 			QUERY="SELECT hid FROM cmon.cluster_configuration, cmon.mysql_server WHERE mysql_server.hostname = '$ZHOST' AND cluster_configuration.hid = mysql_server.id"
 			HOSTID=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$CMON_DB_PORT -N -Bse "$QUERY"  2>/tmp/err`
 			data=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=127.0.0.1 --port=$CMON_DB_PORT -N -Bse "SELECT data FROM cmon.cluster_configuration WHERE hid=${HOSTID}\\G" | grep wsrep_provider_options | sed -e 's/^[^=]*=//' | tr -d '\"'`
-			new_data="$data socket.ssl_cert=$CERT_FILE; socket.ssl_key=$KEY_FILE;"
+			new_data="$data; socket.ssl_cert=$CERT_FILE; socket.ssl_key=$KEY_FILE;"
 			remote_cmd $ZHOST "sed -i 's|^wsrep_provider_options=.*|wsrep_provider_options=\"$new_data\"|g' $MYSQLCNF"
 			[ $? -ne 0 ] && echo "Error: unable to update $MYSQLCNF" && exit 1
 		done
