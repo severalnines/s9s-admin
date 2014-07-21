@@ -242,10 +242,15 @@ function start_backup
     fi
 
     if [ -z "$USE_PIGZ" ]; then
-	USE_PIGZ="0"
-	COMPRESSION_TOOL="gzip"
+	    USE_PIGZ="0"
+	    COMPRESSION_TOOL="gzip"
     else
-	COMPRESSION_TOOL="pigz"
+        NCORES=`cat /proc/cpuinfo |grep  processor |wc -l`
+        NCORES=`expr $NCORES / 2`
+        if [ -z "$NCORES" ]; then
+            NCORES=8
+        fi
+        COMPRESSION_TOOL="pigz -p$NCORES"
     fi
 
     if [ -z "$MYSQL_BINDIR" ]; then

@@ -33,10 +33,10 @@ do
       fi
       err=`grep "$searchexpr2" $BACKUP_LOGFILE`
       if [ $? -eq 0 ]; then
-        echo "BACKUP Completed OK: $err " >> $BACKUP_LOGFILE
-        exit 0
+          echo "BACKUP Completed OK: $err " >> $BACKUP_LOGFILE
+          exit 0
       fi
-      echo "BACKUP FAILED: Unknonw reason at this point. " >> $BACKUP_LOGFILE
+      echo "BACKUP FAILED: Unknown reason at this point. " >> $BACKUP_LOGFILE
       exit 1
    fi
    sleep 2

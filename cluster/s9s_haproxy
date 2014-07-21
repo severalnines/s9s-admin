@@ -8,6 +8,7 @@
 # for the work on the makecfg, mysqlckk, and haproxy.cfg.tmpl
 JOBID=0
 HAPROXY_MYSQL_LISTEN_PORT="33306"
+LB_POLICY=leastconn
 HAPROXY_LOG='/tmp/s9s_haproxy.log'
 HAPROXY_LOG2='/tmp/s9s_haproxy2.log'
 LOCKFILE="/tmp/s9s_haproxy.lock"
@@ -253,6 +254,12 @@ SUFFIX="$2"
 TMPDIR2="$3"
 MAX_CONNECTIONS="$4"
 LISTEN_PORT="$5"
+LB_POLICY="$6"
+
+if [ -z "$LB_POLICY" ]; then
+    LB_POLICY=leastconn
+fi
+
 TEMPLATE=${TMPDIR2}/haproxy.cfg.tmpl
 if ([ -z "$DC" ] || [ -z "$SUFFIX" ]); then
         echo "specify PREFIX and SUFFIX: $0 <prefix> <suffix>; ie: $0 dt 1"
@@ -285,7 +292,7 @@ listen  "$DESC"
         mode tcp
         timeout client  60000ms
         timeout server  60000ms
-        balance leastconn 
+        balance ${LB_POLICY}
         option httpchk
         option allbackups
         default-server port 9200 inter 2s downinter 5s rise 3 fall 2 slowstart 60s maxconn $MAX_CONNECTIONS maxqueue 128 weight 100
@@ -793,7 +800,7 @@ function install_haproxy
 {
     LB_NODE_LIST=""
     MAX_CONNECTIONS=256
-    args=`getopt p:P:h:i:N:n:j:sf:c: $*`
+    args=`getopt p:P:h:i:N:n:j:sf:c:x: $*`
     set -- $args
     for i
     do
@@ -802,7 +809,7 @@ function install_haproxy
                 CMON_PASSWORD="$2"; shift;
                 shift;;
             -P)
-		HAPROXY_MYSQL_LISTEN_PORT="$2"; shift;
+		        HAPROXY_MYSQL_LISTEN_PORT="$2"; shift;
                 shift;;
             -i)
                 CLUSTER_ID="$2"; shift;
@@ -824,6 +831,9 @@ function install_haproxy
                 shift;;
             -N)
                 LB_NAME="$2"; shift;
+                shift;;
+            -x)
+                LB_POLICY="$2"; shift;
                 shift;;
             -j)
                 JOBID="$2"; shift;
@@ -870,6 +880,31 @@ function install_haproxy
     prepare
     chown -R $SSH_USER:$SSH_USER $TMPDIR
     sleep 1
+    case $CLUSTER_TYPE in
+        galera)
+        ;;
+        mysqlcluster)
+        ;;
+        *)
+            log_job_message "Cluster $CLUSTER_TYPE not supported" 1
+	        log_job 'FAILED' 's9s_haproxy failed' 1
+	        exit 1
+            ;;
+    esac
+    case $LB_POLICY in
+        'leastconn')
+            ;;
+        'roundrobin')
+            ;;
+        'source')
+            ;;
+        *)
+            log_job_message "LB_POLICY '$LB_POLICY' not one of leastconn, roundrobin, source" 1
+	        log_job 'FAILED' 's9s_haproxy failed' 1
+	        exit 1
+            ;;
+    esac
+    log_job_message "Using loadbalancing policy '$LB_POLICY'." 0
     log_job 'RUNNING' 'Job is running' 0
     case $OS in
         rhel|redhat)
@@ -910,17 +945,7 @@ function install_haproxy
             ;;
     esac
     log_job 'RUNNING' 'Job is running' 0
-    case $CLUSTER_TYPE in
-        galera)
-        ;;
-        mysqlcluster)
-        ;;
-        *)
-        log_job_message "Cluster $CLUSTER_TYPE not supported" 1
-	log_job 'FAILED' 's9s_haproxy failed' 1
-	exit 1
-        ;;
-    esac
+
     log_job 'RUNNING' 'Job is running' 0
     if [ -n "$LB_NODE_LIST" ]; then
 	LB_NODE_LIST2=`echo $LB_NODE_LIST | sed "s/,/','/g" | sed "s/^/'/g" | sed "s/$/'/g" |sed "s/[ ]*//g"`
@@ -974,7 +999,7 @@ function install_haproxy
     echo "*************************************************************"
     echo "* writing $TMPDIR/${PREFIX}_${LB_NAME}_haproxy.cfg               *"
     echo "*************************************************************"
-    $TMPDIR/makecfg.sh $PREFIX $SUFFIX $TMPDIR $MAX_CONNECTIONS $HAPROXY_MYSQL_LISTEN_PORT > $TMPDIR/${PREFIX}_${LB_NAME}_haproxy.cfg
+    $TMPDIR/makecfg.sh $PREFIX $SUFFIX $TMPDIR $MAX_CONNECTIONS $HAPROXY_MYSQL_LISTEN_PORT $LB_POLICY > $TMPDIR/${PREFIX}_${LB_NAME}_haproxy.cfg
     echo ""
     echo "*************************************************************"
     echo "* Installing haproxy on $LB_HOSTNAME                            *"
@@ -1007,7 +1032,7 @@ function install_haproxy
 	remote_cmd $LB_HOSTNAME "$PKG_MGR $BUILD"
 	remote_cmd $LB_HOSTNAME "tar xvfz /tmp/${HAPROXY_SRC} -C /tmp/"
 	remote_cmd_nofail $LB_HOSTNAME "killall -q  -9 haproxy"	
-	remote_cmd $LB_HOSTNAME "sh -c 'cd /tmp/`basename ${HAPROXY_SRC} .tar.gz` && make TARGET=linux26 && cp haproxy /usr/sbin/'"
+	remote_cmd $LB_HOSTNAME "sh -c 'cd /tmp/`basename ${HAPROXY_SRC} .tar.gz` && make TARGET=linux26 && cp -f haproxy /usr/sbin/'"
     else
 	remote_cmd $LB_HOSTNAME "$PKG_MGR2 haproxy"
     fi

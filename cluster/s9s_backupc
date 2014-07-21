@@ -68,14 +68,15 @@ function init
 #INNOBACKUP_OPTS=" --lock-wait-threshold=40 --lock-wait-query-type=all --lock-wait-timeout=180 --kill-long-queries-timeout=20 --kill-long-query-type=all"
 function write_email
 {
-  SUBJECT=$1
-  MSG=$2
-  cat $BACKUP_LOGFILE | sed  -e "s/'/\\\'/g" -e 's/"/\\"/g' > /tmp/s9s_backup_log_escaped_${CLUSTER_ID}
-  df -h > /tmp/s9s_diskspace_${CLUSTER_ID}
-  MSG="$MSG \nBackup log follows:\n `cat /tmp/s9s_backup_log_escaped_${CLUSTER_ID}`\n\n`cat /tmp/s9s_diskspace_${CLUSTER_ID}`" 
-  QUERY="INSERT INTO simple_email(cid,subject,message) VALUES($CLUSTER_ID, \"$SUBJECT\", \"$MSG\")"
-  echo "$QUERY" > /tmp/query.sql
-  $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  < /tmp/query.sql 2>&1 >/tmp/err.log
+    true
+    #SUBJECT=$1
+    #MSG=$2
+    #cat $BACKUP_LOGFILE | sed  -e "s/'/\\\'/g" -e 's/"/\\"/g' > /tmp/s9s_backup_log_escaped_${CLUSTER_ID}
+    #df -h > /tmp/s9s_diskspace_${CLUSTER_ID}
+    #MSG="$MSG \nBackup log follows:\n `cat /tmp/s9s_backup_log_escaped_${CLUSTER_ID}`\n\n`cat /tmp/s9s_diskspace_${CLUSTER_ID}`" 
+    #QUERY="INSERT INTO simple_email(cid,subject,message) VALUES($CLUSTER_ID, \"$SUBJECT\", \"$MSG\")"
+    #echo "$QUERY" > /tmp/query.sql
+    #$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  < /tmp/query.sql 2>&1 >/tmp/err.log
 }
 
 function log_job_message
@@ -180,27 +181,27 @@ function start_backup
       exit 1
     fi
     if [ -z "$DISABLE_COMPRESSION" ]; then
-	COMPRESSION=1
+	    COMPRESSION=1
     fi
-
+    
     if [ -z "$USE_PIGZ" ]; then
-	USE_PIGZ="0"
-	COMPRESSION_TOOL="gzip"
+	    USE_PIGZ="0"
+	    COMPRESSION_TOOL="gzip"
     else
-	COMPRESSION_TOOL="pigz"
+	    COMPRESSION_TOOL="pigz"
     fi
     
     if [ -z "$BACKUP_HOSTNAME" ]; then
-      echo "s9s_backupc  --backup -h <backup hostname> missing"
-      exit 1
+        echo "s9s_backupc  --backup -h <backup hostname> missing"
+        exit 1
     fi
-
+    
     if [ -z "$TYPE" ]; then
-      echo "s9s_backupc  --backup -t <full|incr> missing"
-      exit 1
+        echo "s9s_backupc  --backup -t <full|incr> missing"
+        exit 1
     fi
     if [ "$jobid" = "" ]; then 
-	jobid=0
+	    jobid=0
     fi
     init 
     I=0
@@ -208,53 +209,53 @@ function start_backup
     load_opts $CLUSTER_ID
     MYCNF=${CONFIGDIR}/my.cnf
     if ! test -f $MYSQL_BIN; then
-	if ! test -f $MYSQL_BIN2; then
-	    log_job_message "Could not find mysql client" 1
-	    echo "Could not find mysql client binary"
-	    echo "Change MYSQL_BIN in beginning of the scipt"
-	    exit 1
-	fi
-	MYSQL_BIN=$MYSQL_BIN2
+	    if ! test -f $MYSQL_BIN2; then
+	        log_job_message "Could not find mysql client" 1
+	        echo "Could not find mysql client binary"
+	        echo "Change MYSQL_BIN in beginning of the scipt"
+	        exit 1
+	    fi
+	    MYSQL_BIN=$MYSQL_BIN2
     fi
     if ! test -f $MYSQL_BIN; then
-	echo "Could not find mysql client binary"
-	log_job_message "Could not find mysql client binary" 1
-	log_job 'FAILED' 'backup failed' 1
-	exit 1
+	    echo "Could not find mysql client binary"
+	    log_job_message "Could not find mysql client binary" 1
+	    log_job 'FAILED' 'backup failed' 1
+	    exit 1
     fi
-
+    
     write_defaults_file cmon $CMON_PASSWORD
     
     if [ -z "$BACKUPDIR" ]; then
-	BACKUPDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='BACKUPDIR' AND cid=$CLUSTER_ID"`
+	    BACKUPDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='BACKUPDIR' AND cid=$CLUSTER_ID"`
     fi
-
+    
     if [ -z "$BACKUPDIR" ]; then
       echo "s9s_backupc  --install -b <backupdir> missing"
       exit 1
     fi
     if [ -e $LOCKFILE ]; then
-       PID=`cat $LOCKFILE`
-       PID=`ps -ef |grep $PID |grep s9s_backup |grep -v $$`
-       if [ $? -eq 0 ]; then
-          log_job_message "An instance of s9s_backup is already running." 1; echo "An instance of s9s_backup is already running.";  
-          exit 1
-       fi
-       rm $LOCKFILE
+        PID=`cat $LOCKFILE`
+        PID=`ps -ef |grep $PID |grep s9s_backup |grep -v $$`
+        if [ $? -eq 0 ]; then
+            log_job_message "An instance of s9s_backup is already running." 1; echo "An instance of s9s_backup is already running.";  
+            exit 1
+        fi
+        rm $LOCKFILE
     fi
     if [ ! -e $LOCKFILE ]; then
-	trap "rm -f $LOCKFILE; killall -9 s9s_backupc_wd nc; rm -rf /tmp/xtrabackup_pid; ssh $SSH_OPTS $SSH_USER@$BACKUP_HOSTNAME rm /tmp/s9s_pass; exit" INT TERM EXIT
-	echo $$ $LOCKFILE	
-	if which pv &> /dev/null; then
+	    trap "rm -f $LOCKFILE; killall -9 s9s_backupc_wd nc; rm -rf /tmp/xtrabackup_pid; ssh $SSH_OPTS $SSH_USER@$BACKUP_HOSTNAME rm /tmp/s9s_pass; exit" INT TERM EXIT
+	    echo $$ $LOCKFILE	
+	    if which pv &> /dev/null; then
             #THROTTLE="--throttle=30"
-	    HAS_PV=1
-	else
+	        HAS_PV=1
+	    else
  # echo "pv not found"
  #echo "Warning: Throttling (--throttle=) will not be possible"
  #echo "Install with: "
  #echo "  apt: apt-get install pv "
  #echo "  yum: yum install pv "
-	    THROTTLE=""
+	        THROTTLE=""
 	fi
   # There is something wrong with throttle.. innobackup never seems to terminate
 	THROTTLE=""
@@ -460,11 +461,11 @@ function start_backup
 	if [ "$TYPE" = "full" ]; then   
 	    log_job 'RUNNING' 'Job is running' 0
 	    if [ $COMPRESSION -eq 1 ]; then
- 		ssh $SSH_OPTS  $SSH_USER@$BACKUP_HOSTNAME "$SUDO sh -c 'ulimit -n $ULIMIT && LC_ALL=C $XTRABACKUP_BIN $GALERA_INFO   --defaults-extra-file=/tmp/s9s_pass --host=127.0.0.1  --port=$MONITORED_MYSQL_PORT $INNOBACKUP_OPTS $THROTTLE  --stream=tar ./  2>$BACKUP_LOGFILE | $COMPRESSION_TOOL  - | nc $STORAGE_HNAME $NETCAT_PORT  '" 	   		
-		ret=$?
+ 		    ssh $SSH_OPTS  $SSH_USER@$BACKUP_HOSTNAME "$SUDO sh -c 'ulimit -n $ULIMIT && LC_ALL=C $XTRABACKUP_BIN $GALERA_INFO   --defaults-extra-file=/tmp/s9s_pass --host=127.0.0.1  --port=$MONITORED_MYSQL_PORT $INNOBACKUP_OPTS $THROTTLE  --stream=tar ./  2>$BACKUP_LOGFILE | $COMPRESSION_TOOL  - | nc $STORAGE_HNAME $NETCAT_PORT  '" 	   		
+		    ret=$?
 	    else
-		ssh $SSH_OPTS  $SSH_USER@$BACKUP_HOSTNAME "$SUDO sh -c 'ulimit -n $ULIMIT && $XTRABACKUP_BIN $GALERA_INFO   --defaults-extra-file=/tmp/s9s_pass --host=127.0.0.1 --port=$MONITORED_MYSQL_PORT  $INNOBACKUP_OPTS $THROTTLE  --stream=tar ./  2>$BACKUP_LOGFILE | nc $STORAGE_HNAME $NETCAT_PORT  '" 
-		ret=$?
+		    ssh $SSH_OPTS  $SSH_USER@$BACKUP_HOSTNAME "$SUDO sh -c 'ulimit -n $ULIMIT && $XTRABACKUP_BIN $GALERA_INFO   --defaults-extra-file=/tmp/s9s_pass --host=127.0.0.1 --port=$MONITORED_MYSQL_PORT  $INNOBACKUP_OPTS $THROTTLE  --stream=tar ./  2>$BACKUP_LOGFILE | nc $STORAGE_HNAME $NETCAT_PORT  '" 
+		    ret=$?
 	    fi
 	    scp -q $SCP_OPTS $SSH_USER@$BACKUP_HOSTNAME:$BACKUP_LOGFILE $BACKUP_LOGFILE
 	    LSN=`cat $BACKUP_LOGFILE | grep 'xtrabackup: The latest check point (for incremental):' | awk -F ':' '{print $3;}'`
@@ -475,11 +476,11 @@ function start_backup
 	else
 	    log_job 'RUNNING' 'Job is running' 0
 	    if [ $COMPRESSION -eq 1 ]; then
- 		ssh  $SSH_OPTS  $SSH_USER@$BACKUP_HOSTNAME "$SUDO sh -c 'ulimit -n $ULIMIT && $XTRABACKUP_BIN $GALERA_INFO  --defaults-extra-file=/tmp/s9s_pass --host=127.0.0.1  --port=$MONITORED_MYSQL_PORT  --incremental --incremental-lsn=$LSN $INNOBACKUP_OPTS $THROTTLE  --stream=xbstream ./  2>$BACKUP_LOGFILE | $COMPRESSION_TOOL  - | nc $STORAGE_HNAME $NETCAT_PORT  '" 
-		ret=$?
+ 		    ssh  $SSH_OPTS  $SSH_USER@$BACKUP_HOSTNAME "$SUDO sh -c 'ulimit -n $ULIMIT && $XTRABACKUP_BIN $GALERA_INFO  --defaults-extra-file=/tmp/s9s_pass --host=127.0.0.1  --port=$MONITORED_MYSQL_PORT  --incremental --incremental-lsn=$LSN $INNOBACKUP_OPTS $THROTTLE  --stream=xbstream ./  2>$BACKUP_LOGFILE | $COMPRESSION_TOOL  - | nc $STORAGE_HNAME $NETCAT_PORT  '" 
+		    ret=$?
 	    else
- 		ssh  $SSH_OPTS  $SSH_USER@$BACKUP_HOSTNAME "$SUDO sh -c 'ulimit -n $ULIMIT && $XTRABACKUP_BIN $GALERA_INFO  --defaults-extra-file=/tmp/s9s_pass --host=127.0.0.1  --port=$MONITORED_MYSQL_PORT  --incremental --incremental-lsn=$LSN $INNOBACKUP_OPTS $THROTTLE  --stream=xbstream ./  2>$BACKUP_LOGFILE | nc $STORAGE_HNAME $NETCAT_PORT  '" 
-		ret=$?
+ 		    ssh  $SSH_OPTS  $SSH_USER@$BACKUP_HOSTNAME "$SUDO sh -c 'ulimit -n $ULIMIT && $XTRABACKUP_BIN $GALERA_INFO  --defaults-extra-file=/tmp/s9s_pass --host=127.0.0.1  --port=$MONITORED_MYSQL_PORT  --incremental --incremental-lsn=$LSN $INNOBACKUP_OPTS $THROTTLE  --stream=xbstream ./  2>$BACKUP_LOGFILE | nc $STORAGE_HNAME $NETCAT_PORT  '" 
+		    ret=$?
 	    fi
 	    
 	    scp -q $SCP_OPTS $SSH_USER@$BACKUP_HOSTNAME:$BACKUP_LOGFILE $BACKUP_LOGFILE
@@ -566,11 +567,11 @@ function start_backup
 	fi
 	rm $LOCKFILE
 	trap - INT TERM EXIT
-	exit 0
+	exit $ret
     else
- 	write_email "Backup failed" "s9s_backupc failed - Lock file $LOCKFILE exists which indicates another backup may be running?" 
-	log_job_message "Lock file $LOCKFILE exists which indicates another backup may be running?" 1
-	log_job 'FAILED' 'Backup failed' 1
+ 	    write_email "Backup failed" "s9s_backupc failed - Lock file $LOCKFILE exists which indicates another backup may be running?" 
+	    log_job_message "Lock file $LOCKFILE exists which indicates another backup may be running?" 1
+	    log_job 'FAILED' 'Backup failed' 1
     fi	
 }
 

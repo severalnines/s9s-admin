@@ -113,7 +113,6 @@ function remote_copy()
    destfile=$3
    printf "%-4s: Copying '%s' " "$desthost" "$srcfile"
    scp $SSH_OPTS2 $srcfile $SSH_USER@$desthost:$destfile >> $HOME/s9s_deploy.log  2>/dev/null
-   echo "scp $SSH_OPTS2 $srcfile $SSH_USER@$desthost:$destfile >> $HOME/s9s_deploy.log  2>/dev/null"
    if [ $? -eq 0 ]; then
       log_job_message "copying file $srcfile --> $desthost:$destfile" 0
       printf "\033[32m[ok]\033[0m\n"
@@ -121,20 +120,26 @@ function remote_copy()
    else
        echo "FAILED: scp $SSH_OPTS2 $srcfile $SSH_USER@$desthost:$destfile >> $HOME/s9s_deploy.log  2>/dev/null"
        echo ""
-      log_job_message "copying file $srcfile --> $desthost:$destfile" 1
-      log_job 'FAILED' 's9s_haproxy failed' 1
+       log_job_message "Failed: scp $SSH_OPTS2 $srcfile $SSH_USER@$desthost:$destfile" 1
+       log_job 'FAILED' 'remove_copy failed' 1
       printf "\033[31m[failed]\033[0m\n"
       exit 1
    fi
 }
+
 
 function remote_cmd_nofail()
 {
    desthost=$1
    xcommand=$2
    printf "%-4s: Executing '%s'" "$desthost" "$xcommand"
-   ssh $SSH_OPTS $SSH_USER@$desthost "$SUDO $xcommand "  >> $HOME/s9s_deploy.log 2>&1
+   ssh -q $SSH_OPTS $SSH_USER@$desthost "$SUDO $xcommand "  >> $HOME/s9s_deploy.log 2>&1
    ret=$?
+   if [ $ret -ne 0 ]; then
+       log_job_message "Failed (but moving on) $desthost : $xcommand" 0
+   else
+       log_job_message "Executed $desthost : $xcommand" 0
+   fi
    printf "\033[32m[ok]\033[0m\n"
    return $ret
 }
@@ -241,21 +246,21 @@ function load_opts
     MONGODB_DATADIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select dbpath from  mongodb_server where node_type=0 AND dbpath<>'' and cid=$CLUSTER_ID limit 1"`
     MONGODB_PIDFILEDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select pidfilepath from  mongodb_server where node_type=0 and pidfilepath<>'' and cid=$CLUSTER_ID limit 1"`
     MONGODB_PIDFILEPATH=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select pidfilepath from  mongodb_server where node_type=0 and pidfilepath<>'' and cid=$CLUSTER_ID limit 1"`
-    if [ -z ${MONGODB_PIDFILEPATH} ]; then
-	log_job_message "Failed to MONGODB_PIDFILEPATH " 1
-	exit 1
-    fi
-    if [ -z ${MONGODB_PIDFILEDIR} ]; then
-	log_job_message "Failed to MONGODB_PIDFILEDIR " 1
-	exit 1
-    fi
-    MONGODB_PIDFILEDIR=`dirname $MONGODB_PIDFILEDIR`
-    MONGODB_LOGDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select logpath from  mongodb_server where node_type=0 and logpath<>'' and cid=$CLUSTER_ID limit 1"`
-    if [ -z ${MONGODB_LOGDIR} ]; then
-	log_job_message "Failed to MONGODB_LOGDIR " 1
-	exit 1
-    fi
-    MONGODB_LOGDIR=`dirname $MONGODB_LOGDIR`
+#    if [ -z ${MONGODB_PIDFILEPATH} ]; then
+#	log_job_message "Failed to MONGODB_PIDFILEPATH " 1
+#	exit 1
+#    fi
+#    if [ -z ${MONGODB_PIDFILEDIR} ]; then
+#	log_job_message "Failed to MONGODB_PIDFILEDIR " 1
+#	exit 1
+#    fi
+#    MONGODB_PIDFILEDIR=`dirname $MONGODB_PIDFILEDIR`
+ #   MONGODB_LOGDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select logpath from  mongodb_server where node_type=0 and logpath<>'' and cid=$CLUSTER_ID limit 1"`
+ #   if [ -z ${MONGODB_LOGDIR} ]; then
+#	log_job_message "Failed to MONGODB_LOGDIR " 1
+#	exit 1
+#   fi
+#    MONGODB_LOGDIR=`dirname $MONGODB_LOGDIR`
     MONGODB_BASEDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MONGODB_BASEDIR' AND cid=$CLUSTER_ID"`
     MONGODB_CONFIGDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MONGODB_CONFIGDIR' AND cid=$CLUSTER_ID"`
 #    MONGODB_CNF=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select data  from cmon.cluster_configuration_templates where cid=${CLUSTER_ID} limit 1"`
@@ -275,9 +280,9 @@ function load_opts
        MONGODB_CONFIGDIR="/etc/"
     fi
 
-    if [ -z "$MONGODB_PIDFILEDIR" ]; then
-	MONGODB_PIDFILEDIR="/var/run/mongodb/"
-    fi
+#    if [ -z "$MONGODB_PIDFILEDIR" ]; then
+#	MONGODB_PIDFILEDIR="/var/run/mongodb/"
+#    fi
     
     mkdir -p $S9S_TMPDIR
     echo $MONGODB_CNF |  sed 's#\\n#\n\r#g' > $S9S_TMPDIR/mongodb.conf
@@ -781,12 +786,10 @@ function install_mongodb
 
     local xhost=$SERVER1
 
-    remote_cmd_nofail $xhost "killall -9 cmon mongod"
-    remote_cmd_nofail $xhost "rm -rf /etc/mongodb.conf"
-    remote_cmd_nofail $xhost "rm -rf /var/lib/mongodb"
-    remote_cmd_nofail $xhost "rm -rf /var/log/mongodb"
-    remote_cmd_nofail $xhost "rm -rf /etc/init.d/mongod"
-    remote_cmd_nofail $xhost "rm -rf ${MONGODB_DATADIR}"
+    remote_cmd_nofail $xhost "killall -9 mongod"
+    remote_cmd_nofail $R "mkdir -p $S9S_TMPDIR"
+    remote_cmd_nofail $R "chown -R $SSH_USER:$SSH_USER $S9S_TMPDIR"
+
     case $VENDOR in
 	tokutek)
 	    if [ -z "$TGZ_FILE" ]; then
@@ -853,21 +856,29 @@ enabled=1
 EOF
 		    remote_copy $S9S_TMPDIR/10gen.repo $xhost $S9S_TMPDIR/ 
 		    remote_cmd $xhost "mv $S9S_TMPDIR/10gen.repo /etc/yum.repos.d/"
-		    remote_cmd_nofail $xhost "$HTTP_PROXY yum -y remove mongodb*"
+#		    remote_cmd_nofail $xhost "$HTTP_PROXY yum -y remove mongodb*"
 		    remote_cmd_nofail $xhost "$HTTP_PROXY yum -y install mongodb-org"
 		    remote_cmd $xhost  "chown 755 /etc/init.d/mongod"
 		    remote_cmd $xhost  "/sbin/chkconfig --add mongod"
 		    ;;
 		debian)
 		    remote_cmd $xhost "apt-key adv --keyserver keyserver.ubuntu.com --recv 7F0CEB10"
-		    remote_cmd_nofail $xhost "touch /etc/init.d/mongodb"
-		    remote_cmd_nofail $xhost "LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive $HTTP_PROXY apt-get -y remove mongo*"
-		    remote_cmd_nofail $xhost "LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive $HTTP_PROXY apt-get -y remove mongodb-10gen"
-		    remote_cmd_nofail $xhost "rm -rf /etc/init.d/mongo*"
+#		    remote_cmd_nofail $xhost "touch /etc/init.d/mongodb"
+#		    remote_cmd_nofail $xhost "LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive $HTTP_PROXY apt-get -y remove mongodb*"
+
+#		    remote_cmd_nofail $xhost "rm -rf /etc/init.d/mongo*"
 		    remote_cmd_nofail $xhost "sed -i.bak '/10gen/d'  /etc/apt/sources.list"
-		    remote_cmd $xhost "/bin/sh -c 'echo \"deb http://downloads-distro.mongodb.org/repo/ubuntu-upstart dist 10gen\" >> /etc/apt/sources.list'"
+
+		    osdist=$(remote_cmd_getreply $xhost "lsb_release -i -s")
+            osdist=`echo $osdist |tr -d '\r'`
+		    echo "$osdist"
+		    if [ "$osdist" = "ubuntu" ] || [ "$osdist" = "Ubuntu" ]; then
+			    remote_cmd $xhost "/bin/sh -c 'echo \"deb http://downloads-distro.mongodb.org/repo/ubuntu-upstart dist 10gen\" >> /etc/apt/sources.list'"
+		    else
+			    remote_cmd $xhost "/bin/sh -c 'echo \"deb http://downloads-distro.mongodb.org/repo/debian-sysvinit dist dist 10gen\" >> /etc/apt/sources.list'"
+		    fi
 		    remote_cmd $xhost "$HTTP_PROXY apt-get -q -y update"
-		    remote_cmd $xhost "LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive $HTTP_PROXY apt-get -o Dpkg::Options::='--force-confnew' -y -q install mongodb-10gen"
+		    remote_cmd $xhost "LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive $HTTP_PROXY apt-get -o Dpkg::Options::='--force-confnew' -y -q install mongodb-org"
 		    ;;
 		*)
 		    echo "OS is unknonwn / not supported" 		  
@@ -881,17 +892,10 @@ EOF
 	    ;;
     esac
     
-    remote_cmd_nofail ${xhost} "killall -9 mongod mongos cmon"
-    echo "Creating mongodb datadirs in ${mongodb_datadir} if not already exists ..."
-    remote_cmd ${xhost} "mkdir -p ${MONGODB_DATADIR}"
-    remote_cmd ${xhost} "mkdir -p ${MONGODB_DATADIR}/config"
-    remote_cmd ${xhost} "mkdir -p ${MONGODB_LOGDIR}"
-    remote_cmd ${xhost} "mkdir -p ${MONGODB_PIDFILEDIR}"
+    remote_cmd_nofail ${xhost} "killall -9 mongod mongos"
     remote_cmd_nofail $xhost "/usr/sbin/groupadd mongodb"
     remote_cmd_nofail $xhost "/usr/sbin/useradd mongodb -g mongodb"
-    remote_cmd $xhost "chown mongodb:mongodb -R $MONGODB_DATADIR"
-    remote_cmd $xhost "chown mongodb:mongodb -R $MONGODB_LOGDIR"
-    remote_cmd $xhost "chown mongodb:mongodb -R ${MONGODB_PIDFILEDIR}"
+	log_job_message "Completed installation of $xhost" 0
 }
 
 function start_rs
@@ -2163,26 +2167,6 @@ EOF
   TYPE="'shardsvr','arbiter'"
   SERVER_LIST=$(get_servers2 $TYPE)
   FOUND=0
-#  if [ "$SERVER_LIST" != "NULL" ]; then
-#      for r in $SERVER_LIST
-#      do
-#	  HNAME=`echo $r | awk -F ',' '{print $1};'`
-#	  NODEID=`echo $r | awk -F ',' '{print $2};'`
-#	  PORT=`echo $r | awk -F ',' '{print $3};'`
-#	  if [ "$HNAME" = "$XHOSTNAME" ] && [ "$PORT" = "$XPORT" ]; then
-#	      stop_node $HNAME $NODEID
-#	      FOUND=1
-#	  fi
-#     done
-#  else
-#      exit 1
-#  fi  
-
-
-## if [ $FOUND -eq 0 ]; then
-#     echo "$XHOSTNAME:$XPORT was not found in mongodb_server, cannot remove."
-#     exit 1
-# fi
 
   sleep 2
   TYPE="shardsvr"
@@ -2222,12 +2206,14 @@ EOF
   sed  -i.bak "s#ARBIT_PORT#${XPORT}#g"  /tmp/remove.js
   
   ${MONGODB_BASEDIR}/bin/mongo ${RS_HNAME}:${RS_PORT} /tmp/remove.js
-  
+  log_job_message " ${MONGODB_BASEDIR}/bin/mongo ${RS_HNAME}:${RS_PORT} /tmp/remove.js" 0
   if [ $? -ne 0 ]; then
       sleep 1
       ${MONGODB_BASEDIR}/bin/mongo  ${RS_HNAME}:${RS_PORT} /tmp/remove.js
+      log_job_message " ${MONGODB_BASEDIR}/bin/mongo ${RS_HNAME}:${RS_PORT} /tmp/remove.js" 0
       if [ $? -ne 0 ]; then
 	  ${MONGODB_BASEDIR}/bin/mongo   ${RS_HNAME}:${RS_PORT} --eval "rs.remove('$XHOSTNAME:$XPORT')"
+	  log_job_message " ${MONGODB_BASEDIR}/bin/mongo ${RS_HNAME}:${RS_PORT} --eval rs.remove('$XHOSTNAME:$XPORT')" 0
 	  if [ $? -ne 0 ]; then
 	      echo "failed to remove $XHOSTNAME:$XPORT"
 	      exit 1

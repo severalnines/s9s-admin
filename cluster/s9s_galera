@@ -3,6 +3,11 @@
 #
 # MODIFY THE BELOW TO SUIT YOU ENV:
 LOCKFILE="/tmp/s9s_galera.lock"
+
+[ ! -f /etc/mysql/my.cnf ] && MYSQL_CONFIG=/etc/my.cnf || MYSQL_CONFIG=/etc/mysql/my.cnf
+MYSQL_OPTIONS="--defaults-file=$MYSQL_CONFIG --defaults-group-suffix=_cmon"
+
+
 jobid=0
 function init
 {    
@@ -50,7 +55,22 @@ function init
 
     CONNECT_TIMEOUT=10
     CLUSTER_TYPE=$type
-    MYSQL_OPTS="--connect-timeout=$CONNECT_TIMEOUT"
+
+    if [ ! -f $MYSQL_CONFIG ]; then 
+	    log_job_message "Could not find my.cnf in $MYSQL_CONFIG" 1
+	    log_job 'FAILED' 'job failed' 1
+        exit 1
+    fi
+    
+    if [ ! `grep "\[mysql_cmon\]" $MYSQL_CONFIG` ];  then
+        echo "" >> $MYSQL_CONFIG
+        echo "[mysql_cmon]" >> $MYSQL_CONFIG
+        echo "user=cmon" >> $MYSQL_CONFIG
+        echo "password=$mysql_password" >> $MYSQL_CONFIG
+        echo "" >> $MYSQL_CONFIG
+    fi
+    
+    MYSQL_OPTS="--defaults-file=$MYSQL_CONFIG  --defaults-group-suffix=_cmon --connect-timeout=$CONNECT_TIMEOUT"
     OSUSER=$USER
         
     if [ "$OSUSER" != "root" ]; then
@@ -68,7 +88,7 @@ function log_job_message
     fi
     QUERY="INSERT INTO cmon_job_message(cid, jobid,message,exit_code,report_ts) VALUES($CLUSTER_ID,$jobid,\"$MSG\",$EXIT_CODE,now())"
     if [ $jobid -ne 0 ]; then 
-	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
+	$MYSQL_BIN $MYSQL_OPTS -BN --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
     else
 	if [ "$EXIT_CODE" -eq 0 ]; then
 	    echo "Ok: $MSG"
@@ -85,7 +105,7 @@ function log_job
     EXIT_CODE=$3
     QUERY="UPDATE cmon_job SET status='$STATUS', status_txt='$STATUS_TXT', exit_code=$EXIT_CODE, report_ts=NOW()  WHERE cid=$CLUSTER_ID AND jobid=$jobid"
     if [ $jobid -ne 0 ]; then 
-	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
+	$MYSQL_BIN $MYSQL_OPTS -BN --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
     fi
 }
 
@@ -261,27 +281,27 @@ function load_opts
 {
     local CLUSTER_ID=$1
     echo "load opts $CLUSTER_ID"
-    OS=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='OS' AND cid=$CLUSTER_ID" 2>/dev/null`
-    CONFIGDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='CONFIGDIR' AND cid=$CLUSTER_ID" 2>/dev/null`
-    MYSQL_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MYSQL_PORT' AND cid=$CLUSTER_ID" 2>/dev/null`
-    MONITORED_MYSQL_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MONITORED_MYSQL_PORT' AND cid=$CLUSTER_ID" 2>/dev/null`
-    GALERA_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='GALERA_PORT' AND cid=$CLUSTER_ID" 2>/dev/null`
-    GALERA_VERSION=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='GALERA_VERSION' AND cid=$CLUSTER_ID" 2>/dev/null`
-    MYSQL_BASEDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MYSQL_BASEDIR' AND cid=$CLUSTER_ID" 2>/dev/null`
-    MYSQL_SCRIPTDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SCRIPTDIR' AND cid=$CLUSTER_ID" 2>/dev/null`
-    SSH_IDENTITY=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_IDENTITY' AND cid=$CLUSTER_ID" 2>/dev/null`
-    SSH_USER=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_USER' AND cid=$CLUSTER_ID" 2>/dev/null`
-    SSH_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_PORT' AND cid=$CLUSTER_ID" 2>/dev/null`
-    SSH_OPTSX=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_OPTS' AND cid=$CLUSTER_ID"`
-    SUDO=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SUDO' AND cid=$CLUSTER_ID" 2>/dev/null`    
-    OS_USER_HOME=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='OS_USER_HOME' AND cid=$CLUSTER_ID" 2>/dev/null`
-    TMPDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='STAGING_DIR' AND cid=$CLUSTER_ID"`
-    HTTP_PROXY=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='HTTP_PROXY' AND cid=$CLUSTER_ID"`
-    S9S_TMPDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='STAGING_DIR' AND cid=$CLUSTER_ID"`
-    VENDOR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='VENDOR' AND cid=$CLUSTER_ID" 2>/dev/null`
-    CLUSTER_RECOVERY=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='ENABLE_CLUSTER_AUTORECOVERY' AND cid=$CLUSTER_ID" 2>/dev/null`
-    DATADIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon.cluster_config where variable='datadir' and cid=$CLUSTER_ID order by id asc limit 1" 2>/dev/null`
-    MYCNF=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select data  from cmon.cluster_configuration where cid=$CLUSTER_ID limit 1" 2>/dev/null`
+    OS=`$MYSQL_BIN $MYSQL_OPTS -NBA --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='OS' AND cid=$CLUSTER_ID" 2>/dev/null`
+    CONFIGDIR=`$MYSQL_BIN $MYSQL_OPTS -NAB --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='CONFIGDIR' AND cid=$CLUSTER_ID" 2>/dev/null`
+    MYSQL_PORT=`$MYSQL_BIN $MYSQL_OPTS -NAB --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MYSQL_PORT' AND cid=$CLUSTER_ID" 2>/dev/null`
+    MONITORED_MYSQL_PORT=`$MYSQL_BIN $MYSQL_OPTS -NAB --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MONITORED_MYSQL_PORT' AND cid=$CLUSTER_ID" 2>/dev/null`
+    GALERA_PORT=`$MYSQL_BIN $MYSQL_OPTS -NAB --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='GALERA_PORT' AND cid=$CLUSTER_ID" 2>/dev/null`
+    GALERA_VERSION=`$MYSQL_BIN $MYSQL_OPTS -NAB --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='GALERA_VERSION' AND cid=$CLUSTER_ID" 2>/dev/null`
+    MYSQL_BASEDIR=`$MYSQL_BIN $MYSQL_OPTS -NAB --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MYSQL_BASEDIR' AND cid=$CLUSTER_ID" 2>/dev/null`
+    MYSQL_SCRIPTDIR=`$MYSQL_BIN $MYSQL_OPTS -NAB --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SCRIPTDIR' AND cid=$CLUSTER_ID" 2>/dev/null`
+    SSH_IDENTITY=`$MYSQL_BIN $MYSQL_OPTS -NAB --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_IDENTITY' AND cid=$CLUSTER_ID" 2>/dev/null`
+    SSH_USER=`$MYSQL_BIN $MYSQL_OPTS -NAB --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_USER' AND cid=$CLUSTER_ID" 2>/dev/null`
+    SSH_PORT=`$MYSQL_BIN $MYSQL_OPTS -NAB --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_PORT' AND cid=$CLUSTER_ID" 2>/dev/null`
+    SSH_OPTSX=`$MYSQL_BIN $MYSQL_OPTS -NAB --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_OPTS' AND cid=$CLUSTER_ID"`
+    SUDO=`$MYSQL_BIN $MYSQL_OPTS -NAB --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SUDO' AND cid=$CLUSTER_ID" 2>/dev/null`    
+    OS_USER_HOME=`$MYSQL_BIN $MYSQL_OPTS -NAB --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='OS_USER_HOME' AND cid=$CLUSTER_ID" 2>/dev/null`
+    TMPDIR=`$MYSQL_BIN $MYSQL_OPTS -NAB --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='STAGING_DIR' AND cid=$CLUSTER_ID"`
+    HTTP_PROXY=`$MYSQL_BIN $MYSQL_OPTS -NAB --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='HTTP_PROXY' AND cid=$CLUSTER_ID"`
+    S9S_TMPDIR=`$MYSQL_BIN $MYSQL_OPTS -NAB --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='STAGING_DIR' AND cid=$CLUSTER_ID"`
+    VENDOR=`$MYSQL_BIN $MYSQL_OPTS -NAB --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='VENDOR' AND cid=$CLUSTER_ID" 2>/dev/null`
+    CLUSTER_RECOVERY=`$MYSQL_BIN $MYSQL_OPTS -NAB --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='ENABLE_CLUSTER_AUTORECOVERY' AND cid=$CLUSTER_ID" 2>/dev/null`
+    DATADIR=`$MYSQL_BIN $MYSQL_OPTS -NAB --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon.cluster_config where variable='datadir' and cid=$CLUSTER_ID order by id asc limit 1" 2>/dev/null`
+    MYCNF=`$MYSQL_BIN $MYSQL_OPTS -NAB --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select data  from cmon.cluster_configuration where cid=$CLUSTER_ID limit 1" 2>/dev/null`
 
 
     echo $MYCNF |  sed 's#\\n#\n\r#g' > /tmp/my.cnf
@@ -450,7 +470,7 @@ function stop_cluster
     load_opts $CLUSTER_ID 
     
     QUERY="select group_concat(concat(hostname, ',', nodeid) SEPARATOR ' ') from ${CMON_DB_DB}.mysql_server where cid=${CLUSTER_ID}"
-    SERVER_LIST=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$CMON_DB_PORT -N -Bse "$QUERY"  2>/dev/null`
+    SERVER_LIST=`$MYSQL_BIN $MYSQL_OPTS  --host=127.0.0.1 --port=$CMON_DB_PORT -N -Bse "$QUERY"  2>/dev/null`
     if [ -z "$OS" ]; then
 	if [ `hash /usr/sbin/update-rc.d 2>/dev/null`  ]; then
 	    OS="redhat"
@@ -521,7 +541,7 @@ function install_notifycc
     load_opts $CLUSTER_ID 
     if [ -z "$XHOSTNAME" ]; then
 	QUERY="select group_concat(hostname SEPARATOR ' ') from ${CMON_DB_DB}.mysql_server where cid=${CLUSTER_ID}"
-	SERVER_LIST=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$CMON_DB_PORT -N -Bse "$QUERY"  2>/dev/null`
+	SERVER_LIST=`$MYSQL_BIN $MYSQL_OPTS --host=127.0.0.1 --port=$CMON_DB_PORT -N -Bse "$QUERY"  2>/dev/null`
 	if [ -z "$OS" ]; then
 	    if [ `hash /usr/sbin/update-rc.d 2>/dev/null`  ]; then
 		OS="redhat"
@@ -579,7 +599,7 @@ done
 
 
 QUERY="select id from cmon.hosts where (hostname='$MYSQL_HOSTNAME' OR ip='$MYSQL_HOSTNAME') AND cid=${CLUSTER_ID}"
-HID=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"`
+HID=`$MYSQL_BIN $MYSQL_OPTS -NAB --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"`
 
 case $STATUS in
 	Synced)
@@ -622,7 +642,7 @@ if [ -n "$MYSQL_HOSTNAME" ]; then
        QUERY="$QUERY; REPLACE INTO galera_status SET value=$CLU_SZ, value_txt='$CLU_SZ', report_ts=NOW(), cid=$CLUSTER_ID , hostid=$HID , var='WSREP_CLUSTER_SIZE'"
     fi
        QUERY="$QUERY; REPLACE INTO galera_status SET value=0, value_txt='$STATUS', report_ts=NOW() , cid=$CLUSTER_ID , hostid=$HID , var='WSREP_LOCAL_STATE_COMMENT';COMMIT"
-    $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/dev/null
+    $MYSQL_BIN $MYSQL_OPTS -BN --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/dev/null
 fi
 EOF
 
@@ -707,7 +727,7 @@ function stop_node
     load_opts $CLUSTER_ID 
     
     QUERY="select group_concat(concat(hostname, ',', nodeid) SEPARATOR ' ') from ${CMON_DB_DB}.mysql_server where cid=${CLUSTER_ID} AND hostname='$XHOSTNAME'"
-    SERVER_LIST=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$CMON_DB_PORT -N -Bse "$QUERY"  2>/dev/null`
+    SERVER_LIST=`$MYSQL_BIN $MYSQL_OPTS --host=127.0.0.1 --port=$CMON_DB_PORT -N -Bse "$QUERY"  2>/dev/null`
     if [ -z "$OS" ]; then
 	if [ `hash /usr/sbin/update-rc.d 2>/dev/null`  ]; then
 	    OS="redhat"
@@ -881,7 +901,7 @@ function install_garbd
     log_job 'RUNNING' 'installing garbd' 0
     
     QUERY="SELECT group_concat(concat(hostname, ':', $GALERA_PORT)) FROM $CMON_DB_DB.mysql_server WHERE cid=${CLUSTER_ID}"
-    DONOR_HOSTNAME=`$MYSQL_BIN -B -N $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$CMON_DB_HOST --port=$CMON_DB_PORT --database=$CMON_DB_DB  -e "$QUERY"`
+    DONOR_HOSTNAME=`$MYSQL_BIN -B -N $MYSQL_OPTS --host=$CMON_DB_HOST --port=$CMON_DB_PORT --database=$CMON_DB_DB  -e "$QUERY"`
     if [ -z "$DONOR_HOSTNAME" ]; then
 	    echo $QUERY
 	    log_job_message "Could not get a cluster address" 1
@@ -889,7 +909,7 @@ function install_garbd
 	    exit 1
     fi
 
-    ANY_HOSTNAME=`$MYSQL_BIN -B -N $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$CMON_DB_HOST --port=$CMON_DB_PORT --database=$CMON_DB_DB  -e "SELECT hostname FROM $CMON_DB_DB.mysql_server WHERE cid=${CLUSTER_ID} AND status=0 LIMIT 1"`
+    ANY_HOSTNAME=`$MYSQL_BIN -B -N $MYSQL_OPTS --host=$CMON_DB_HOST --port=$CMON_DB_PORT --database=$CMON_DB_DB  -e "SELECT hostname FROM $CMON_DB_DB.mysql_server WHERE cid=${CLUSTER_ID} AND status=0 LIMIT 1"`
     if [ -z "$ANY_HOSTNAME" ]; then
 	    log_job_message "Could not get a cluster address" 1
 	    log_job 'FAILED' 'install garbd failed' 1
@@ -897,7 +917,7 @@ function install_garbd
     fi
     
     QUERY="SHOW GLOBAL VARIABLES LIKE 'wsrep_cluster_name'"
-    CLUSTER_NAME=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$ANY_HOSTNAME --port=$MONITORED_MYSQL_PORT -A -Bse "$QUERY"`
+    CLUSTER_NAME=`$MYSQL_BIN $MYSQL_OPTS --host=$ANY_HOSTNAME --port=$MONITORED_MYSQL_PORT -A -Bse "$QUERY"`
     if [ $? -ne 0 ]; then
         log_job_message "Failed to get wsrep_cluster_name" 1
 	    log_job 'FAILED' 'install garbd failed' 1
@@ -961,7 +981,7 @@ function install_garbd
 		    QUERY="select concat(path, filename) from cmon_uploads a , cmon_sw_package b where a.packageid=b.packageid and a.cid=b.cid and a.cid=${CLUSTER_ID} and b.selected=1 and (filename like 'galera%.deb')"
 		fi
 		
-		XFILENAME=`$MYSQL_BIN -B -N $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$CMON_DB_HOST --port=$CMON_DB_PORT --database=$CMON_DB_DB  -e "$QUERY"`
+		XFILENAME=`$MYSQL_BIN -B -N $MYSQL_OPTS --host=$CMON_DB_HOST --port=$CMON_DB_PORT --database=$CMON_DB_DB  -e "$QUERY"`
 		if [ ! -f $XFILENAME ]; then
 		    log_job_message "Could not find $XFILENAME - You must have a selected deployment package, or specify with -f <package name>" 1
 		    log_job 'FAILED' 'install garbd failed' 1
@@ -1050,7 +1070,7 @@ EOF
 	        exit 1;	           	     
     esac
     QUERY="INSERT IGNORE INTO cmon_configuration(cid,param,value,report_ts) VALUES($CLUSTER_ID,'VENDOR', '$VENDOR', now())"
-    `$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"`
+    `$MYSQL_BIN $MYSQL_OPTS -NAB --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"`
     if [  $? -ne 0 ]; then
 	log_job_message  "Query failed. $QUERY"  1	
     fi
@@ -1058,7 +1078,7 @@ EOF
     start_garbd $XHOSTNAME $DONOR_HOSTNAME $GALERA_PORT $CLUSTER_NAME
     sleep 2
     QUERY="REPLACE INTO ext_proc (cid, hostname,bin, opts,cmd, proc_name, port, status) VALUES($CLUSTER_ID, '$XHOSTNAME','/usr/bin/garbd', '-a gcomm://${DONOR_HOSTNAME} -g -o gmcast.listen_addr=tcp://0.0.0.0:${GALERA_PORT}  -d', '/usr/bin/garbd  -a gcomm://${DONOR_HOSTNAME} -g $CLUSTER_NAME -o gmcast.listen_addr=tcp://0.0.0.0:${GALERA_PORT} -d','garbd', $GALERA_PORT , 0)"
-    $MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$CMON_DB_HOST --port=$CMON_DB_PORT --database=$CMON_DB_DB -N -Bse "$QUERY"  2>&1 >${S9S_TMPDIR}/err.log    
+    $MYSQL_BIN $MYSQL_OPTS --host=$CMON_DB_HOST --port=$CMON_DB_PORT --database=$CMON_DB_DB -N -Bse "$QUERY"  2>&1 >${S9S_TMPDIR}/err.log    
     if [  $? -ne 0 ]; then
 	log_job_message "Query failed: $QUERY" 1
 	log_job_message "Garbd started but ClusterControl will not be able to manage the garbd" 1
@@ -1131,7 +1151,7 @@ function remove_garbd
     
     QUERY="DELETE FROM ext_proc WHERE cid=$CLUSTER_ID AND hostname='$XHOSTNAME' AND proc_name='garbd'"
     
-    $MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$CMON_DB_HOST --port=$CMON_DB_PORT --database=$CMON_DB_DB -N -Bse "$QUERY"  2>&1 >${S9S_TMPDIR}/err.log    
+    $MYSQL_BIN $MYSQL_OPTS --host=$CMON_DB_HOST --port=$CMON_DB_PORT --database=$CMON_DB_DB -N -Bse "$QUERY"  2>&1 >${S9S_TMPDIR}/err.log    
     if [  $? -ne 0 ]; then
 	echo "Query failed."
 	echo "Could not delete garbd from ext_proc"
@@ -1209,7 +1229,7 @@ function get_galera_nodestate
     local xHNAME=$1
     local xVAR="$2"
     QUERY="SHOW GLOBAL STATUS LIKE '$xVAR'"
-    STATE=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$xHNAME --port=$MONITORED_MYSQL_PORT -N -Bse "$QUERY"`
+    STATE=`$MYSQL_BIN $MYSQL_OPTS --host=$xHNAME --port=$MONITORED_MYSQL_PORT -N -Bse "$QUERY"`
     if [ $? -ne 0 ]; then
 	STATE=$(check_node_up $xHNAME)
 	if [ "$STATE" = "DOWN" ]; then
@@ -1228,7 +1248,7 @@ function get_galera_clusterstate
 {
     local xHNAME=$1
     QUERY="SHOW GLOBAL STATUS LIKE 'wsrep_cluster_status'"
-    STATE=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$xHNAME --port=$MONITORED_MYSQL_PORT -N -Bse "$QUERY"  2>/dev/null`
+    STATE=`$MYSQL_BIN $MYSQL_OPTS --host=$xHNAME --port=$MONITORED_MYSQL_PORT -N -Bse "$QUERY"  2>/dev/null`
     
     if [ $? -ne 0 ]; then
 	STATE=$(check_node_up $xHNAME)
@@ -1249,7 +1269,7 @@ function set_nodestate
     NODEID=$1
     STATE=$2
     QUERY="UPDATE mysql_server SET status=$STATE WHERE cid=$CLUSTER_ID AND nodeid=$NODEID"
-    `$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=127.0.0.1 --port=$CMON_DB_PORT -N -Bse "$QUERY" > /tmp/err`
+    `$MYSQL_BIN $MYSQL_OPTS --database=$CMON_DB_DB --host=127.0.0.1 --port=$CMON_DB_PORT -N -Bse "$QUERY" > /tmp/err`
     if [ $? -ne 0 ]; then
         echo "Warning! setting state failed - could not reach CMON DB (which can be ok)."
  	cat /tmp/err
@@ -1260,7 +1280,7 @@ function set_clusterstate
 {
     STATE=$1
     QUERY="UPDATE cluster_state SET report_ts=NOW(), status='$STATE' WHERE id=$CLUSTER_ID"
-    `$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=127.0.0.1 --port=$CMON_DB_PORT -N -Bse "$QUERY"`
+    `$MYSQL_BIN $MYSQL_OPTS --database=$CMON_DB_DB --host=127.0.0.1 --port=$CMON_DB_PORT -N -Bse "$QUERY"`
     if [ $? -ne 0 ]; then
         echo "setting cluster state failed"
     fi
@@ -1338,10 +1358,10 @@ function reinit_cluster
     load_opts $CLUSTER_ID
     
 
-    CLUSTER_RECOVERY=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$CMON_DB_PORT -N -Bse "$QUERY"  2>/dev/null`
+    CLUSTER_RECOVERY=`$MYSQL_BIN $MYSQL_OPTS  --host=127.0.0.1 --port=$CMON_DB_PORT -N -Bse "$QUERY"  2>/dev/null`
 
     QUERY="select group_concat(concat(hostname, ',', nodeid) SEPARATOR ' ') from ${CMON_DB_DB}.mysql_server where cid=${CLUSTER_ID}"
-    SERVER_LIST=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$CMON_DB_PORT -N -Bse "$QUERY"  2>/dev/null`
+    SERVER_LIST=`$MYSQL_BIN $MYSQL_OPTS  --host=127.0.0.1 --port=$CMON_DB_PORT -N -Bse "$QUERY"  2>/dev/null`
     if [ -z "$OS" ]; then
 	if [ `hash /usr/sbin/update-rc.d 2>/dev/null`  ]; then
 	    OS="redhat"
@@ -1352,7 +1372,7 @@ function reinit_cluster
 
 
     QUERY="select nodeid from ${CMON_DB_DB}.mysql_server where cid=${CLUSTER_ID} and hostname='$DONOR_HOSTNAME'"
-    DONOR_ID=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$CMON_DB_PORT -N -Bse "$QUERY"  2>/dev/null`
+    DONOR_ID=`$MYSQL_BIN $MYSQL_OPTS  --host=127.0.0.1 --port=$CMON_DB_PORT -N -Bse "$QUERY"  2>/dev/null`
 
     if [ "$DONOR_ID" = "NULL" ]; then
 	echo "$DONOR_HOSTNAME not found in cluster - check server address"
@@ -1381,7 +1401,7 @@ function reinit_cluster
     if [ $RESET -eq 1 ]; then
       echo "Preparing non-donor nodes"
       QUERY="SHOW GLOBAL VARIABLES LIKE 'datadir'"
-      DATADIR=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$DONOR_HOSTNAME --port=$MONITORED_MYSQL_PORT -A -Bse "$QUERY"`
+      DATADIR=`$MYSQL_BIN $MYSQL_OPTS --host=$DONOR_HOSTNAME --port=$MONITORED_MYSQL_PORT -A -Bse "$QUERY"`
       if [ $? -ne 0 ]; then
          echo "Failed to get datadir"
          exit 1
@@ -1471,7 +1491,7 @@ function make_primary
     load_opts $CLUSTER_ID
     
     QUERY="SHOW GLOBAL VARIABLES LIKE 'wsrep_provider_options'"
-    PROVIDER_OPTS=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$XHOSTNAME --port=$MONITORED_MYSQL_PORT -A -Bse "$QUERY"` 
+    PROVIDER_OPTS=`$MYSQL_BIN $MYSQL_OPTS --host=$XHOSTNAME --port=$MONITORED_MYSQL_PORT -A -Bse "$QUERY"` 
     if [ $? -ne 0 ]; then
 	echo "Failed to get provider options"
 	exit 1
@@ -1487,7 +1507,7 @@ function make_primary
 	CSTATE=$(get_galera_clusterstate $XHOSTNAME)
 	if [ "$CSTATE" = "non-Primary" ]; then	   
 	    QUERY="set global wsrep_provider_options='${PROVIDER_OPTS};pc.bootstrap=1'"
-	    $MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD --host=$XHOSTNAME --port=$MONITORED_MYSQL_PORT -e "$QUERY"
+	    $MYSQL_BIN $MYSQL_OPTS --host=$XHOSTNAME --port=$MONITORED_MYSQL_PORT -e "$QUERY"
 	    if [ $? -ne 0 ]; then
 		echo "$QUERY failed"
 		exit 1
@@ -1565,7 +1585,7 @@ function start_cluster
     load_opts $CLUSTER_ID
     
     QUERY="select group_concat(concat(hostname, ',', nodeid) SEPARATOR ' ') from ${CMON_DB_DB}.mysql_server where cid=${CLUSTER_ID}"
-    SERVER_LIST=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$CMON_DB_PORT -N -Bse "$QUERY"  2>/tmp/err`
+    SERVER_LIST=`$MYSQL_BIN $MYSQL_OPTS  --host=127.0.0.1 --port=$CMON_DB_PORT -N -Bse "$QUERY"  2>/tmp/err`
     if [ $? -ne 0 ]; then
         echo "Could not reach CMON DB. It may be down."
         cat /tmp/err
@@ -1582,7 +1602,7 @@ function start_cluster
 
 
     QUERY="select nodeid from ${CMON_DB_DB}.mysql_server where cid=${CLUSTER_ID} and hostname='$DONOR_HOSTNAME'"
-    DONOR_ID=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$CMON_DB_PORT -N -Bse "$QUERY"  2>/dev/null`
+    DONOR_ID=`$MYSQL_BIN $MYSQL_OPTS  --host=127.0.0.1 --port=$CMON_DB_PORT -N -Bse "$QUERY"  2>/dev/null`
 
     if [ "$DONOR_ID" = "NULL" ]; then
 	echo "$DONOR_HOSTNAME not found in cluster - check server address"
@@ -1658,7 +1678,7 @@ function status_cluster
     else
 	load_opts $CLUSTER_ID
 	QUERY="select group_concat(hostname SEPARATOR ' ') from ${CMON_DB_DB}.mysql_server where cid=${CLUSTER_ID}"
-        SERVER_LIST=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$CMON_DB_PORT -N -Bse "$QUERY"  2>/tmp/err`
+        SERVER_LIST=`$MYSQL_BIN $MYSQL_OPTS  --host=127.0.0.1 --port=$CMON_DB_PORT -N -Bse "$QUERY"  2>/tmp/err`
         if [ $? -ne 0 ]; then
             echo "Could not reach CMON DB. It may be down."
             cat /tmp/err
@@ -1763,7 +1783,7 @@ function start_node
     load_opts $CLUSTER_ID
     
     QUERY="select group_concat(concat(hostname, ',', nodeid) SEPARATOR ' ') from ${CMON_DB_DB}.mysql_server where cid=${CLUSTER_ID} and hostname='$XHOSTNAME'"
-    SERVER_LIST=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$CMON_DB_PORT -N -Bse "$QUERY"  2>/dev/null`
+    SERVER_LIST=`$MYSQL_BIN $MYSQL_OPTS --host=127.0.0.1 --port=$CMON_DB_PORT -N -Bse "$QUERY"  2>/dev/null`
 	
     if [ $? -ne 0 ]; then
         echo "Could not reach CMON DB. It may be down."
@@ -1781,7 +1801,7 @@ function start_node
 
 
     QUERY="select nodeid from ${CMON_DB_DB}.mysql_server where cid=${CLUSTER_ID} and hostname='$DONOR_HOSTNAME'"
-    DONOR_ID=`$MYSQL_BIN $MYSQL_OPTS --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$CMON_DB_PORT -N -Bse "$QUERY"  2>/dev/null`
+    DONOR_ID=`$MYSQL_BIN $MYSQL_OPTS  --host=127.0.0.1 --port=$CMON_DB_PORT -N -Bse "$QUERY"  2>/dev/null`
 
     if [ "$DONOR_ID" = "NULL" ]; then
 	echo "$DONOR_HOSTNAME not found in cluster - check server address"
