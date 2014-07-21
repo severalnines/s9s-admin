@@ -512,7 +512,7 @@ function install_mysql
 	    remote_copy $S9S_TMPDIR/epel-release-${EPEL_REL}.noarch.rpm $XHOSTNAME $S9S_TMPDIR
 	    remote_cmd_nofail $XHOSTNAME sync
 	    remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY yum -y remove epel-release"	
-	    remote_cmd $XHOSTNAME "rpm -Uvh ${S9S_TMPDIR}/epel-release-6-8.noarch.rpm"
+	    remote_cmd $XHOSTNAME "rpm -Uvh ${S9S_TMPDIR}/epel-release-${EPEL_REL}.noarch.rpm"
 	fi
 	remote_cmd_nofail $XHOSTNAME "rm -rf /var/lib/mysql/RPM_UPGRADE_MARKER"
 	remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY yum -y remove MySQL* mysql* Percona* percona* MariaDB* mariadb* MySQL-Cluster* MySQL-cluster* mysql-cluster* galera*"	
