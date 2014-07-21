@@ -1989,7 +1989,7 @@ function encrypt_replication()
 			else
 				ENCRYPT_STATUS='enabled'
 			fi
-			echo "$HOST     key=$KEY_LIST, cert: $CERT_LIST, status: $ENCRYPT_STATUS"
+			echo "$HOST     key: $KEY_LIST, cert: $CERT_LIST, status: $ENCRYPT_STATUS"
 		done
 	fi
 }
