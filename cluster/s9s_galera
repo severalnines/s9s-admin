@@ -1986,11 +1986,14 @@ function encrypt_replication()
 			CERT_LIST=`$MYSQLADMIN -u cmon --password=$CMON_PASSWORD --host=$HOST --port=$MONITORED_MYSQL_PORT variables | grep wsrep_provider_options | tr ';' '\n' | grep $CERT_OPTION | awk {'print $3'} 2>/tmp/err`
 			if [ -z "$KEY_LIST" ] && [ -z "$CERT_LIST" ]; then
 				KEY_LIST='null' && CERT_LIST='null' && ENCRYPT_STATUS='disabled'
+				return_val=1
 			else
 				ENCRYPT_STATUS='enabled'
+				return_val=0
 			fi
 			echo "$HOST     key: $KEY_LIST, cert: $CERT_LIST, status: $ENCRYPT_STATUS"
 		done
+		exit $return_val
 	fi
 }
 
