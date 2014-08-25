@@ -33,7 +33,7 @@ function init
     CMON_PASSWORD=$mysql_password
     CMON_DB_HOST=$mysql_hostname
     CMON_DB_DB=cmon
-    BACKUP_LOGFILE=/tmp/s9s_sw_update_${CLUSTER_ID}.log
+    INSTALLATION_LOGFILE=/tmp/s9s_sw_update_${CLUSTER_ID}.log
     LOCKFILE="/tmp/s9s_sw_update_${CLUSTER_ID}.lock"
 ### NO MODS BELOW UNLESS YOU KNOW WHAT YOU DO:
     
@@ -116,21 +116,23 @@ function write_email
 {
   SUBJECT=$1
   MSG=$2
-  cat $BACKUP_LOGFILE | sed  -e "s/'/\\\'/g" -e 's/"/\\"/g' > /tmp/s9s_backup_log_escaped_${CLUSTER_ID}
+  cat $INSTALLATION_LOGFILE | sed  -e "s/'/\\\'/g" -e 's/"/\\"/g' > /tmp/s9s_backup_log_escaped_${CLUSTER_ID}
   df -h > /tmp/s9s_diskspace_${CLUSTER_ID}
-  MSG="$MSG \nBackup log follows:\n `cat /tmp/s9s_backup_log_escaped_${CLUSTER_ID}`\n\n`cat /tmp/s9s_diskspace_${CLUSTER_ID}`" 
-  QUERY="INSERT INTO simple_email(cid,subject,message) VALUES($CLUSTER_ID, \"$SUBJECT\", \"$MSG\")"
+  MSG="$MSG \nInstallation log follows:\n `cat /tmp/s9s_backup_log_escaped_${CLUSTER_ID}`\n\n`cat /tmp/s9s_diskspace_${CLUSTER_ID}`" 
+  QUERY="INSERT INTO outgoing_messages(cid,component, subject, body) VALUES($CLUSTER_ID,'SoftwareInstallation', \"$SUBJECT\", \"$MSG\")"
   $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
 }
 
 function write_logfile
 {
-   cat $BACKUP_LOGFILE | sed  -e "s/'/\\\'/g" -e 's/"/\\"/g' > /tmp/s9s_backup_log_escaped_${CLUSTER_ID}
+   cat $INSTALLATION_LOGFILE | sed  -e "s/'/\\\'/g" -e 's/"/\\"/g' > /tmp/s9s_backup_log_escaped_${CLUSTER_ID}
    LOG_CONTENT=`cat /tmp/s9s_backup_log_escaped_${CLUSTER_ID}`
    SIZE=`stat --printf='%s' /tmp/s9s_backup_log_escaped_${CLUSTER_ID}`
    HNAME=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD  --host=127.0.0.1 --port=$CMON_DB_PORT -e "SHOW GLOBAL VARIABLES LIKE 'hostname'" | awk '{print $2;}'`
-   QUERY="REPLACE INTO cmon_host_log(cid, hostname, filename, result_len, result, report_ts,description, tag) VALUES ($CLUSTER_ID,'$HNAME', '$BACKUP_LOGFILE', $SIZE, \"$LOG_CONTENT\", NOW(), 's9s_backup log', 's9s_backup')"
-   $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
+   QUERY="REPLACE INTO cmon_host_log(cid, hostname, filename, result_len, result, report_ts,description, tag) VALUES ($CLUSTER_ID,'$HNAME', '$INSTALLATION_LOGFILE', $SIZE, \"$LOG_CONTENT\", NOW(), 's9s_backup log', 's9s_backup')"
+
+   echo "$QUERY" > /tmp/query.sql
+   $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  < /tmp/query.sql 2>&1 >/tmp/err.log
    rm -rf /tmp/s9s_backup_log_escaped_${CLUSTER_ID}
 }
 
@@ -630,70 +632,67 @@ function install_mysql
     echo $VENDOR
     case $VENDOR in
 	percona)
-	    if [ "$OS" = "redhat" ]; then
+	        if [ "$OS" = "redhat" ]; then
 		#remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY yum -y install perl-DBD-MySQL.x86_64"	
-		remote_cmd $XHOSTNAME "$HTTP_PROXY rpm -Uhv --force http://www.percona.com/downloads/percona-release/percona-release-0.0-1.x86_64.rpm"
-		if [ "$GALERA_VERSION" = "3.x" ]; then
-		    remote_cmd $XHOSTNAME "$HTTP_PROXY yum -y install Percona-XtraDB-Cluster-server-56 Percona-XtraDB-Cluster-client-56 Percona-XtraDB-Cluster-galera-3 percona-xtrabackup"
-		fi
-		if [ "$GALERA_VERSION" = "2.x" ]; then
-		    remote_cmd $XHOSTNAME "$HTTP_PROXY yum -y install Percona-XtraDB-Cluster-server-55 Percona-XtraDB-Cluster-client-55 Percona-XtraDB-Cluster-galera-2 percona-xtrabackup"
-		fi
-	    else
-		remote_cmd $XHOSTNAME "$HTTP_PROXY apt-get update"
-		remote_cmd_nofail $XHOSTNAME "sed -i.bak '/repo.percona.com/d'  /etc/apt/sources.list"
-		$HTTP_PROXY wget --no-check-certificate --tries=5  -O ${S9S_TMPDIR}/RPM-GPG-KEY-percona http://www.percona.com/redir/downloads/RPM-GPG-KEY-percona
-		if [ $? -ne 0 ]; then
-		    log_job_message "Failed: $HTTP_PROXY wget --no-check-certificate --tries=5  -O ${S9S_TMPDIR}/RPM-GPG-KEY-percona http://www.percona.com/redir/downloads/RPM-GPG-KEY-percona" 1
-		    log_job 'FAILED' 'install garbd failed' 1
-		    write_email "s9s_sw_update failed" "wget RPM-GPG-KEY-percona failed. Check job messages."
-		    exit 1
-		fi
-		remote_cmd_nofail $XHOSTNAME "chown  -R $SSH_USER:$SSH_USER $S9S_TMPDIR"
-		remote_copy $S9S_TMPDIR/RPM-GPG-KEY-percona ${XHOSTNAME} ${S9S_TMPDIR}/RPM-GPG-KEY-percona
-		remote_cmd $XHOSTNAME "gpg --import ${S9S_TMPDIR}/RPM-GPG-KEY-percona"
-		remote_cmd $XHOSTNAME "/bin/sh -c 'gpg -a --export CD2EFD2A | apt-key add -'"
-		remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"deb http://repo.percona.com/apt `lsb_release -c -s` main\" >> /etc/apt/sources.list'"
-		remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"deb-src http://repo.percona.com/apt `lsb_release -c -s` main\" >> /etc/apt/sources.list'"
-		remote_cmd $XHOSTNAME "$HTTP_PROXY apt-get -q -y update"
-		if [ "$GALERA_VERSION" = "3.x" ]; then
-		    remote_cmd $XHOSTNAME "LC_ALL=C DEBIAN_FRONTEND=noninteractive $HTTP_PROXY apt-get -o Dpkg::Options::='--force-confnew' -y -q install percona-xtradb-cluster-galera-3.x percona-xtradb-cluster-client-5.6 percona-xtradb-cluster-server-5.6 percona-xtrabackup"
-		fi
-		if [ "$GALERA_VERSION" = "2.x" ]; then
-		    remote_cmd $XHOSTNAME "LC_ALL=C DEBIAN_FRONTEND=noninteractive $HTTP_PROXY apt-get -o Dpkg::Options::='--force-confnew' -y -q install percona-xtradb-cluster-galera-2.x percona-xtradb-cluster-client-5.5 percona-xtradb-cluster-server-5.5 percona-xtrabackup"
-		fi
-		remote_cmd $XHOSTNAME "sync"	
-		remote_cmd $XHOSTNAME "test -f /usr/sbin/mysqld"
-		remote_cmd $XHOSTNAME "test -f /etc/init.d/mysql"
-	    fi
-	    ;;
-	internal_pkg | codership | percona_nonet | mariadb_tgz | percona_tgz)	    
+		        remote_cmd $XHOSTNAME "$HTTP_PROXY rpm -Uhv --force http://www.percona.com/downloads/percona-release/percona-release-0.0-1.x86_64.rpm"
+                MYSQL_VERSION2=`echo $MYSQL_VERSION | tr -d .`
+		        if [ "$GALERA_VERSION" = "3.x" ]; then            
+                    GALERA_VERSION2=3
+		        fi
+		        if [ "$GALERA_VERSION" = "2.x" ]; then
+                    GALERA_VERSION2=2
+		        fi
+              	remote_cmd $XHOSTNAME "$HTTP_PROXY yum -y install Percona-XtraDB-Cluster-server-${MYSQL_VERSION2} Percona-XtraDB-Cluster-client-${MYSQL_VERSION2} Percona-XtraDB-Cluster-galera-${GALERA_VERSION2} percona-xtrabackup"  
+	        else
+		        remote_cmd $XHOSTNAME "$HTTP_PROXY apt-get update"
+		        remote_cmd_nofail $XHOSTNAME "sed -i.bak '/repo.percona.com/d'  /etc/apt/sources.list"
+		        $HTTP_PROXY wget --no-check-certificate --tries=5  -O ${S9S_TMPDIR}/RPM-GPG-KEY-percona http://www.percona.com/redir/downloads/RPM-GPG-KEY-percona
+		        if [ $? -ne 0 ]; then
+		            log_job_message "Failed: $HTTP_PROXY wget --no-check-certificate --tries=5  -O ${S9S_TMPDIR}/RPM-GPG-KEY-percona http://www.percona.com/redir/downloads/RPM-GPG-KEY-percona" 1
+		            log_job 'FAILED' 'install garbd failed' 1
+		            write_email "s9s_sw_update failed" "wget RPM-GPG-KEY-percona failed. Check job messages."
+		            exit 1
+		        fi
+		        remote_cmd_nofail $XHOSTNAME "chown  -R $SSH_USER:$SSH_USER $S9S_TMPDIR"
+		        remote_copy $S9S_TMPDIR/RPM-GPG-KEY-percona ${XHOSTNAME} ${S9S_TMPDIR}/RPM-GPG-KEY-percona
+		        remote_cmd $XHOSTNAME "gpg --import ${S9S_TMPDIR}/RPM-GPG-KEY-percona"
+		        remote_cmd $XHOSTNAME "/bin/sh -c 'gpg -a --export CD2EFD2A | apt-key add -'"
+		        remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"deb http://repo.percona.com/apt `lsb_release -c -s` main\" >> /etc/apt/sources.list'"
+		        remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"deb-src http://repo.percona.com/apt `lsb_release -c -s` main\" >> /etc/apt/sources.list'"
+		        remote_cmd $XHOSTNAME "$HTTP_PROXY apt-get -q -y update"
+		        remote_cmd $XHOSTNAME "LC_ALL=C DEBIAN_FRONTEND=noninteractive $HTTP_PROXY apt-get -o Dpkg::Options::='--force-confnew' -y -q install percona-xtradb-cluster-galera-${GALERA_VERSION} percona-xtradb-cluster-client-${MYSQL_VERSION} percona-xtradb-cluster-server-${MYSQL_VERSION} percona-xtrabackup"
+		        remote_cmd $XHOSTNAME "sync"	
+		        remote_cmd $XHOSTNAME "test -f /usr/sbin/mysqld"
+		        remote_cmd $XHOSTNAME "test -f /etc/init.d/mysql"
+	        fi
+	        ;;
+	    internal_pkg | codership | percona_nonet | mariadb_tgz | percona_tgz)	    
 	    if [ -z "$PKG_NAME" ]; then
 		## default to MYSQL_INITIAL_DEPLOY if not set
-		PKG_NAME="MYSQL_INITIAL_DEPLOY"
+		    PKG_NAME="MYSQL_INITIAL_DEPLOY"
 	    fi
 	    QUERY="SELECT packageid FROM ${CMON_DB}.cmon_sw_package WHERE name='$PKG_NAME' AND cid=$CLUSTER_ID"
 	    PID=`$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY"`	
 	    if [ -z "$PID" ]; then
-		log_job_message "Invalid package name $PKG_NAME" 1
-		log_job 'FAILED' 'job failed' 1
-		write_email "s9s_sw_update failed" "Invalid package name $PKG_NAME. Check job messages."
-		exit 1
+		    log_job_message "Invalid package name $PKG_NAME" 1
+		    log_job 'FAILED' 'job failed' 1
+		    write_email "s9s_sw_update failed" "Invalid package name $PKG_NAME. Check job messages."
+		    exit 1
 	    fi
 	    QUERY="SELECT group_concat(concat(path,',', filename) SEPARATOR ' ') FROM ${CMON_DB}.cmon_uploads WHERE packageid='$PID' AND cid=$CLUSTER_ID"
 	    FILELIST=`$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY"`	    
 	    if [ -z "$FILELIST" ]; then
-		log_job_message "No files in package $PKG_NAME" 1
-		log_job 'FAILED' 'job failed' 1
-		write_email "s9s_sw_update failed" "No files in $PKG_NAME. Check job messages."
-		exit 1	    
+		    log_job_message "No files in package $PKG_NAME" 1
+		    log_job 'FAILED' 'job failed' 1
+		    write_email "s9s_sw_update failed" "No files in $PKG_NAME. Check job messages."
+		    exit 1	    
 	    fi
 	    
 	    if [ "$FILELIST" = "NULL" ]; then
-		log_job_message "No files in package $PKG_NAME" 1
-		log_job 'FAILED' 'job failed' 1
-		write_email "s9s_sw_update failed" "No files in $PKG_NAME. Check job messages."
-		exit 1	    
+		    log_job_message "No files in package $PKG_NAME" 1
+		    log_job 'FAILED' 'job failed' 1
+		    write_email "s9s_sw_update failed" "No files in $PKG_NAME. Check job messages."
+		    exit 1	    
 	    fi
 	    
 	    
@@ -752,8 +751,8 @@ function install_mysql
 	    remote_cmd $XHOSTNAME "test -f ${MYSQL_BASEDIR}/bin/mysql"	    
 	    ;;
 	    mariadb)
-	        if [ "$OS" = "redhat" ]; then
-                if [ "$GALERA_VERSION" = "2.x" ]; then
+	        if [ "$OS" = "redhat" ]; then                
+                if [ "$MYSQL_VERSION" = "5.5" ]; then
 		            cat << 'EOF' > $S9S_TMPDIR/MariaDB.centos5
 [mariadb]
 name = MariaDB
@@ -783,7 +782,7 @@ gpgkey=https://yum.mariadb.org/RPM-GPG-KEY-MariaDB
 gpgcheck=1                 
 EOF
                 fi
-                if [ "$GALERA_VERSION" = "3.x" ]; then
+                if [ "$MYSQL_VERSION" = "10.0" ]; then
 		            cat << 'EOF' > $S9S_TMPDIR/MariaDB.centos5
 [mariadb]
 name = MariaDB
@@ -833,14 +832,14 @@ EOF
 		        remote_cmd $XHOSTNAME "gpg --import ${S9S_TMPDIR}/RPM-GPG-KEY-percona"
 		        remote_cmd $XHOSTNAME "/bin/sh -c 'gpg -a --export CD2EFD2A | apt-key add -'"
 		        remote_cmd $XHOSTNAME "apt-key adv --recv-keys --keyserver keyserver.ubuntu.com 0xcbcb082a1bb943db"
-		        if [ "$GALERA_VERSION" = "2.x" ]; then
+		        if [ "$MYSQL_VERSION" = "5.5" ]; then
 		            remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"deb http://ftp.osuosl.org/pub/mariadb/repo/5.5/`lsb_release -i -s | tr '[A-Z]' '[a-z]'` `lsb_release -c -s` main\" > /etc/apt/sources.list.d/MariaDB.list'"
 		            remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"deb-src http://ftp.osuosl.org/pub/mariadb/repo/5.5/`lsb_release -i -s | tr '[A-Z]' '[a-z]'` `lsb_release -c -s` main\" >> /etc/apt/sources.list.d/MariaDB.list'"
 		            remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"Package: *\nPin: origin osuosl.org\nPin-Priority: 1000\n\nPackage: *\nPin: origin ftp.osuosl.org\nPin-Priority: 1000\n\nPackage: libmysqlclient18\nPin: origin ftp.osuosl.org\nPin-Priority: 1000\" > /etc/apt/preferences.d/00MariaDB.pref'"
 		            remote_cmd $XHOSTNAME "apt-get -q -y update"
 		            remote_cmd $XHOSTNAME "LC_ALL=C DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::='--force-confnew' --force-yes -y -q install  galera  mariadb-galera-server-5.5 mariadb-client-5.5 libmariadbclient18 mariadb-client-core-5.5 rsync netcat-openbsd"		
                 fi
-		        if [ "$GALERA_VERSION" = "3.x" ]; then
+		        if [ "$MYSQL_VERSION" = "10.0" ]; then
 		            remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"deb http://ftp.osuosl.org/pub/mariadb/repo/10.0/`lsb_release -i -s | tr '[A-Z]' '[a-z]'` `lsb_release -c -s` main\" > /etc/apt/sources.list.d/MariaDB.list'"
 		            remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"deb-src http://ftp.osuosl.org/pub/mariadb/repo/10.0/`lsb_release -i -s | tr '[A-Z]' '[a-z]'` `lsb_release -c -s` main\" >> /etc/apt/sources.list.d/MariaDB.list'"
 		            remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"Package: *\nPin: origin osuosl.org\nPin-Priority: 1000\n\nPackage: *\nPin: origin ftp.osuosl.org\nPin-Priority: 1000\n\nPackage: libmysqlclient18\nPin: origin ftp.osuosl.org\nPin-Priority: 1000\" > /etc/apt/preferences.d/00MariaDB.pref'"
@@ -1359,6 +1358,7 @@ function load_opts
     MYSQL_BASEDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MYSQL_BASEDIR' AND cid=$CLUSTER_ID" 2>/dev/null`
     STAGING_DIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='STAGING_DIR' AND cid=$CLUSTER_ID" 2>/dev/null`
     GALERA_VERSION=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='GALERA_VERSION' AND cid=$CLUSTER_ID" 2>/dev/null`
+    MYSQL_VERSION=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MYSQL_VERSION' AND cid=$CLUSTER_ID" 2>/dev/null`
     MYSQL_SCRIPTDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SCRIPTDIR' AND cid=$CLUSTER_ID" 2>/dev/null`
     SSH_IDENTITY=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_IDENTITY' AND cid=$CLUSTER_ID" 2>/dev/null`
     SSH_USER=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_USER' AND cid=$CLUSTER_ID" 2>/dev/null`
@@ -1408,7 +1408,16 @@ function load_opts
     fi
 
     if [ "$GALERA_VERSION" = "" ]; then
-	GALERA_VERSION='2.x'
+	    GALERA_VERSION='2.x'
+    fi
+
+    if [ "$MYSQL_VERSION" = "" ]; then
+        if [ "$GALERA_VERSION" = "2.x" ]; then
+	        MYSQL_VERSION='5.5'
+        fi
+        if [ "$GALERA_VERSION" = "3.x" ]; then
+	        MYSQL_VERSION='5.6'
+        fi
     fi
     
     SSH_OPTS="$SSH_OPTSX -p$SSH_PORT $SSH_OPTS"    

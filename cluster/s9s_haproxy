@@ -65,8 +65,9 @@ function write_email
   MSG=$2
   cat $HAPROXY_LOG | sed  -e "s/'/\\\'/g" -e 's/"/\\"/g' > /tmp/s9s_haproxy_log_escaped
   MSG="$MSG \nInstallation log follows:\n `cat /tmp/s9s_haproxy_log_escaped`" 
-  QUERY="INSERT INTO simple_email(cid,subject,message) VALUES($CLUSTER_ID, \"$SUBJECT\", \"$MSG\")"
-  $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
+  QUERY="INSERT INTO outgoing_messages(cid,component, subject, body) VALUES($CLUSTER_ID,'SoftwareInstallation', \"$SUBJECT\", \"$MSG\")"
+  echo "$QUERY" > /tmp/query.sql
+  $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  < /tmp/query.sql 2>&1 >/tmp/err.log
 }
 
 
@@ -329,7 +330,7 @@ MYSQL_HOST="127.0.0.1"
 MYSQL_PORT=$MYSQL_PORT
 MYSQL_USERNAME="cmon"
 MYSQL_PASSWORD=$CMON_PASSWORD
-MYSQL_OPTS="-N -q -A"
+MYSQL_OPTS="-N -q -A --connect-timeout=10"
 TMP_FILE="/dev/shm/mysqlchk.$$.out"
 ERR_FILE="/dev/shm/mysqlchk.$$.err"
 FORCE_FAIL="/dev/shm/proxyoff"
@@ -359,7 +360,7 @@ return_ok()
     echo -e "\r\n"
     echo -e "<html><body>MySQL is running.</body></html>\r\n"
     echo -e "\r\n"
-    rm $ERR_FILE $TMP_FILE
+  #  rm $ERR_FILE $TMP_FILE
     exit 0
 }
 return_fail()
@@ -371,27 +372,24 @@ return_fail()
     echo -e "<html><body>MySQL is *down*.</body></html>\r\n"
     sed -e 's/\n$/\r\n/' $ERR_FILE
     echo -e "\r\n"
-    rm $ERR_FILE $TMP_FILE
+ #   rm $ERR_FILE $TMP_FILE
     exit 1
 }
-preflight_check
-if [ -f "$FORCE_FAIL" ]; then
-        echo "$FORCE_FAIL found" > $ERR_FILE
-        return_fail;
-fi
-$MYSQL_BIN $MYSQL_OPTS --host=$MYSQL_HOST --port=$MYSQL_PORT --user=$MYSQL_USERNAME --password=$MYSQL_PASSWORD -e "$CHECK_QUERY" > $TMP_FILE 2> $ERR_FILE
+#preflight_check
+#if [ -f "$FORCE_FAIL" ]; then
+#        echo "$FORCE_FAIL found" > $ERR_FILE
+#        return_fail;
+#fi
+status=$($MYSQL_BIN $MYSQL_OPTS --host=$MYSQL_HOST --port=$MYSQL_PORT --user=$MYSQL_USERNAME --password=$MYSQL_PASSWORD -e "$CHECK_QUERY;" | awk '{print $2;}')
 if [ $? -ne 0 ]; then
         return_fail;
 fi
-status=`cat  $TMP_FILE | awk '{print $2;}'`
-
 if [ $status -eq 2 ] || [ $status -eq 4 ] ; then
    if [ $status -eq 2 ]; then
-     $MYSQL_BIN $MYSQL_OPTS --host=$MYSQL_HOST --port=$MYSQL_PORT --user=$MYSQL_USERNAME --password=$MYSQL_PASSWORD -e "$CHECK_QUERY2" > $TMP_FILE 2> $ERR_FILE
+     method=$($MYSQL_BIN $MYSQL_OPTS --host=$MYSQL_HOST --port=$MYSQL_PORT --user=$MYSQL_USERNAME --password=$MYSQL_PASSWORD -e "$CHECK_QUERY2;" | awk '{print $2;}')
      if [ $? -ne 0 ]; then
         return_fail;
      fi
-     method=`cat  $TMP_FILE | awk '{print $2;}'`
      if [ -z "$method" ] || [ "$method" = "rsync" ] || [ "$method" = "mysqldump" ]; then
          return_fail;
      fi

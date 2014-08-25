@@ -1908,7 +1908,9 @@ function encrypt_replication()
 	EXPIRE_DAY=36500
 	KEY_NAME=galera_rep.key
 	CERT_NAME=galera_rep.crt
-	CERTKEY_PATH=/etc/ssl/galera
+    ## Let's store the certs here so they can be copied to 
+    ## target server once we add a node
+	CERTKEY_PATH=/etc/ssl/galera/cluster_{$CLUSTER_ID}
 	
 	KEY_FILE=$CERTKEY_PATH/$KEY_NAME
 	CERT_FILE=$CERTKEY_PATH/$CERT_NAME
@@ -2006,11 +2008,14 @@ function encrypt_replication()
 			CERT_LIST=`$MYSQLADMIN -u cmon --password=$CMON_PASSWORD --host=$HOST --port=$MONITORED_MYSQL_PORT variables | grep wsrep_provider_options | tr ';' '\n' | grep $CERT_OPTION | awk {'print $3'} 2>/tmp/err`
 			if [ -z "$KEY_LIST" ] && [ -z "$CERT_LIST" ]; then
 				KEY_LIST='null' && CERT_LIST='null' && ENCRYPT_STATUS='disabled'
+				return_val=1
 			else
 				ENCRYPT_STATUS='enabled'
+				return_val=0
 			fi
-			echo "$HOST     key=$KEY_LIST, cert: $CERT_LIST, status: $ENCRYPT_STATUS"
+			echo "$HOST     key: $KEY_LIST, cert: $CERT_LIST, status: $ENCRYPT_STATUS"
 		done
+		exit $return_val
 	fi
 }
 

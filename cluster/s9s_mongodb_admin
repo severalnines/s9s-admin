@@ -208,9 +208,12 @@ function write_email
   SUBJECT=$1
   MSG=$2
   cat $BACKUP_LOGFILE | sed  -e "s/'/\\\'/g" -e 's/"/\\"/g' > /tmp/s9s_backup_log_escaped
-  MSG="$MSG \nBackup log follows:\n `cat /tmp/s9s_backup_log_escaped`" 
-  QUERY="INSERT INTO simple_email(cid,subject,message) VALUES($CLUSTER_ID, \"$SUBJECT\", \"$MSG\")"
-  $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
+  MSG="$MSG \nLlog follows:\n `cat /tmp/s9s_backup_log_escaped`" 
+  
+  QUERY="INSERT INTO outgoing_messages(cid,component, subject, body) VALUES($CLUSTER_ID,'SoftwareInstallation', \"$SUBJECT\", \"$MSG\")"
+  echo "$QUERY" > /tmp/query.sql
+  $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  < /tmp/query.sql 2>&1 >/tmp/err.log
+  
 }
 
 
