@@ -846,7 +846,7 @@ EOF
 		        remote_cmd $XHOSTNAME "LC_ALL=C DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::='--force-confnew' --force-yes -y -q install percona-xtrabackup percona-toolkit"
 		        remote_cmd_nofail $XHOSTNAME "killall -9 mysqld mysqld_safe mysql mysql_chk ndb_mgmd ndbmtd ndbd"
 		        remote_cmd_nofail $XHOSTNAME "rm -rf /etc/my.cnf"
-		        remote_cmd $XHOSTNAME  "chown 755 /etc/init.d/mysql"
+		        remote_cmd $XHOSTNAME  "chmod 755 /etc/init.d/mysql"
 		        remote_cmd $XHOSTNAME  "sed -i.bak 's#MYSQLD_STARTUP_TIMEOUT:-30#MYSQLD_STARTUP_TIMEOUT:-3600#g' /etc/init.d/mysql"
 		        remote_cmd $XHOSTNAME  "/usr/sbin/update-rc.d mysql defaults"
 	        fi

@@ -855,7 +855,7 @@ EOF
 		    remote_cmd $xhost "mv $S9S_TMPDIR/10gen.repo /etc/yum.repos.d/"
 		    remote_cmd_nofail $xhost "$HTTP_PROXY yum -y remove mongodb*"
 		    remote_cmd_nofail $xhost "$HTTP_PROXY yum -y install mongodb-org"
-		    remote_cmd $xhost  "chown 755 /etc/init.d/mongod"
+		    remote_cmd $xhost  "chmod 755 /etc/init.d/mongod"
 		    remote_cmd $xhost  "/sbin/chkconfig --add mongod"
 		    ;;
 		debian)
