@@ -35,6 +35,15 @@ function init
     CMON_DB_DB=cmon
     MYSQL_BIN=$mysql_basedir/bin//mysql
     MYSQL_BIN2=$mysql_bindir/mysql
+
+    if  ! test -f $MYSQL_BIN ; then
+        if  ! test -f $MYSQL_BIN2 ; then
+            MYSQL_BIN=/usr/bin/mysql
+            mysql_basedir=/usr/
+        fi
+    fi
+    
+
     CLUSTER_STATE_TIMEOUT=3600
     START_BALANCER_TIMEOUT=3600
     BACKUP_LOGFILE="/tmp/s9s_mongodb_backup.log"
