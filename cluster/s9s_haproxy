@@ -1013,7 +1013,7 @@ function install_haproxy
     fi
     remote_cmd_nofail $LB_HOSTNAME "$PKG_MGR $PHP_CURL"
     if [ -n "$BUILD_FROM_SRC" ]; then
-	HAPROXY_SRC="haproxy-1.4.23.tar.gz"
+	HAPROXY_SRC="haproxy-1.5.3.tar.gz"
 	if [ -n "$BUILD_FROM_SRC_FILE" ]; then
 	    if [ ! -f $BUILD_FROM_SRC_FILE ]; then
 		echo "$BUILD_FROM_SRC_FILE could not be found"
@@ -1024,8 +1024,7 @@ function install_haproxy
 	    HAPROXY_SRC=`basename $BUILD_FROM_SRC_FILE`
 	    remote_copy $BUILD_FROM_SRC_FILE $LB_HOSTNAME /tmp/
 	else
-	    remote_cmd $LB_HOSTNAME "sh -c '$HTTP_PROXY wget -O/tmp/${HAPROXY_SRC}  http://haproxy.1wt.eu/download/1.4/src/${HAPROXY_SRC}'"	 	
-	    
+	    remote_cmd $LB_HOSTNAME "sh -c '$HTTP_PROXY wget -O/tmp/${HAPROXY_SRC} http://www.haproxy.org/download/1.5/src/${HAPROXY_SRC}'"
 	fi
 	remote_cmd $LB_HOSTNAME "$PKG_MGR $BUILD"
 	remote_cmd $LB_HOSTNAME "tar xvfz /tmp/${HAPROXY_SRC} -C /tmp/"
