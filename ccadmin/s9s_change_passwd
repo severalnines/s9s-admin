@@ -304,6 +304,15 @@ function change_password_mysql_mycnf
     fi
 }
 
+function change_password_mysql_mycmoncnf
+{
+    local h=$1
+    local new_password=$2
+    MYCNF=$CONFIGDIR/my_cmon.cnf
+    new_password2=$(printf '%q' $new_password)
+    remote_cmd $h "[ -f $MYCNF ] sed -i \"s/password=.*/password=\'$new_password2\'/\" $MYCNF"    
+}
+
 
 function change_password_mysql_mysqlchk
 {
@@ -487,7 +496,13 @@ function change_cmon_password
 	        exist=$(remote_cmd_getreply $h "[ -f $F ] && echo 'OK'")
 	        if [ "$exist" = "OK" ]; then
 	            new_password=$(printf '%q' $NEW_PASSWORD)
-	            remote_cmd $h "sed -i \"s/^CMON_PASSWORD=.*/CMON_PASSWORD=\'$new_password\'/\" $F"	    
+	            remote_cmd_nofail $h "sed -i \"s/^CMON_PASSWORD=.*/CMON_PASSWORD=\'$new_password\'/\" $F"	    
+	        fi
+	        F=$CONFIGDIR/my_cmon.cnf
+	        exist=$(remote_cmd_getreply $h "[ -f $F ] && echo 'OK'")
+	        if [ "$exist" = "OK" ]; then
+	            new_password=$(printf '%q' $NEW_PASSWORD)
+	            remote_cmd $h "sed -i \"s/.*password=.*/password=\'$new_password\'/\" $F"	    
 	        fi
         done
         
@@ -687,5 +702,8 @@ if [ ! -e $LOCKFILE ]; then
     esac
     rm $LOCKFILE
     trap - INT TERM EXIT
+else
+    echo "$LOCKFILE exists, remove it if s9s_change_passwd is not running"
+    exit 1
 fi
 

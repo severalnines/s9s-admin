@@ -19,14 +19,14 @@ function init
     do
 	X=`grep -l cluster_id=${CLUSTER_ID} $f 2>&1 `	
 	if [ $? -eq 0 ]; then 
-	    source $f
-            configfile=$f
+        source $f
+        configfile=$f
 	fi
     done
 
     if [ -z "$configfile" ]; then
-	echo "No matching configuration file found having cluster_id=${CLUSTER_ID}"
-	exit 1
+        echo "No matching configuration file found having cluster_id=${CLUSTER_ID}"
+        exit 1
     fi
     
     source $configfile   
@@ -550,20 +550,26 @@ function install_notifycc
 	SERVER_LIST="$XHOSTNAME"
     fi
 
+MYCNF_CMON=$S9S_TMPDIR/my_cmon.cnf
+cat << 'EOF' > $S9S_TMPDIR/my_cmon.cnf
+[mysql_cmon]
+user=cmon
+password=
+EOF
 
 cat << 'EOF' > $S9S_TMPDIR/wsrep_notify_cc
 #!/bin/bash
 
 CMON_DB_HOST=CMON_MYSQL_HOSTNAME
 CMON_DB_PORT=CMOM_MYSQL_PORT
-CMON_USER=cmon
 CMON_DB_DB=cmon
-CMON_PASSWORD=CMON_MYSQL_PASSWORD
 MYSQL_BIN=MYSQL_BINDIR
 CONNECT_TIMEOUT=10
 MYSQL_HOSTNAME=MANAGED_MYSQL_HOSTNAME
 CLUSTER_ID=CMON_CLUSTERID
+MYSQL_CONFIG=""
 
+MYSQL_OPTS="--defaults-file=$MYSQL_CONFIG --defaults-group-suffix=_cmon"
 
 while [ $# -gt 0 ] 
 do 
@@ -651,13 +657,19 @@ EOF
 	  remote_cmd_nofail $HNAME "mkdir -p $S9S_TMPDIR"
 	  remote_cmd $HNAME "chown -R $SSH_USER:$SSH_USER $S9S_TMPDIR"
 	  remote_copy $S9S_TMPDIR/wsrep_notify_cc ${HNAME} ${S9S_TMPDIR}/wsrep_notify_cc
+	  remote_copy $S9S_TMPDIR/my_cmon.cnf ${HNAME} ${S9S_TMPDIR}/my_cmon.cnf
 	  remote_cmd $HNAME "sed -i.bak 's#.*CMON_DB_HOST=.*#CMON_DB_HOST=$CMON_DB_HOST#g' ${S9S_TMPDIR}/wsrep_notify_cc"
 	  remote_cmd $HNAME "sed -i.bak 's#.*CMON_DB_PORT=.*#CMON_DB_PORT=$CMON_DB_PORT#g' ${S9S_TMPDIR}/wsrep_notify_cc"
 	  remote_cmd $HNAME "sed -i.bak \"s#.*CMON_PASSWORD=.*#CMON_PASSWORD=\'$CMON_PASSWORD_ESC\'#g\" ${S9S_TMPDIR}/wsrep_notify_cc"
 	  remote_cmd $HNAME "sed -i.bak 's#.*CLUSTER_ID=.*#CLUSTER_ID=$CLUSTER_ID#g' ${S9S_TMPDIR}/wsrep_notify_cc"
 	  remote_cmd $HNAME "sed -i.bak 's#.*MYSQL_BIN=.*#MYSQL_BIN=$MYSQL_BIN#g' ${S9S_TMPDIR}/wsrep_notify_cc"
 	  remote_cmd $HNAME "sed -i.bak 's#.*MYSQL_HOSTNAME=.*#MYSQL_HOSTNAME=$HNAME#g' ${S9S_TMPDIR}/wsrep_notify_cc"
+	  remote_cmd $HNAME "sed -i.bak 's#.*MYSQL_CONFIG=.*#MYSQL_CONFIG=$CONFIGDIR/my_cmon.cnf#g' ${S9S_TMPDIR}/wsrep_notify_cc"
+	  remote_cmd $HNAME "sed -i.bak \"s#.*password=.*#password=\'$CMON_PASSWORD_ESC\'#g\" ${S9S_TMPDIR}/my_cmon.cnf"
 	  remote_cmd $HNAME "mv -f ${S9S_TMPDIR}/wsrep_notify_cc /usr/bin"
+	  remote_cmd $HNAME "mv -f ${S9S_TMPDIR}/my_cmon.cnf $CONFIGDIR/my_cmon.cnf"
+      remote_cmd $HNAME "chmod 600 $CONFIGDIR/my_cmon.cnf"
+      remote_cmd_nofail $HNAME "chown mysql.mysql $CONFIGDIR/my_cmon.cnf"
 	  remote_cmd $HNAME "chown mysql:mysql /usr/bin//wsrep_notify_cc"
 	  remote_cmd $HNAME "chmod u+x /usr/bin/wsrep_notify_cc"
 	  remote_cmd $HNAME "chmod 755 /usr/bin/wsrep_notify_cc"
@@ -896,7 +908,7 @@ function install_garbd
     log_job 'RUNNING' 'installing garbd' 0
 
     QUERY="SELECT group_concat(concat(hostname, ':', $GALERA_PORT)) FROM $CMON_DB_DB.mysql_server WHERE cid=${CLUSTER_ID}"
-    DONOR_HOSTNAME=`$MYSQL_BIN -B -N $MYSQL_OPTS --host=$CMON_DB_HOST --port=$CMON_DB_PORT --database=$CMON_DB_DB  -e "$QUERY"`
+    DONOR_HOSTNAME=`$MYSQL_BIN $MYSQL_OPTS -NAB --host=$CMON_DB_HOST --port=$CMON_DB_PORT --database=$CMON_DB_DB  -e "$QUERY"`
     if [ -z "$DONOR_HOSTNAME" ]; then
 	echo $QUERY
 	log_job_message "Could not get a cluster address" 1
@@ -904,7 +916,7 @@ function install_garbd
 	exit 1
     fi
 
-    ANY_HOSTNAME=`$MYSQL_BIN -B -N $MYSQL_OPTS --host=$CMON_DB_HOST --port=$CMON_DB_PORT --database=$CMON_DB_DB  -e "SELECT hostname FROM $CMON_DB_DB.mysql_server WHERE cid=${CLUSTER_ID} AND status=0 LIMIT 1"`
+    ANY_HOSTNAME=`$MYSQL_BIN $MYSQL_OPTS -NAB --host=$CMON_DB_HOST --port=$CMON_DB_PORT --database=$CMON_DB_DB  -e "SELECT hostname FROM $CMON_DB_DB.mysql_server WHERE cid=${CLUSTER_ID} AND status=0 LIMIT 1"`
     if [ -z "$ANY_HOSTNAME" ]; then
 	log_job_message "Could not get a cluster address" 1
 	log_job 'FAILED' 'install garbd failed' 1
@@ -976,7 +988,7 @@ function install_garbd
 		    QUERY="select concat(path, filename) from cmon_uploads a , cmon_sw_package b where a.packageid=b.packageid and a.cid=b.cid and a.cid=${CLUSTER_ID} and b.selected=1 and (filename like 'galera%.deb')"
 		fi
 		
-		XFILENAME=`$MYSQL_BIN -B -N $MYSQL_OPTS --host=$CMON_DB_HOST --port=$CMON_DB_PORT --database=$CMON_DB_DB  -e "$QUERY"`
+		XFILENAME=`$MYSQL_BIN $MYSQL_OPTS -NAB --host=$CMON_DB_HOST --port=$CMON_DB_PORT --database=$CMON_DB_DB  -e "$QUERY"`
 		if [ ! -f $XFILENAME ]; then
 		    log_job_message "Could not find $XFILENAME - You must have a selected deployment package, or specify with -f <package name>" 1
 		    log_job 'FAILED' 'install garbd failed' 1
