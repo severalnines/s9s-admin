@@ -715,7 +715,8 @@ upgradeCcUi()
 	rm -f $wwwroot/cmonapi
 	commandStatus 'Upgrading CMONAPI' "ln -sf $wwwroot/cc-cmonapi-${version} $wwwroot/cmonapi"
 	commandStatus 'Upgrading ClusterControl UI' "ln -sf $wwwroot/cc-ui-${version} $wwwroot/clustercontrol"
-	($MYSQL_BIN -f -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT $CMON_DB_DB < $repo_dir/cc-ui-${version}/sql/dc-schema.sql) &
+	CC_DB_DB=dcps
+	($MYSQL_BIN -f -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT $CC_DB_DB < $repo_dir/cc-ui-${version}/sql/dc-schema.sql) &
 	progressStatus 'Upgrading ClusterControl schema' $!
 	
 	apache_user=www-data
