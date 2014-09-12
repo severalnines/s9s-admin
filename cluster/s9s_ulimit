@@ -2,7 +2,7 @@
 # Copyright 2012 Severalnines AB
 # s9s_ulimit - ulimit Adjuster
 
-TEMP=`getopt -o h,d,t:,n: --long help,default,item:,value: -n 's9s_ulimit' -- "$@"`
+TEMP=`getopt -o h,d,t:,n:,i:,a --long help,default,item:,value:,clusterid:,agent -n 's9s_ulimit' -- "$@"`
 [ $? -ne 0 ] && exit 1
 
 eval set -- "$TEMP"
@@ -10,8 +10,10 @@ eval set -- "$TEMP"
 while true ; do
 	case "$1" in
 		-h|--help) help="1" ; shift ;;
+		-a|--agent) mode="agent"; agent=1 ; shift ;;
 		-d|--default) default_value="1" ; shift ;;
 		-t|--item) ulimit_type="$2" ; shift 2 ;;
+		-i|--clusterid) CLUSTER_ID="$2" ; shift 2 ;;
 		-n|--value) ulimit_value="$2" ; shift 2 ;;
 		--) shift ; break ;;
 		?) echo "$0: error - unrecognized option" 1>&2 ; exit 1 ;;
@@ -39,6 +41,11 @@ if [ ! -z "$help" ]; then
 	helpMenu
 fi
 
+if [ -z "$agent" ] && [ -z "$CLUSTER_ID" ]; then
+    echo "s9s_ulimit -i <clusterid>  is missing."
+    exit 1
+fi
+
 if [ ! -z "$ulimit_type" ] && [ -z "$ulimit_value" ]; then
 	echo "Error: Item must be defined with a value."
 	exit 1
@@ -51,37 +58,39 @@ elif [ ! -z "$default_value" ] && [ ! -z "$ulimit_value" ] && [ ! -z "$ulimit_ty
 fi
 
 
-FILES=`ls /etc/cmon.cnf 2>&1`
-FILES2=`ls /etc/cmon.d/*.cnf 2>&1`
-FILES="$FILES $FILES2"
-configfile=""
-for f in $FILES
-do
-    X=`grep -l cluster_id=${CLUSTER_ID} $f 2>&1 `
-    if [ $? -eq 0 ]; then
-        source $f
-        configfile=$f
+if [ -z "$agent" ]; then
+    
+    FILES=`ls /etc/cmon.cnf 2>&1`
+    FILES2=`ls /etc/cmon.d/*.cnf 2>&1`
+    FILES="$FILES $FILES2"
+    configfile=""
+    for f in $FILES
+    do
+        X=`grep -l cluster_id=${CLUSTER_ID} $f 2>&1 `
+        if [ $? -eq 0 ]; then
+            source $f
+            configfile=$f
+        fi
+    done
+    
+    if [ -z "$configfile" ]; then
+        echo "No matching configuration file found having cluster_id=${CLUSTER_ID}"
+        exit 1
     fi
-done
-
-if [ -z "$configfile" ]; then
-    echo "No matching configuration file found having cluster_id=${CLUSTER_ID}"
-    exit 1
+    source $configfile
+    
+    CMON_DB_HOST=127.0.0.1
+    CMON_DB_PORT=$mysql_port
+    CMON_USER=cmon
+    CMON_DB_DB=cmon
+    CMON_PASSWORD=$mysql_password
+    MYSQL_BIN=$mysql_basedir/bin/mysql
+    CONNECT_TIMEOUT=10
+    CLUSTER_TYPE=$type
+    MYSQL_OPTS="--connect-timeout=$CONNECT_TIMEOUT"
+    OSUSER=`whoami`
+    CMON_CONFIG=$configfile    
 fi
-source $configfile
-
-CMON_DB_HOST=127.0.0.1
-CMON_DB_PORT=$mysql_port
-CMON_USER=cmon
-CMON_DB_DB=cmon
-CMON_PASSWORD=$mysql_password
-MYSQL_BIN=$mysql_basedir/bin/mysql
-CONNECT_TIMEOUT=10
-CLUSTER_TYPE=$type
-MYSQL_OPTS="--connect-timeout=$CONNECT_TIMEOUT"
-OSUSER=`whoami`
-CMON_CONFIG=$configfile
-
 
 ULIMIT_FILE=/etc/security/limits.conf
 [ ! -e $ULIMIT_FILE ] && echo "ulimit configuration file not found." && exit 1
@@ -89,7 +98,7 @@ ULIMIT_FILE=/etc/security/limits.conf
 [ ! -z "$osuser" ] && os_user=$osuser
 [ -z "$ssh_port" ] && ssh_port=22
 
-if [ "$OSUSER" != "root" ]; then
+if [ -z "$agent" ] && [ "$OSUSER" != "root" ]; then
     echo "must be executed as 'root' or with 'sudo'"
     exit 1
 fi
@@ -290,7 +299,7 @@ checkSudo ()
 	query_ssh_identity="SELECT value FROM $CMON_DB_DB.cmon_configuration WHERE param='SSH_IDENTITY' AND cid=$cluster_id"
 	SSH_IDENTITY=`$MYSQL_BIN -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT -A -Bse "$query_ssh_identity"`	
 	query_all_agents="SELECT hostname FROM $CMON_DB_DB.hosts WHERE NOT hostname='$mysql_hostname'"
-        ALL_AGENTS=`$MYSQL_BIN -u$CMON_USER -p"$CMON_PASSWORD" -h$CMON_DB_HOST -P$CMON_DB_PORT -A -Bse "$query_all_agents"`
+    ALL_AGENTS=`$MYSQL_BIN -u$CMON_USER -p"$CMON_PASSWORD" -h$CMON_DB_HOST -P$CMON_DB_PORT -A -Bse "$query_all_agents"`
 
 	[ "$ALL_AGENTS" ] || (echo "Unable to retrieve agent hosts in cluster." && exit 1)
 
@@ -317,7 +326,7 @@ execute_ulimit_agent()
 		ssh -t -q -p $ssh_port -i $ssh_key $os_user@$h "mkdir -p ~/cc/"
 		scp -q -P $ssh_port -i $ssh_key `basename $0` $os_user@$h:~/cc/
 		echo "Hostname/IP: $h"
-		ssh -t -p $ssh_port -q -i $ssh_key $os_user@$h "$sudo cc/`basename $0` $options"
+		ssh -t -p $ssh_port -q -i $ssh_key $os_user@$h "$sudo cc/`basename $0` $options -a"
 		ssh -t -p $ssh_port -q -i $ssh_key $os_user@$h "rm -rf ~/cc"
 	done
 
@@ -349,8 +358,8 @@ if [ "$mode" == "controller" ]  || [ "$mode" == "dual" ]; then
 	fi
 fi
 if [ "$mode" == "agent" ]; then
-        execute_ulimit
+    execute_ulimit
 	echo ""
-        update_ulimit_bashrc
+    update_ulimit_bashrc
 fi
 
