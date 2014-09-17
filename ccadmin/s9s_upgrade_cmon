@@ -29,24 +29,25 @@ done
 
 helpMenu()
 {
-        echo "ClusterControl Auto Updater"
-        echo "Usage: `basename $0` [options]"
-        echo ""
-        echo "Options:"
-        echo "-l, --latest              : Upgrade ClusterControl to latest version (recommended)"
-				echo "-f, --force               : Force upgrade"
-        echo "-t, --topdir              : Non-default path for CMON installation"
-        echo "-b, --backup              : Perform ClusterControl backup (all|controller|agent)"
-        echo "-n, --backup-db           : Backup CMON and dcps DB during the upgrade"
-        echo '-d, --backupdir           : Custom path for ClusterControl backup directory (default: /tmp/s9s_backup_{time})'
-        echo "-r, --restore             : Restore from ClusterControl backup (all|controller|agent)"
-				echo "-a, --agent-based         : Remain the agent-based deployment upgrade (default: agentless)"
-				echo "-z, --beta                : Upgrade ClusterControl to beta release"
-        echo "-h, --help                : Print help"
-        echo ""
-				echo "For more information, kindly go to http://support.severalnines.com/entries/24053181-Upgrade-ClusterControl-to-Latest-Version"
-				echo ""
+	echo "ClusterControl Auto Updater"
+	echo "Usage: `basename $0` [options]"
+	echo ""
+	echo "Options:"
+	echo "-l, --latest              : Upgrade ClusterControl to latest version (recommended)"
+	echo "-f, --force               : Force upgrade"
+	echo "-t, --topdir              : Non-default path for CMON installation"
+	echo "-b, --backup              : Perform ClusterControl backup (all|controller|agent)"
+	echo "-n, --backup-db           : Backup CMON and dcps DB during the upgrade"
+	echo '-d, --backupdir           : Custom path for ClusterControl backup directory (default: /tmp/s9s_backup_{time})'
+	echo "-r, --restore             : Restore from ClusterControl backup (all|controller|agent)"
+	echo "-a, --agent-based         : Remain the agent-based deployment upgrade (default: agentless)"
+	echo "-z, --beta                : Upgrade ClusterControl to beta release"
+	echo "-h, --help                : Print help"
+	echo ""
+	echo "For more information, kindly go to http://support.severalnines.com/entries/24053181-Upgrade-ClusterControl-to-Latest-Version"
+	echo ""
 }
+
 [ ! -z "$help" ] && helpMenu && exit 1
 [ `whoami` != "root" ] && echo "Please run this script as root or using sudo" && exit 1
 
