@@ -59,7 +59,7 @@ if jsonObj["type"]  != "alarm":
     print "This plugin only supports 'alarm' events, exiting..."
     sys.exit(0)
 
-# update (this plugin does nothing for now...)
+# update (this plugin does nothing for now..)
 if jsonObj["action"] == "update":
     print "Not creating ticket as type is not new (type is " + jsonObj["type"] + ")"
     sys.exit(0)
@@ -102,10 +102,6 @@ else:
 print "PUT request to " + resteventurl
 print "JSon: " + json.dumps(jsonRequest)
 # http://developer.pagerduty.com/documentation/integration/events/trigger
-#
-# NOTE: enable this if you want to test
-# doc on event triggering:
-# 
-# but i disabled it for now to avoid too much reports during test-runs
-#request = requests.put(resteventurl, data=json.dumps(jsonRequest))
+ 
+request = requests.put(resteventurl, data=json.dumps(jsonRequest))
 
