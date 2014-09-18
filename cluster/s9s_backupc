@@ -8,6 +8,11 @@ STREAM_METHOD=xbstream
 BACKUP_FILENAME_SUFFIX=xbstream.gz
 BACKUP_FILENAME_SUFFIX2=xbstream
 S9S_XB_INCLUDE_DB=/tmp/s9s_xb_include_db
+BACKUP_TMPDIR=/tmp
+
+#INNOBACKUP_OPTS=" --lock-wait-threshold=40 --lock-wait-query-type=all --lock-wait-timeout=180 --kill-long-queries-timeout=20"
+INNOBACKUP_OPTS=" "
+
 function init
 {    
     FILES=`ls /etc/cmon.cnf 2>&1`
@@ -69,7 +74,6 @@ function init
 
 }
 
-#INNOBACKUP_OPTS=" --lock-wait-threshold=40 --lock-wait-query-type=all --lock-wait-timeout=180 --kill-long-queries-timeout=20 --kill-long-query-type=all"
 function write_email
 {
     true

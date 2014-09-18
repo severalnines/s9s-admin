@@ -504,6 +504,7 @@ function install_mysql
             RHEL=6
             EPEL_REL="6-8"
         fi
+	remote_cmd_nofail $XHOSTNAME "rpm -e epel-release"	
 	$HTTP_PROXY wget  -c --no-check-certificate --tries=5 -O$S9S_TMPDIR/epel-release-${EPEL_REL}.noarch.rpm  http://dl.fedoraproject.org/pub/epel/$RHEL/x86_64/epel-release-${EPEL_REL}.noarch.rpm
 	if [ $? -ne 0 ]; then
 	    log_job_message "FAILED : download failed - check link and/or that EPEL version. EPEL is needed for socat." 1

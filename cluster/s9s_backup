@@ -19,6 +19,11 @@ STREAM_METHOD=xbstream
 BACKUP_FILENAME_SUFFIX=xbstream.gz
 S9S_XB_INCLUDE_DB=/tmp/s9s_xb_include_db
 
+
+#INNOBACKUP_OPTS=" --lock-wait-threshold=40 --lock-wait-query-type=all --lock-wait-timeout=180 --kill-long-queries-timeout=20"
+INNOBACKUP_OPTS=" "
+
+
 function init
 {
     FILES=`ls /etc/cmon.cnf 2>&1`
@@ -613,15 +618,15 @@ function start_backup
 	    log_job 'RUNNING' 'Job is running' 0
 	    if [ "$TYPE" = "full" ]; then 
 	        if [ $COMPRESSION -eq 0 ]; then  
-                CMDLINE="$XTRABACKUP_BIN $GALERA_INFO  --defaults-file=$MYCNF --host=127.0.0.1 --port=$MONITORED_MYSQL_PORT --user=$CMON_USER --password=$CMON_PASSWORD $INNOBACKUP_EXTRA_OPTS $THROTTLE_CMD -no-timestamp $BACKUPDIR"
-		        $XTRABACKUP_BIN $GALERA_INFO  --defaults-file=$MYCNF --host=127.0.0.1 --port=$MONITORED_MYSQL_PORT --user=$CMON_USER --password=$CMON_PASSWORD $INNOBACKUP_EXTRA_OPTS $THROTTLE_CMD -no-timestamp $BACKUPDIR 2>$BACKUP_LOGFILE 
+                CMDLINE="$XTRABACKUP_BIN $GALERA_INFO  --defaults-file=$MYCNF --host=127.0.0.1 --port=$MONITORED_MYSQL_PORT --user=$CMON_USER --password=$CMON_PASSWORD $INNOBACKUP_OPTS $INNOBACKUP_EXTRA_OPTS $THROTTLE_CMD -no-timestamp $BACKUPDIR"
+		        $XTRABACKUP_BIN $GALERA_INFO  --defaults-file=$MYCNF --host=127.0.0.1 --port=$MONITORED_MYSQL_PORT --user=$CMON_USER --password=$CMON_PASSWORD $INNOBACKUP_OPTS $INNOBACKUP_EXTRA_OPTS $THROTTLE_CMD -no-timestamp $BACKUPDIR 2>$BACKUP_LOGFILE 
 		        ret=$?
 	        else
-                CMDLINE="$XTRABACKUP_BIN $GALERA_INFO  --defaults-file=$MYCNF --host=127.0.0.1 --port=$MONITORED_MYSQL_PORT --user=$CMON_USER --password=$CMON_PASSWORD $INNOBACKUP_EXTRA_OPTS  --stream=$STREAM_METHOD ./  2>$BACKUP_LOGFILE $THROTTLE_CMD | $COMPRESSION_TOOL - > $BACKUPDIR/$FILENAME"
+                CMDLINE="$XTRABACKUP_BIN $GALERA_INFO  --defaults-file=$MYCNF --host=127.0.0.1 --port=$MONITORED_MYSQL_PORT --user=$CMON_USER --password=$CMON_PASSWORD $INNOBACKUP_OPTS $INNOBACKUP_EXTRA_OPTS  --stream=$STREAM_METHOD ./  2>$BACKUP_LOGFILE $THROTTLE_CMD | $COMPRESSION_TOOL - > $BACKUPDIR/$FILENAME"
                 if [ -n "$THROTTLE_CMD" ]; then
-		            $XTRABACKUP_BIN $GALERA_INFO  --defaults-file=$MYCNF --host=127.0.0.1 --port=$MONITORED_MYSQL_PORT --user=$CMON_USER --password=$CMON_PASSWORD $INNOBACKUP_EXTRA_OPTS  --stream=$STREAM_METHOD ./  2>$BACKUP_LOGFILE | $THROTTLE_CMD | $COMPRESSION_TOOL - > $BACKUPDIR/$FILENAME 
+		            $XTRABACKUP_BIN $GALERA_INFO  --defaults-file=$MYCNF --host=127.0.0.1 --port=$MONITORED_MYSQL_PORT --user=$CMON_USER --password=$CMON_PASSWORD $INNOBACKUP_OPTS $INNOBACKUP_EXTRA_OPTS  --stream=$STREAM_METHOD ./  2>$BACKUP_LOGFILE | $THROTTLE_CMD | $COMPRESSION_TOOL - > $BACKUPDIR/$FILENAME 
                 else
-		            $XTRABACKUP_BIN $GALERA_INFO  --defaults-file=$MYCNF --host=127.0.0.1 --port=$MONITORED_MYSQL_PORT --user=$CMON_USER --password=$CMON_PASSWORD $INNOBACKUP_EXTRA_OPTS  --stream=$STREAM_METHOD ./  2>$BACKUP_LOGFILE | $COMPRESSION_TOOL - > $BACKUPDIR/$FILENAME 
+		            $XTRABACKUP_BIN $GALERA_INFO  --defaults-file=$MYCNF --host=127.0.0.1 --port=$MONITORED_MYSQL_PORT --user=$CMON_USER --password=$CMON_PASSWORD $INNOBACKUP_OPTS $INNOBACKUP_EXTRA_OPTS  --stream=$STREAM_METHOD ./  2>$BACKUP_LOGFILE | $COMPRESSION_TOOL - > $BACKUPDIR/$FILENAME 
                 fi
 		        ret=$?
 	        fi
@@ -632,15 +637,15 @@ function start_backup
 	        fi
 	    else
 	        if [ $COMPRESSION -eq 0 ]; then  
-                CMDLINE="$XTRABACKUP_BIN $GALERA_INFO  --defaults-file=$MYCNF --host=127.0.0.1 --port=$MONITORED_MYSQL_PORT --user=$CMON_USER --password=$CMON_PASSWORD $INNOBACKUP_EXTRA_OPTS $THROTTLE_CMD --incremental --incremental-lsn=$LSN --no-timestamp $BACKUPDIR 2>$BACKUP_LOGFILE"
-		        $XTRABACKUP_BIN $GALERA_INFO  --defaults-file=$MYCNF --host=127.0.0.1 --port=$MONITORED_MYSQL_PORT --user=$CMON_USER --password=$CMON_PASSWORD $INNOBACKUP_EXTRA_OPTS $THROTTLE_CMD --incremental --incremental-lsn=$LSN --no-timestamp $BACKUPDIR 2>$BACKUP_LOGFILE 
+                CMDLINE="$XTRABACKUP_BIN $GALERA_INFO  --defaults-file=$MYCNF --host=127.0.0.1 --port=$MONITORED_MYSQL_PORT --user=$CMON_USER --password=$CMON_PASSWORD $INNOBACKUP_OPTS $INNOBACKUP_EXTRA_OPTS $THROTTLE_CMD --incremental --incremental-lsn=$LSN --no-timestamp $BACKUPDIR 2>$BACKUP_LOGFILE"
+		        $XTRABACKUP_BIN $GALERA_INFO  --defaults-file=$MYCNF --host=127.0.0.1 --port=$MONITORED_MYSQL_PORT --user=$CMON_USER --password=$CMON_PASSWORD $INNOBACKUP_OPTS $INNOBACKUP_EXTRA_OPTS $THROTTLE_CMD --incremental --incremental-lsn=$LSN --no-timestamp $BACKUPDIR 2>$BACKUP_LOGFILE 
 		        ret=$?
 	        else
-                CMDLINE="$XTRABACKUP_BIN $GALERA_INFO  --defaults-file=$MYCNF --host=127.0.0.1 --port=$MONITORED_MYSQL_PORT --user=$CMON_USER --password=$CMON_PASSWORD $INNOBACKUP_EXTRA_OPTS --incremental --incremental-lsn=$LSN  --stream=xbstream ./ 2>$BACKUP_LOGFILE $THROTTLE_CMD | $COMPRESSION_TOOL - > $BACKUPDIR/$FILENAME"
+                CMDLINE="$XTRABACKUP_BIN $GALERA_INFO  --defaults-file=$MYCNF --host=127.0.0.1 --port=$MONITORED_MYSQL_PORT --user=$CMON_USER --password=$CMON_PASSWORD $INNOBACKUP_OPTS $INNOBACKUP_EXTRA_OPTS --incremental --incremental-lsn=$LSN  --stream=xbstream ./ 2>$BACKUP_LOGFILE $THROTTLE_CMD | $COMPRESSION_TOOL - > $BACKUPDIR/$FILENAME"
                 if [ -n "$THROTTLE_CMD" ]; then
-		            $XTRABACKUP_BIN $GALERA_INFO  --defaults-file=$MYCNF --host=127.0.0.1 --port=$MONITORED_MYSQL_PORT --user=$CMON_USER --password=$CMON_PASSWORD $INNOBACKUP_EXTRA_OPTS  --incremental --incremental-lsn=$LSN  --stream=xbstream ./ 2>$BACKUP_LOGFILE | $THROTTLE_CMD | $COMPRESSION_TOOL - > $BACKUPDIR/$FILENAME 		
+		            $XTRABACKUP_BIN $GALERA_INFO  --defaults-file=$MYCNF --host=127.0.0.1 --port=$MONITORED_MYSQL_PORT --user=$CMON_USER --password=$CMON_PASSWORD $INNOBACKUP_OPTS $INNOBACKUP_EXTRA_OPTS  --incremental --incremental-lsn=$LSN  --stream=xbstream ./ 2>$BACKUP_LOGFILE | $THROTTLE_CMD | $COMPRESSION_TOOL - > $BACKUPDIR/$FILENAME 		
                 else
-		            $XTRABACKUP_BIN $GALERA_INFO  --defaults-file=$MYCNF --host=127.0.0.1 --port=$MONITORED_MYSQL_PORT --user=$CMON_USER --password=$CMON_PASSWORD $INNOBACKUP_EXTRA_OPTS  --incremental --incremental-lsn=$LSN  --stream=xbstream ./ 2>$BACKUP_LOGFILE | $COMPRESSION_TOOL - > $BACKUPDIR/$FILENAME 		
+		            $XTRABACKUP_BIN $GALERA_INFO  --defaults-file=$MYCNF --host=127.0.0.1 --port=$MONITORED_MYSQL_PORT --user=$CMON_USER --password=$CMON_PASSWORD $INNOBACKUP_OPTS $INNOBACKUP_EXTRA_OPTS  --incremental --incremental-lsn=$LSN  --stream=xbstream ./ 2>$BACKUP_LOGFILE | $COMPRESSION_TOOL - > $BACKUPDIR/$FILENAME 		
                 fi
 		        ret=$?
 	        fi
