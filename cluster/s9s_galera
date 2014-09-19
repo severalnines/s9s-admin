@@ -945,10 +945,10 @@ function install_garbd
 	    if [ "$OS" = "redhat" ]; then
 		remote_cmd $XHOSTNAME "rpm -Uhv --force http://www.percona.com/downloads/percona-release/percona-release-0.0-1.x86_64.rpm"
 		if [ "$GALERA_VERSION" = "3.x" ]; then
-		    remote_cmd $XHOSTNAME "yum -y install Percona-XtraDB-Cluster-galera-3"
+		    remote_cmd $XHOSTNAME "yum -y install Percona-XtraDB-Cluster-garbd-3"
 		fi
 		if [ "$GALERA_VERSION" = "2.x" ]; then
-		    remote_cmd $XHOSTNAME "yum -y install Percona-XtraDB-Cluster-galera-2"
+		    remote_cmd $XHOSTNAME "yum -y install Percona-XtraDB-Cluster-garbd-2"
 		fi
 	    else
 		remote_cmd $XHOSTNAME "apt-get update"
@@ -972,7 +972,7 @@ function install_garbd
 		    remote_cmd $XHOSTNAME "$HTTP_PROXY LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::='--force-confnew' -y -q install percona-xtradb-cluster-garbd-3.x"
 		fi
 		if [ "$GALERA_VERSION" = "2.x" ]; then
-		    remote_cmd $XHOSTNAME "$HTTP_PROXY LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::='--force-confnew' -y -q install  percona-xtradb-cluster-galera-2.x"
+		    remote_cmd $XHOSTNAME "$HTTP_PROXY LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::='--force-confnew' -y -q install  percona-xtradb-cluster-garbd-2.x"
 		fi
 
 		remote_cmd $XHOSTNAME "sync"
