@@ -4,6 +4,9 @@
 #
 # MODIFY THE BELOW TO SUIT YOU ENV:
 JOBID=0
+
+PERCONA_RELEASE_LINK='http://www.percona.com/redir/downloads/percona-release/redhat/0.0-1/percona-release-0.0-1.x86_64.rpm'
+
 function init
 {    
     FILES=`ls /etc/cmon.cnf 2>&1`
@@ -635,7 +638,7 @@ function install_mysql
 	percona)
 	        if [ "$OS" = "redhat" ]; then
 		#remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY yum -y install perl-DBD-MySQL.x86_64"	
-		        remote_cmd $XHOSTNAME "$HTTP_PROXY rpm -Uhv --force http://www.percona.com/downloads/percona-release/percona-release-0.0-1.x86_64.rpm"
+		        remote_cmd $XHOSTNAME "$HTTP_PROXY rpm -Uhv --force $PERCONA_RELEASE_LINK"
                 MYSQL_VERSION2=`echo $MYSQL_VERSION | tr -d .`
 		        if [ "$GALERA_VERSION" = "3.x" ]; then            
                     GALERA_VERSION2=3
@@ -668,89 +671,89 @@ function install_mysql
 	        fi
 	        ;;
 	    internal_pkg | codership | percona_nonet | mariadb_tgz | percona_tgz)	    
-	    if [ -z "$PKG_NAME" ]; then
+	        if [ -z "$PKG_NAME" ]; then
 		## default to MYSQL_INITIAL_DEPLOY if not set
-		    PKG_NAME="MYSQL_INITIAL_DEPLOY"
-	    fi
-	    QUERY="SELECT packageid FROM ${CMON_DB}.cmon_sw_package WHERE name='$PKG_NAME' AND cid=$CLUSTER_ID"
-	    PID=`$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY"`	
-	    if [ -z "$PID" ]; then
-		    log_job_message "Invalid package name $PKG_NAME" 1
-		    log_job 'FAILED' 'job failed' 1
-		    write_email "s9s_sw_update failed" "Invalid package name $PKG_NAME. Check job messages."
-		    exit 1
-	    fi
-	    QUERY="SELECT group_concat(concat(path,',', filename) SEPARATOR ' ') FROM ${CMON_DB}.cmon_uploads WHERE packageid='$PID' AND cid=$CLUSTER_ID"
-	    FILELIST=`$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY"`	    
-	    if [ -z "$FILELIST" ]; then
-		    log_job_message "No files in package $PKG_NAME" 1
-		    log_job 'FAILED' 'job failed' 1
-		    write_email "s9s_sw_update failed" "No files in $PKG_NAME. Check job messages."
-		    exit 1	    
-	    fi
-	    
-	    if [ "$FILELIST" = "NULL" ]; then
-		    log_job_message "No files in package $PKG_NAME" 1
-		    log_job 'FAILED' 'job failed' 1
-		    write_email "s9s_sw_update failed" "No files in $PKG_NAME. Check job messages."
-		    exit 1	    
-	    fi
-	    
-	    
-	    remote_cmd $XHOSTNAME "mkdir -p $S9S_TMPDIR"
-	    remote_cmd $XHOSTNAME "chown  -R $SSH_USER:$SSH_USER $S9S_TMPDIR"
-	    if [ "$VENDOR" = "codership" ] && [ "$OS" = "debian" ]; then
-		    remote_cmd_nofail $XHOSTNAME "LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::='--force-confnew' -y -q install mysql-client"            
-		    remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"deb http://repo.percona.com/apt `lsb_release -c -s` main\" >> /etc/apt/sources.list'"
-		    remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"deb-src http://repo.percona.com/apt `lsb_release -c -s` main\" >> /etc/apt/sources.list'"
-		    remote_cmd $XHOSTNAME "apt-get -q -y update"
-		    remote_cmd $XHOSTNAME "LC_ALL=C DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::='--force-confnew' --force-yes -y -q install percona-xtrabackup percona-toolkit"
-	    fi
-	    if [ "$VENDOR" = "codership" ] && [ "$OS" = "redhat" ]; then
-            remote_cmd $XHOSTNAME "$HTTP_PROXY rpm -Uhv --force http://www.percona.com/downloads/percona-release/percona-release-0.0-1.x86_64.rpm"
-		    remote_cmd $XHOSTNAME "$HTTP_PROXY yum -y install percona-xtrabackup"
-        fi
-	    for f in $FILELIST 
-	    do
-		path=`echo $f | awk -F, '{print $1;}'`
-		filename=`echo $f | awk -F, '{print $2;}'`	 
-		if [ -f $path/$filename ]; then
-		    remote_copy $path/$filename $XHOSTNAME $S9S_TMPDIR	    	    
-		else
-		    log_job_message "File did not exist: $path/$filename" 1
-		    log_job 'FAILED' 'job failed' 1
-		    write_email "s9s_sw_update failed" "File did not exist: $path/$filename. Check job messages."
-		    exit 1	    
-		fi
-	    done
-	    RPMLIST=""
-	    for f in $FILELIST 
-	    do
-		filename=`echo $f | awk -F, '{print $2;}'`	    
-		ext=${filename##*.}
-		case $ext in
-		    gz)
-			MYSQL_BASEDIR2=${MYSQL_BASEDIR%/}
-			remote_cmd_nofail $XHOSTNAME "rm -f ${MYSQL_BASEDIR2}*"
-			remote_cmd $XHOSTNAME "tar xvfz ${S9S_TMPDIR}/$filename -C `dirname $MYSQL_BASEDIR`"
-			remote_cmd $XHOSTNAME "ln -s `dirname $MYSQL_BASEDIR`/`basename $filename .tar.gz`  $MYSQL_BASEDIR2"
-			;;
-		    rpm)
-			RPMLIST="$RPMLIST $S9S_TMPDIR/$filename"
-			;;
-		    deb)
-			DEBLIST="$DEBLIST $S9S_TMPDIR/$filename"
-			;;
-		esac	    
-	    done
-	    if [ -n "$RPMLIST" ]; then
-		remote_cmd $XHOSTNAME "rpm -Uvh $RPMLIST"
-	    fi
-	    if [ -n "$DEBLIST" ]; then
-		remote_cmd $XHOSTNAME "LC_ALL=C DEBIAN_FRONTEND=noninteractive /usr/bin/dpkg -i $DEBLIST"
-	    fi
-	    remote_cmd $XHOSTNAME "test -f ${MYSQL_BASEDIR}/bin/mysql"	    
-	    ;;
+		        PKG_NAME="MYSQL_INITIAL_DEPLOY"
+	        fi
+	        QUERY="SELECT packageid FROM ${CMON_DB}.cmon_sw_package WHERE name='$PKG_NAME' AND cid=$CLUSTER_ID"
+	        PID=`$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY"`	
+	        if [ -z "$PID" ]; then
+		        log_job_message "Invalid package name $PKG_NAME" 1
+		        log_job 'FAILED' 'job failed' 1
+		        write_email "s9s_sw_update failed" "Invalid package name $PKG_NAME. Check job messages."
+		        exit 1
+	        fi
+	        QUERY="SELECT group_concat(concat(path,',', filename) SEPARATOR ' ') FROM ${CMON_DB}.cmon_uploads WHERE packageid='$PID' AND cid=$CLUSTER_ID"
+	        FILELIST=`$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY"`	    
+	        if [ -z "$FILELIST" ]; then
+		        log_job_message "No files in package $PKG_NAME" 1
+		        log_job 'FAILED' 'job failed' 1
+		        write_email "s9s_sw_update failed" "No files in $PKG_NAME. Check job messages."
+		        exit 1	    
+	        fi
+	        
+	        if [ "$FILELIST" = "NULL" ]; then
+		        log_job_message "No files in package $PKG_NAME" 1
+		        log_job 'FAILED' 'job failed' 1
+		        write_email "s9s_sw_update failed" "No files in $PKG_NAME. Check job messages."
+		        exit 1	    
+	        fi
+	        
+	        
+	        remote_cmd $XHOSTNAME "mkdir -p $S9S_TMPDIR"
+	        remote_cmd $XHOSTNAME "chown  -R $SSH_USER:$SSH_USER $S9S_TMPDIR"
+	        if [ "$VENDOR" = "codership" ] && [ "$OS" = "debian" ]; then
+		        remote_cmd_nofail $XHOSTNAME "LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::='--force-confnew' -y -q install mysql-client"            
+		        remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"deb http://repo.percona.com/apt `lsb_release -c -s` main\" >> /etc/apt/sources.list'"
+		        remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"deb-src http://repo.percona.com/apt `lsb_release -c -s` main\" >> /etc/apt/sources.list'"
+		        remote_cmd $XHOSTNAME "apt-get -q -y update"
+		        remote_cmd $XHOSTNAME "LC_ALL=C DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::='--force-confnew' --force-yes -y -q install percona-xtrabackup-21 percona-toolkit"
+	        fi
+	        if [ "$VENDOR" = "codership" ] && [ "$OS" = "redhat" ]; then
+                remote_cmd $XHOSTNAME "$HTTP_PROXY rpm -Uhv --force $PERCONA_RELEASE_LINK"
+		        remote_cmd $XHOSTNAME "$HTTP_PROXY yum -y install percona-xtrabackup-21"
+            fi
+	        for f in $FILELIST 
+	        do
+		        path=`echo $f | awk -F, '{print $1;}'`
+		        filename=`echo $f | awk -F, '{print $2;}'`	 
+		        if [ -f $path/$filename ]; then
+		            remote_copy $path/$filename $XHOSTNAME $S9S_TMPDIR	    	    
+		        else
+		            log_job_message "File did not exist: $path/$filename" 1
+		            log_job 'FAILED' 'job failed' 1
+		            write_email "s9s_sw_update failed" "File did not exist: $path/$filename. Check job messages."
+		            exit 1	    
+		        fi
+	        done
+	        RPMLIST=""
+	        for f in $FILELIST 
+	        do
+		        filename=`echo $f | awk -F, '{print $2;}'`	    
+		        ext=${filename##*.}
+		        case $ext in
+		            gz)
+			            MYSQL_BASEDIR2=${MYSQL_BASEDIR%/}
+			            remote_cmd_nofail $XHOSTNAME "rm -f ${MYSQL_BASEDIR2}*"
+			            remote_cmd $XHOSTNAME "tar xvfz ${S9S_TMPDIR}/$filename -C `dirname $MYSQL_BASEDIR`"
+			            remote_cmd $XHOSTNAME "ln -s `dirname $MYSQL_BASEDIR`/`basename $filename .tar.gz`  $MYSQL_BASEDIR2"
+			            ;;
+		            rpm)
+			            RPMLIST="$RPMLIST $S9S_TMPDIR/$filename"
+			            ;;
+		            deb)
+			            DEBLIST="$DEBLIST $S9S_TMPDIR/$filename"
+			            ;;
+		        esac	    
+	        done
+	        if [ -n "$RPMLIST" ]; then
+		        remote_cmd $XHOSTNAME "rpm -Uvh $RPMLIST"
+	        fi
+	        if [ -n "$DEBLIST" ]; then
+		        remote_cmd $XHOSTNAME "LC_ALL=C DEBIAN_FRONTEND=noninteractive /usr/bin/dpkg -i $DEBLIST"
+	        fi
+	        remote_cmd $XHOSTNAME "test -f ${MYSQL_BASEDIR}/bin/mysql"	    
+	        ;;
 	    mariadb)
 	        if [ "$OS" = "redhat" ]; then                
                 if [ "$MYSQL_VERSION" = "5.5" ]; then
@@ -824,7 +827,7 @@ EOF
 		        remote_copy ${S9S_TMPDIR}/MariaDB.${OS2}${RHEL} $XHOSTNAME ${S9S_TMPDIR}/MariaDB.${OS2}${RHEL}.tmp
 		        remote_cmd $XHOSTNAME "mv -f ${S9S_TMPDIR}/MariaDB.${OS2}${RHEL}.tmp /etc/yum.repos.d/MariaDB.repo"
                 remote_cmd $XHOSTNAME "$HTTP_PROXY yum -y install MariaDB-Galera-server.x86_64 MariaDB-client.x86_64 galera"
-		        remote_cmd $XHOSTNAME "$HTTP_PROXY rpm -Uhv --force http://www.percona.com/downloads/percona-release/percona-release-0.0-1.x86_64.rpm"
+		        remote_cmd $XHOSTNAME "$HTTP_PROXY rpm -Uhv --force $PERCONA_RELEASE_LINK"
 		        remote_cmd $XHOSTNAME "$HTTP_PROXY yum -y install percona-xtrabackup"
 	        else
 		        remote_cmd_nofail $XHOSTNAME "killall -9 mysqld mysqld_safe mysql mysql_chk ndb_mgmd ndbmtd ndbd cmon"

@@ -13,6 +13,8 @@ BACKUP_TMPDIR=/tmp
 #INNOBACKUP_OPTS=" --lock-wait-threshold=40 --lock-wait-query-type=all --lock-wait-timeout=180 --kill-long-queries-timeout=20"
 INNOBACKUP_OPTS=" "
 
+PERCONA_RELEASE_LINK='http://www.percona.com/redir/downloads/percona-release/redhat/0.0-1/percona-release-0.0-1.x86_64.rpm'
+
 function init
 {    
     FILES=`ls /etc/cmon.cnf 2>&1`
@@ -1279,7 +1281,7 @@ function install
     log_job_message "Installing xtrabackup" 0
     case $OS in
 	    redhat)
-            remote_cmd $BACKUP_HOSTNAME "$HTTP_PROXY rpm -Uhv http://www.percona.com/downloads/percona-release/percona-release-0.0-1.x86_64.rpm"
+            remote_cmd $BACKUP_HOSTNAME "$HTTP_PROXY rpm -Uhv $PERCONA_RELEASE_LINK"
             remote_cmd $BACKUP_HOSTNAME "$HTTP_PROXY yum -y install xtrabackup  "
 	        remote_cmd $BACKUP_HOSTNAME "$HTTP_PROXY yum -y install perl-Time-HiRes"
 	        remote_cmd $BACKUP_HOSTNAME "$HTTP_PROXY yum -y install nc "

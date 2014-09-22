@@ -380,13 +380,13 @@ return_fail()
 #        echo "$FORCE_FAIL found" > $ERR_FILE
 #        return_fail;
 #fi
-status=$($MYSQL_BIN $MYSQL_OPTS --host=$MYSQL_HOST --port=$MYSQL_PORT --user=$MYSQL_USERNAME --password=$MYSQL_PASSWORD -e "$CHECK_QUERY;" | awk '{print $2;}')
+status=$($MYSQL_BIN $MYSQL_OPTS --host=$MYSQL_HOST --port=$MYSQL_PORT --user=$MYSQL_USERNAME --password=$MYSQL_PASSWORD -e "$CHECK_QUERY;" 2>/dev/null | awk '{print $2;}')
 if [ $? -ne 0 ]; then
         return_fail;
 fi
 if [ $status -eq 2 ] || [ $status -eq 4 ] ; then
    if [ $status -eq 2 ]; then
-     method=$($MYSQL_BIN $MYSQL_OPTS --host=$MYSQL_HOST --port=$MYSQL_PORT --user=$MYSQL_USERNAME --password=$MYSQL_PASSWORD -e "$CHECK_QUERY2;" | awk '{print $2;}')
+     method=$($MYSQL_BIN $MYSQL_OPTS --host=$MYSQL_HOST --port=$MYSQL_PORT --user=$MYSQL_USERNAME --password=$MYSQL_PASSWORD -e "$CHECK_QUERY2;" 2>/dev/null | awk '{print $2;}')
      if [ $? -ne 0 ]; then
         return_fail;
      fi

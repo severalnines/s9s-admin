@@ -19,6 +19,8 @@ STREAM_METHOD=xbstream
 BACKUP_FILENAME_SUFFIX=xbstream.gz
 S9S_XB_INCLUDE_DB=/tmp/s9s_xb_include_db
 
+PERCONA_RELEASE_LINK='http://www.percona.com/redir/downloads/percona-release/redhat/0.0-1/percona-release-0.0-1.x86_64.rpm'
+
 
 #INNOBACKUP_OPTS=" --lock-wait-threshold=40 --lock-wait-query-type=all --lock-wait-timeout=180 --kill-long-queries-timeout=20"
 INNOBACKUP_OPTS=" "
@@ -1355,7 +1357,7 @@ function install
     log_job_message "Installing xtrabackup" 0
     case $OS in
 	    redhat)
-            $HTTP_PROXY rpm -Uhv http://www.percona.com/downloads/percona-release/percona-release-0.0-1.x86_64.rpm
+            $HTTP_PROXY rpm -Uhv $PERCONA_RELEASE_LINK
 	        $HTTP_PROXY yum -y install percona-xtrabackup  
 	        $HTTP_PROXY yum -y install perl-Time-HiRes
 	        $HTTP_PROXY yum -y install nc
