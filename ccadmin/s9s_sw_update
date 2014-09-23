@@ -828,7 +828,7 @@ EOF
 		        remote_cmd $XHOSTNAME "mv -f ${S9S_TMPDIR}/MariaDB.${OS2}${RHEL}.tmp /etc/yum.repos.d/MariaDB.repo"
                 remote_cmd $XHOSTNAME "$HTTP_PROXY yum -y install MariaDB-Galera-server.x86_64 MariaDB-client.x86_64 galera"
 		        remote_cmd $XHOSTNAME "$HTTP_PROXY rpm -Uhv --force $PERCONA_RELEASE_LINK"
-		        remote_cmd $XHOSTNAME "$HTTP_PROXY yum -y install percona-xtrabackup"
+		        remote_cmd $XHOSTNAME "$HTTP_PROXY yum -y install percona-xtrabackup-21"
 	        else
 		        remote_cmd_nofail $XHOSTNAME "killall -9 mysqld mysqld_safe mysql mysql_chk ndb_mgmd ndbmtd ndbd cmon"
 		        $HTTP_PROXY wget --no-check-certificate --tries=5  -O ${S9S_TMPDIR}/RPM-GPG-KEY-percona http://www.percona.com/redir/downloads/RPM-GPG-KEY-percona
@@ -853,7 +853,7 @@ EOF
 		        remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"deb http://repo.percona.com/apt `lsb_release -c -s` main\" >> /etc/apt/sources.list'"
 		        remote_cmd $XHOSTNAME "/bin/sh -c 'echo \"deb-src http://repo.percona.com/apt `lsb_release -c -s` main\" >> /etc/apt/sources.list'"
 		        remote_cmd $XHOSTNAME "apt-get -q -y update"
-		        remote_cmd $XHOSTNAME "LC_ALL=C DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::='--force-confnew' --force-yes -y -q install percona-xtrabackup percona-toolkit"
+		        remote_cmd $XHOSTNAME "LC_ALL=C DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::='--force-confnew' --force-yes -y -q install percona-xtrabackup-21 percona-toolkit"
 		        remote_cmd_nofail $XHOSTNAME "killall -9 mysqld mysqld_safe mysql mysql_chk ndb_mgmd ndbmtd ndbd"
 		        remote_cmd_nofail $XHOSTNAME "rm -rf /etc/my.cnf"
 		        remote_cmd $XHOSTNAME  "chmod 755 /etc/init.d/mysql"
