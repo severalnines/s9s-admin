@@ -251,19 +251,18 @@ function write_makecfg
 cat << 'EOF' > $TMPDIR/makecfg.sh
 #!/bin/bash
 DC="$1"
-SUFFIX="$2"
-TMPDIR2="$3"
-MAX_CONNECTIONS="$4"
-LISTEN_PORT="$5"
-LB_POLICY="$6"
+TMPDIR2="$2"
+MAX_CONNECTIONS="$3"
+LISTEN_PORT="$4"
+LB_POLICY="$5"
 
 if [ -z "$LB_POLICY" ]; then
     LB_POLICY=leastconn
 fi
 
 TEMPLATE=${TMPDIR2}/haproxy.cfg.tmpl
-if ([ -z "$DC" ] || [ -z "$SUFFIX" ]); then
-        echo "specify PREFIX and SUFFIX: $0 <prefix> <suffix>; ie: $0 dt 1"
+if ([ -z "$DC" ] ); then
+        echo "specify PREFIX : $0 <prefix>; ie: $0 dt 1"
         exit 1
 fi
 BACKENDFILES=`ls ${TMPDIR2}/${DC}_*.backend`
@@ -276,7 +275,7 @@ if [ -z "$BACKENDFILES" ]; then
                 example: slave1 slave2,disabled"
         exit 1
 fi
-NNAME="HAPROXY-$DC$SUFFIX"
+NNAME="HAPROXY-$DC"
 NDESC="$NNAME"
 if [ ! -f "$TEMPLATE" ]; then
         echo "$TEMPLATE not found!"
@@ -286,7 +285,7 @@ sed -e 's/NODE_NAME/'$NNAME'/g' -e 's/NODE_DESC/'$NDESC'/g'  "$TEMPLATE"
 for I in $BACKENDFILES; do
         NAME=`basename $I .backend`
         PORT=`echo $NAME | awk -F'_' '{ print $2 }'`
-        DESC=`echo $NAME | sed -e 's/^'$DC'_/'$DC$SUFFIX'_/'`
+        DESC=`echo $NAME | sed -e 's/^'$DC'_/'$DC'_/'`
 echo -n "
 listen  "$DESC"
         bind *:$LISTEN_PORT
@@ -427,6 +426,15 @@ function test_ssh()
        return 1
   fi
 }
+
+function remote_cmd_getretcode()
+{
+   desthost=$1
+   xcommand=$2
+   ssh -q $SSH_OPTS $SSH_USER@$desthost "$SUDO $xcommand 2>/dev/null"
+   return $?
+}
+
 
 function remote_cmd_getreply()
 {
@@ -997,7 +1005,7 @@ function install_haproxy
     echo "*************************************************************"
     echo "* writing $TMPDIR/${PREFIX}_${LB_NAME}_haproxy.cfg               *"
     echo "*************************************************************"
-    $TMPDIR/makecfg.sh $PREFIX $SUFFIX $TMPDIR $MAX_CONNECTIONS $HAPROXY_MYSQL_LISTEN_PORT $LB_POLICY > $TMPDIR/${PREFIX}_${LB_NAME}_haproxy.cfg
+    $TMPDIR/makecfg.sh $PREFIX $TMPDIR $MAX_CONNECTIONS $HAPROXY_MYSQL_LISTEN_PORT $LB_POLICY > $TMPDIR/${PREFIX}_${LB_NAME}_haproxy.cfg
     echo ""
     echo "*************************************************************"
     echo "* Installing haproxy on $LB_HOSTNAME                            *"
@@ -1792,6 +1800,96 @@ function add_node
 }
 
 
+function maint_node
+{
+    args=`getopt p:s:P:h:i:N:n:j:a: $*`
+    set -- $args
+    for i
+    do
+        case "$i" in
+            -p)
+                CMON_PASSWORD="$2"; shift;
+                shift;;
+            -i)
+                CLUSTER_ID="$2"; shift;
+                shift;;
+            -h)
+                LB_HOSTNAME="$2"; shift;
+                shift;;
+            -n)
+                NODE="$2"; shift;
+                shift;;
+            -a)
+                ACTION="$2"; shift;
+                shift;;
+            -N)
+                LB_NAME="$2"; shift;
+                shift;;
+            -j)
+                JOBID="$2"; shift;
+                shift;;
+            --)
+                shift; break;;
+                esac
+    done
+    if [ -z "$CLUSTER_ID" ]; then
+      echo "s9s_haproxy --disable-node -i <cluster id>  missing"
+      exit 1
+    fi
+    init
+    
+    if [ -z "$CMON_PASSWORD" ]; then
+      echo "s9s_haproxy --disable-node -p  missing"
+      exit 1
+    fi
+    if [ -z "$JOBID" ]; then
+	    JOBID=0
+    fi
+    load_opts $CLUSTER_ID
+    
+    if [ -z "$LB_HOSTNAME" ]; then
+        log_job_message "s9s_haproxy --maint-node  -h <loadbalancer host> missing" 1
+        log_job "FAILED" "s9s_haproxy failed" 1
+        exit 1
+    fi
+
+    if [ -z "$NODE" ]; then
+        log_job_message "s9s_haproxy --maint-node  -n <serveraddr to disable from lb > missing" 1
+        log_job "FAILED" "s9s_haproxy failed" 1
+        exit 1
+    fi
+
+    if [ -z "$ACTION" ]; then
+        log_job_message "s9s_haproxy --maint-node  -a <enable|disable> > missing" 1
+        log_job "FAILED" "s9s_haproxy failed" 1
+        exit 1
+    fi
+
+    if [ -z "$LB_NAME" ]; then
+        log_job_message "s9s_haproxy --maint-node  -N <lbname missing> missing" 1
+        log_job "FAILED" "s9s_haproxy failed" 1
+        exit 1
+    fi
+
+
+    
+    
+    if  remote_cmd_getretcode $LB_HOSTNAME "hash socat" ; then
+        echo ''
+    else
+        if  remote_cmd_getretcode $LB_HOSTNAME "hash apt-get" ; then
+            remote_cmd $LB_HOSTNAME "apt-get -y install socat"
+        else
+            remote_cmd $LB_HOSTNAME "yum -y install socat"
+        fi
+
+    fi
+    remote_cmd $LB_HOSTNAME "sh -c 'echo \"$ACTION server $LB_NAME/$NODE\" | socat stdio  /tmp/haproxy.socket'" 
+
+}
+
+
+
 if [ ! -e $LOCKFILE ]; then
     trap "rm -f $LOCKFILE; exit" INT TERM EXIT
     ARG=$1
@@ -1816,12 +1914,18 @@ if [ ! -e $LOCKFILE ]; then
 	--remove-node)
 	    remove_node $*
 	    ;;
+	--maint-node)
+	    maint_node $*
+	    ;;
+	--enable-node)
+	    enable_node $*
+	    ;;
 	--delete)
 	    delete_haproxy $*
 	    ;;
 	*)
 	    echo "Usage: "
-	    echo "s9s_haproxy --[install|delete|add-node|remove-node|install-keepalived|delete-keepalived]: "
+	    echo "s9s_haproxy --[install|delete|add-node|remove-node|install-keepalived|delete-keepalived|maint-node]: "
 	    exit 1
 	    ;;
     esac
