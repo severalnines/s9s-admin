@@ -1427,10 +1427,10 @@ function load_opts
     SSH_OPTS="$SSH_OPTSX -p$SSH_PORT $SSH_OPTS"    
     SSH_OPTS2="-P$SSH_PORT $SSH_OPTS2"    
     echo $MYCNF |  sed 's#\\n#\n\r#g' > $S9S_TMPDIR/my.cnf
-    DATADIR=`cat $S9S_TMPDIR/my.cnf  |grep -i datadir |head -n 1 | awk -F= '{print $2;}'`
+    DATADIR=`cat $S9S_TMPDIR/my.cnf  |grep -i datadir |head -n 1 | awk -F= '{print $2;}' | tr -d '\r\n\t '`
     if [ -z "$DATADIR" ]; then
-	log_job_message "datadir is not set in my.cnf , verify you have imported the configuration (Manage -> Configuration) - aborting" 1 
-	exit 1
+        log_job_message "datadir is not set in my.cnf , verify you have imported the configuration (Manage -> Configuration) - aborting" 1 
+        exit 1
     fi        
 }
 

@@ -1558,7 +1558,7 @@ function delete_haproxy
           remote_cmd_nofail $LB_HOSTNAME "/sbin/chkconfig --del haproxy"
           remote_cmd_nofail $LB_HOSTNAME "/sbin/chkconfig haproxy off"
     else
-          remote_cmd_nofail $LB_HOSTNAME "sed -i 's#ENABLED=.*#ENABLED0=0#g' /etc/default/haproxy"
+          remote_cmd_nofail $LB_HOSTNAME "sed -i 's#ENABLED=.*#ENABLED=0#g' /etc/default/haproxy"
           remote_cmd_nofail $LB_HOSTNAME "/usr/sbin/update-rc.d -f haproxy remove"
     fi
 
