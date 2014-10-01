@@ -163,7 +163,7 @@ fi
 
 [ "$mode" == "agent" ] && source $repo_dir/agent.config
 
-echo "$(date +"%d-%m-%y %T") [INFO] Starting ClusterControl upgrade" > $UPGRADE_LOG
+echo "$(date +"%d-%m-%y %T.%N") [INFO] Starting ClusterControl upgrade" > $UPGRADE_LOG
 
 ## Function
 writeLog()
@@ -781,19 +781,23 @@ upgradeCcUiRepo()
 	echo "  Upgrade ClusterControl UI ($repotype)"
 	echo "==================================="
 
-	commandStatus 'Backing up ClusterControl bootstrap.php' "cp -rf $wwwroot/clustercontrol/bootstrap.php $tmp_dir/cc-bootstrap.php"
-	commandStatus 'Backing up CMONAPI bootstrap.php' "cp -rf $wwwroot/cmonapi/config/bootstrap.php $tmp_dir/cmonapi-bootstrap.php"
-	commandStatus 'Backing up CMONAPI database.php' "cp -rf $wwwroot/cmonapi/config/database.php $tmp_dir/cmonapi-database.php"
-
+	commandStatus 'Backing up ClusterControl bootstrap.php' "cp -f $wwwroot/clustercontrol/bootstrap.php $tmp_dir/cc-bootstrap.php"
+	commandStatus 'Backing up CMONAPI bootstrap.php' "cp -f $wwwroot/cmonapi/config/bootstrap.php $tmp_dir/cmonapi-bootstrap.php"
+	commandStatus 'Backing up CMONAPI database.php' "cp -f $wwwroot/cmonapi/config/database.php $tmp_dir/cmonapi-database.php"
+	
+	if [ "$os" == "debian" ]; then
+		dpkg --get-selections | grep -v deinstall | grep clustercontrol-cmonapi &> /dev/null
+		[ $? -eq 0 ] && commandStatus "Removing installed clustercontrol/cmonapi packages" "$HTTP_PROXY apt-get remove -y clustercontrol clustercontrol-cmonapi"
+		package_manager_upgrade_ui="$HTTP_PROXY apt-get install -y clustercontrol clustercontrol-cmonapi"
+	else
+		yum list installed | grep clustercontrol-cmonapi &> /dev/null
+		[ $? -eq 0 ] && commandStatus "Removing installed clustercontrol/cmonapi packages" "$HTTP_PROXY yum remove -y clustercontrol clustercontrol-cmonapi"
+		package_manager_upgrade_ui="$HTTP_PROXY yum install -y clustercontrol clustercontrol-cmonapi"
+	fi
 	commandStatus 'Removing symlink to UI and CMONAPI' "rm -f $wwwroot/clustercontrol $wwwroot/cmonapi"
 	commandStatus 'Removing ClusterControl UI and CMONAPI' "rm -rf $wwwroot/cc-cmonapi* $wwwroot/cc-ui*"
 	
-	if [ "$os" == "debian" ]; then
-		package_manager_upgrade_ui="$HTTP_PROXY apt-get install -y clustercontrol clustercontrol-cmonapi"
-	else
-		package_manager_upgrade_ui="$HTTP_PROXY yum install -y clustercontrol clustercontrol-cmonapi"
-	fi
-	commandStatus 'Installing clustercontrol and clustercontrol-cmonapi' "$package_manager_upgrade_ui"
+	commandStatus 'Installing clustercontrol/cmonapi latest version' "$package_manager_upgrade_ui"
 	
 	CCUI_BOOTSTRAP=$wwwroot/clustercontrol/bootstrap.php
 	CMONAPI_BOOTSTRAP=$wwwroot/cmonapi/config/bootstrap.php
@@ -1121,7 +1125,8 @@ backupCmon()
 		mkdir -p $tmp_dir/wwwroot
 		if [ -e $wwwroot/clustercontrol ]; then
 			CC_DB_DB=dcps
-			commandStatus 'Backing up ClusterControl web app' "cp -pfR $wwwroot/cc-* $wwwroot/cmona* $wwwroot/clustercontrol $tmp_dir/wwwroot"
+			[ -d $wwwroot/cc-* ] && commandStatus 'Backing up ClusterControl web app (older filename)' "cp -pfR $wwwroot/cc-* $tmp_dir/wwwroot"
+			commandStatus 'Backing up ClusterControl web app' "cp -pfR $wwwroot/clustercontrol $wwwroot/cmona* $tmp_dir/wwwroot"
 			if [ ! -z "$backup_db" ]; then
 				($MYSQLDUMP_BIN -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT $CC_DB_DB -r $tmp_dir/dcps_dump.sql) &
 				progressStatus "Backing up ClusterControl schema" $!
