@@ -799,8 +799,8 @@ function install_mongodb
     local xhost=$SERVER1
 
     remote_cmd_nofail $xhost "killall -9 mongod"
-    remote_cmd_nofail $R "mkdir -p $S9S_TMPDIR"
-    remote_cmd_nofail $R "chown -R $SSH_USER:$SSH_USER $S9S_TMPDIR"
+    remote_cmd_nofail $xhost "mkdir -p $S9S_TMPDIR"
+    remote_cmd_nofail $xhost "chown -R $SSH_USER:$SSH_USER $S9S_TMPDIR"
 
     case $VENDOR in
 	tokutek)
