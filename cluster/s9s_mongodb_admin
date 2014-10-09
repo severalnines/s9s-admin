@@ -175,7 +175,7 @@ function remote_cmd_getreply()
 {
    desthost=$1
    xcommand=$2
-   x=`ssh $SSH_OPTS $SSH_USER@$desthost "$SUDO $xcommand " 2>&1`
+   x=`ssh -q $SSH_OPTS $SSH_USER@$desthost "$SUDO $xcommand " 2>&1`
    echo $x
 }
 
@@ -882,12 +882,12 @@ EOF
 		    remote_cmd_nofail $xhost "sed -i.bak '/10gen/d'  /etc/apt/sources.list"
 
 		    osdist=$(remote_cmd_getreply $xhost "lsb_release -i -s")
-            osdist=`echo $osdist |tr -d '\r'`
+            osdist=`echo $osdist |tr -d '\r\n\t '`
 		    echo "$osdist"
 		    if [ "$osdist" = "ubuntu" ] || [ "$osdist" = "Ubuntu" ]; then
 			    remote_cmd $xhost "/bin/sh -c 'echo \"deb http://downloads-distro.mongodb.org/repo/ubuntu-upstart dist 10gen\" >> /etc/apt/sources.list'"
 		    else
-			    remote_cmd $xhost "/bin/sh -c 'echo \"deb http://downloads-distro.mongodb.org/repo/debian-sysvinit dist dist 10gen\" >> /etc/apt/sources.list'"
+			    remote_cmd $xhost "/bin/sh -c 'echo \"deb http://downloads-distro.mongodb.org/repo/debian-sysvinit dist 10gen\" >> /etc/apt/sources.list'"
 		    fi
 		    remote_cmd $xhost "$HTTP_PROXY apt-get -q -y update"
 		    remote_cmd $xhost "LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive $HTTP_PROXY apt-get -o Dpkg::Options::='--force-confnew' -y -q install mongodb-org"
