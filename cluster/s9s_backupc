@@ -49,7 +49,6 @@ function init
     NETCAT_PORT=59999
     ULIMIT=32768
 ### NO MODS BELOW UNLESS YOU KNOW WHAT YOU DO:
-    OSUSER=$USER    
     MYSQL_BIN=$mysql_basedir/bin//mysql
     MYSQL_BIN2=$mysql_bindir/mysql 
     if ! test -f $MYSQL_BIN; then
@@ -68,8 +67,7 @@ function init
     fi
     check_mysql_client
 
-    
-    if [ "$OSUSER" != "root" ]; then
+    if (( EUID != 0 )); then
 	log_job_message "must be executed as 'root' or with 'sudo'" 1
 	exit 1
     fi

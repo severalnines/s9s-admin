@@ -41,7 +41,6 @@ function init
     CLUSTER_TYPE=$type
     MYSQL_OPTS="--connect-timeout=$CONNECT_TIMEOUT"
     LOCKFILE="/tmp/s9s_create.lock"
-    OSUSER=$USER
     SUFFIX="1"
     PREFIX="s9s"
     JOBID=0
@@ -51,7 +50,7 @@ function init
     LB_ADMIN_PORT="9600"
     LB_ADMIN_PASSWORD='admin'
     
-    if [ "$OSUSER" != "root" ]; then
+    if (( EUID != 0 )); then
 	echo "must be executed as 'root' or with 'sudo'"
 	exit 1
     fi

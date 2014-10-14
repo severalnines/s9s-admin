@@ -50,10 +50,8 @@ function init
 ### NO MODS BELOW UNLESS YOU KNOW WHAT YOU DO:
     
     export LC_ALL=C
-    OSUSER=$USER
     
-    
-    if [ "$OSUSER" != "root" ]; then
+    if (( EUID != 0 )); then
 	echo "must be executed as 'root' or with 'sudo'"
 	exit 1
     fi

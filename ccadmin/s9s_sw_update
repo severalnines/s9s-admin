@@ -40,8 +40,7 @@ function init
     LOCKFILE="/tmp/s9s_sw_update_${CLUSTER_ID}.lock"
 ### NO MODS BELOW UNLESS YOU KNOW WHAT YOU DO:
     
-    OSUSER=$USER
-    if [ "$USER" != "root" ]; then
+    if (( EUID != 0 )); then
 	echo "must be executed as 'root' or with 'sudo'"
 	exit 1
     fi

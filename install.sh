@@ -33,8 +33,7 @@ function init
     CONNECT_TIMEOUT=10
     CLUSTER_TYPE=$type
     MYSQL_OPTS="--connect-timeout=$CONNECT_TIMEOUT"
-    OSUSER=$USER
-    if [ "$OSUSER" != "root" ]; then
+    if (( EUID != 0 )); then
 	echo "must be executed as 'root' or with 'sudo'"
 	exit 1
     fi
