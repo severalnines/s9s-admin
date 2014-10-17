@@ -45,8 +45,10 @@ function init
     MYSQL_BIN=$mysql_basedir/bin/mysql
     CONNECT_TIMEOUT=10
     CLUSTER_TYPE=$type
+
 #    MYSQL_OPTS="--connect-timeout=$CONNECT_TIMEOUT"
     OSUSER=$USER
+
     SUFFIX="1"
     PREFIX="s9s"
     HAPROXY_OPTS="-f /etc/haproxy/haproxy.cfg -p /var/run/haproxy.pid -st \$(cat /var/run/haproxy.pid)"
@@ -55,7 +57,8 @@ function init
     LB_ADMIN_PASSWORD='admin'
     echo $mysql_password
 
-    if [ "$OSUSER" != "root" ]; then
+
+    if (( EUID != 0 )); then
         echo "must be executed as 'root' or with 'sudo'"
         exit 1
     fi

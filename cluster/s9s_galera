@@ -74,9 +74,8 @@ function init
     fi
     
     MYSQL_OPTS="--defaults-file=$MYSQL_CONFIG  --defaults-group-suffix=_cmon --connect-timeout=$CONNECT_TIMEOUT"
-    OSUSER=$USER
-        
-    if [ "$OSUSER" != "root" ]; then
+
+    if (( EUID != 0 )); then
 	echo "must be executed as 'root' or with 'sudo'"
 	exit 1
     fi

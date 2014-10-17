@@ -34,7 +34,6 @@ function init
     CONNECT_TIMEOUT=10
     CLUSTER_TYPE=$type
     MYSQL_OPTS="--connect-timeout=$CONNECT_TIMEOUT"
-    OSUSER=$USER
     MYSQL_BIN=$mysql_basedir/bin//mysql
     MYSQL_BIN2=$mysql_bindir/mysql 
     if ! test -f $MYSQL_BIN; then
@@ -51,7 +50,7 @@ function init
 	log_job 'FAILED' 'backup failed' 1
 	exit 1
     fi
-    if [ "$OSUSER" != "root" ]; then
+    if (( EUID != 0 )); then
 	echo "must be executed as 'root' or with 'sudo'"
 	exit 1
     fi

@@ -51,7 +51,6 @@ function init
     NETCAT_PORT=59999
     ULIMIT=32768
 ### NO MODS BELOW UNLESS YOU KNOW WHAT YOU DO:
-    OSUSER=$USER    
     MYSQL_BIN=$mysql_basedir/bin//mysql
     MYSQL_BIN2=$mysql_bindir/mysql 
     if ! test -f $MYSQL_BIN; then
@@ -81,10 +80,9 @@ EOF
     chown mysql.mysql $MYCNF_CMON
     MYSQL_OPTS="--defaults-file=$MYCNF_CMON  --defaults-group-suffix=_cmon --connect-timeout=$CONNECT_TIMEOUT"
     
-
-    if [ "$OSUSER" != "root" ]; then
-	log_job_message "must be executed as 'root' or with 'sudo'" 1
-	exit 1
+    if (( EUID != 0 )); then
+        log_job_message "must be executed as 'root' or with 'sudo'" 1
+        exit 1
     fi
 
 }

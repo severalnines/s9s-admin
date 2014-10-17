@@ -50,10 +50,8 @@ function init
 ### NO MODS BELOW UNLESS YOU KNOW WHAT YOU DO:
     
     export LC_ALL=C
-    OSUSER=$USER
     
-    
-    if [ "$OSUSER" != "root" ]; then
+    if (( EUID != 0 )); then
 	echo "must be executed as 'root' or with 'sudo'"
 	exit 1
     fi
@@ -175,7 +173,7 @@ function remote_cmd_getreply()
 {
    desthost=$1
    xcommand=$2
-   x=`ssh $SSH_OPTS $SSH_USER@$desthost "$SUDO $xcommand " 2>&1`
+   x=`ssh -q $SSH_OPTS $SSH_USER@$desthost "$SUDO $xcommand " 2>&1`
    echo $x
 }
 
@@ -799,8 +797,8 @@ function install_mongodb
     local xhost=$SERVER1
 
     remote_cmd_nofail $xhost "killall -9 mongod"
-    remote_cmd_nofail $R "mkdir -p $S9S_TMPDIR"
-    remote_cmd_nofail $R "chown -R $SSH_USER:$SSH_USER $S9S_TMPDIR"
+    remote_cmd_nofail $xhost "mkdir -p $S9S_TMPDIR"
+    remote_cmd_nofail $xhost "chown -R $SSH_USER:$SSH_USER $S9S_TMPDIR"
 
     case $VENDOR in
 	tokutek)
@@ -882,12 +880,12 @@ EOF
 		    remote_cmd_nofail $xhost "sed -i.bak '/10gen/d'  /etc/apt/sources.list"
 
 		    osdist=$(remote_cmd_getreply $xhost "lsb_release -i -s")
-            osdist=`echo $osdist |tr -d '\r'`
+            osdist=`echo $osdist |tr -d '\r\n\t '`
 		    echo "$osdist"
 		    if [ "$osdist" = "ubuntu" ] || [ "$osdist" = "Ubuntu" ]; then
 			    remote_cmd $xhost "/bin/sh -c 'echo \"deb http://downloads-distro.mongodb.org/repo/ubuntu-upstart dist 10gen\" >> /etc/apt/sources.list'"
 		    else
-			    remote_cmd $xhost "/bin/sh -c 'echo \"deb http://downloads-distro.mongodb.org/repo/debian-sysvinit dist dist 10gen\" >> /etc/apt/sources.list'"
+			    remote_cmd $xhost "/bin/sh -c 'echo \"deb http://downloads-distro.mongodb.org/repo/debian-sysvinit dist 10gen\" >> /etc/apt/sources.list'"
 		    fi
 		    remote_cmd $xhost "$HTTP_PROXY apt-get -q -y update"
 		    remote_cmd $xhost "LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive $HTTP_PROXY apt-get -o Dpkg::Options::='--force-confnew' -y -q install mongodb-org"
