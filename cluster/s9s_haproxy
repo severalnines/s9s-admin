@@ -11,6 +11,9 @@ HAPROXY_MYSQL_LISTEN_PORT="33306"
 LB_POLICY=leastconn
 HAPROXY_LOG='/tmp/s9s_haproxy.log'
 HAPROXY_LOG2='/tmp/s9s_haproxy2.log'
+[ ! -f /etc/mysql/my.cnf ] && MYSQL_CONFIG=/etc/my.cnf || MYSQL_CONFIG=/etc/mysql/my.cnf
+MYSQL_OPTIONS="--defaults-file=$MYSQL_CONFIG --defaults-group-suffix=_cmon"
+
 LOCKFILE="/tmp/s9s_haproxy.lock"
 function init
 {    
@@ -42,7 +45,7 @@ function init
     MYSQL_BIN=$mysql_basedir/bin/mysql
     CONNECT_TIMEOUT=10
     CLUSTER_TYPE=$type
-    MYSQL_OPTS="--connect-timeout=$CONNECT_TIMEOUT"
+#    MYSQL_OPTS="--connect-timeout=$CONNECT_TIMEOUT"
     OSUSER=$USER
     SUFFIX="1"
     PREFIX="s9s"
@@ -50,13 +53,26 @@ function init
     LB_ADMIN_USER='admin'
     LB_ADMIN_PORT="9600"
     LB_ADMIN_PASSWORD='admin'
+    echo $mysql_password
 
     if [ "$OSUSER" != "root" ]; then
-	echo "must be executed as 'root' or with 'sudo'"
-	exit 1
+        echo "must be executed as 'root' or with 'sudo'"
+        exit 1
     fi
     echo "" > $HAPROXY_LOG
     echo "" > $HAPROXY_LOG2
+    
+
+    MYCNF_CMON=`dirname $MYSQL_CONFIG`/my_cmon.cnf
+    cat << 'EOF' > $MYCNF_CMON
+[mysql_cmon]
+user=cmon
+password=
+EOF
+    sed -i.bak "s#password=#password=$mysql_password#g" $MYCNF_CMON 
+    chmod 600 $MYCNF_CMON
+    chown mysql.mysql $MYCNF_CMON
+    MYSQL_OPTS="--defaults-file=$MYCNF_CMON  --defaults-group-suffix=_cmon --connect-timeout=$CONNECT_TIMEOUT"
 }
 
 function write_email
@@ -67,7 +83,7 @@ function write_email
   MSG="$MSG \nInstallation log follows:\n `cat /tmp/s9s_haproxy_log_escaped`" 
   QUERY="INSERT INTO outgoing_messages(cid,component, subject, body) VALUES($CLUSTER_ID,'SoftwareInstallation', \"$SUBJECT\", \"$MSG\")"
   echo "$QUERY" > /tmp/query.sql
-  $MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  < /tmp/query.sql 2>&1 >/tmp/err.log
+  $MYSQL_BIN  $MYSQL_OPTS -B -N  --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  < /tmp/query.sql 2>&1 >/tmp/err.log
 }
 
 
@@ -81,7 +97,7 @@ function log_job_message
     fi
     QUERY="INSERT INTO cmon_job_message(cid, jobid,message,exit_code,report_ts) VALUES($CLUSTER_ID,$JOBID,\"$MSG\",$EXIT_CODE,now())"
     if [ $JOBID -ne 0 ]; then 
-	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
+	$MYSQL_BIN   $MYSQL_OPTS  -B -N  --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
 	if [ $EXIT_CODE -ne 0 ]; then
 	    echo "Failed: $MSG" >> $HAPROXY_LOG
 	else
@@ -112,7 +128,7 @@ function log_job
     EXIT_CODE=$3
     QUERY="UPDATE cmon_job SET status='$STATUS', status_txt='$STATUS_TXT', exit_code=$EXIT_CODE, report_ts=NOW()  WHERE cid=$CLUSTER_ID AND jobid=$JOBID"
     if [ $JOBID -ne 0 ]; then 
-	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
+	$MYSQL_BIN  $MYSQL_OPTS  -B -N --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
     fi
 }
 
@@ -359,7 +375,6 @@ return_ok()
     echo -e "\r\n"
     echo -e "<html><body>MySQL is running.</body></html>\r\n"
     echo -e "\r\n"
-  #  rm $ERR_FILE $TMP_FILE
     exit 0
 }
 return_fail()
@@ -369,9 +384,7 @@ return_fail()
     echo -e "Content-Length: 42\r\n"
     echo -e "\r\n"
     echo -e "<html><body>MySQL is *down*.</body></html>\r\n"
-    sed -e 's/\n$/\r\n/' $ERR_FILE
     echo -e "\r\n"
- #   rm $ERR_FILE $TMP_FILE
     exit 1
 }
 #preflight_check
@@ -661,27 +674,27 @@ function load_opts
 {
     local CLUSTER_ID=$1
     echo "load opts $CLUSTER_ID"
-    OS=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='OS' AND cid=$CLUSTER_ID"`
-    CONFIGDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='CONFIGDIR' AND cid=$CLUSTER_ID"`
-    MYSQL_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MYSQL_PORT' AND cid=$CLUSTER_ID"`
-    GALERA_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='GALERA_PORT' AND cid=$CLUSTER_ID"`
-    MYSQL_BASEDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MYSQL_BASEDIR' AND cid=$CLUSTER_ID"`
-    MYSQL_SCRIPTDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SCRIPTDIR' AND cid=$CLUSTER_ID"`
-    SSH_IDENTITY=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_IDENTITY' AND cid=$CLUSTER_ID"`
-    SSH_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_PORT' AND cid=$CLUSTER_ID"`
-    SSH_USER=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_USER' AND cid=$CLUSTER_ID"`
-    SSH_OPTSX=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_OPTS' AND cid=$CLUSTER_ID"`
-    SUDO=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SUDO' AND cid=$CLUSTER_ID"`
-    TMPDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='STAGING_DIR' AND cid=$CLUSTER_ID"`
-    HTTP_PROXY=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='HTTP_PROXY' AND cid=$CLUSTER_ID"`
-    S9S_TMPDIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='STAGING_DIR' AND cid=$CLUSTER_ID"`
-    VENDOR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='VENDOR' AND cid=$CLUSTER_ID" 2>/dev/null`
-    OS_USER_HOME=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='OS_USER_HOME' AND cid=$CLUSTER_ID"`
-    DATADIR=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon.cluster_config where variable='datadir' and cid=$CLUSTER_ID order by id asc limit 1"`
-    MYCNF=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select data  from cmon.cluster_configuration where cid=$CLUSTER_ID limit 1"`
+    OS=`$MYSQL_BIN $MYSQL_OPTS  -NAB --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='OS' AND cid=$CLUSTER_ID"`
+    CONFIGDIR=`$MYSQL_BIN $MYSQL_OPTS -NAB --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='CONFIGDIR' AND cid=$CLUSTER_ID"`
+    MYSQL_PORT=`$MYSQL_BIN $MYSQL_OPTS -NAB --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MYSQL_PORT' AND cid=$CLUSTER_ID"`
+    GALERA_PORT=`$MYSQL_BIN $MYSQL_OPTS -NAB --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='GALERA_PORT' AND cid=$CLUSTER_ID"`
+    MYSQL_BASEDIR=`$MYSQL_BIN $MYSQL_OPTS -NAB --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MYSQL_BASEDIR' AND cid=$CLUSTER_ID"`
+    MYSQL_SCRIPTDIR=`$MYSQL_BIN $MYSQL_OPTS -NAB --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SCRIPTDIR' AND cid=$CLUSTER_ID"`
+    SSH_IDENTITY=`$MYSQL_BIN $MYSQL_OPTS -NAB --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_IDENTITY' AND cid=$CLUSTER_ID"`
+    SSH_PORT=`$MYSQL_BIN $MYSQL_OPTS -NAB --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_PORT' AND cid=$CLUSTER_ID"`
+    SSH_USER=`$MYSQL_BIN $MYSQL_OPTS -NAB --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_USER' AND cid=$CLUSTER_ID"`
+    SSH_OPTSX=`$MYSQL_BIN $MYSQL_OPTS -NAB --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_OPTS' AND cid=$CLUSTER_ID"`
+    SUDO=`$MYSQL_BIN $MYSQL_OPTS -NAB --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SUDO' AND cid=$CLUSTER_ID"`
+    TMPDIR=`$MYSQL_BIN $MYSQL_OPTS -NAB --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='STAGING_DIR' AND cid=$CLUSTER_ID"`
+    HTTP_PROXY=`$MYSQL_BIN $MYSQL_OPTS  -NAB --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='HTTP_PROXY' AND cid=$CLUSTER_ID"`
+    S9S_TMPDIR=`$MYSQL_BIN $MYSQL_OPTS  -NAB --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='STAGING_DIR' AND cid=$CLUSTER_ID"`
+    VENDOR=`$MYSQL_BIN $MYSQL_OPTS  -NAB --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='VENDOR' AND cid=$CLUSTER_ID" 2>/dev/null`
+    OS_USER_HOME=`$MYSQL_BIN $MYSQL_OPTS  -NAB --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='OS_USER_HOME' AND cid=$CLUSTER_ID"`
+    DATADIR=`$MYSQL_BIN $MYSQL_OPTS  -NAB --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon.cluster_config where variable='datadir' and cid=$CLUSTER_ID order by id asc limit 1"`
+    MYCNF=`$MYSQL_BIN $MYSQL_OPTS  -NAB --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select data  from cmon.cluster_configuration where cid=$CLUSTER_ID limit 1"`
 
 
-    MONITORED_MYSQL_PORT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MONITORED_MYSQL_PORT' AND cid=$CLUSTER_ID" 2>/dev/null`
+    MONITORED_MYSQL_PORT=`$MYSQL_BIN $MYSQL_OPTS  -NAB --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MONITORED_MYSQL_PORT' AND cid=$CLUSTER_ID" 2>/dev/null`
     
     if [ "$MONITORED_MYSQL_PORT" = "" ] || [ "$MONITORED_MYSQL_PORT" = "NULL" ];  then
         MONITORED_MYSQL_PORT="3306"
@@ -766,6 +779,22 @@ function install_mysqlchk
     #    echo "ERROR: Trying to install HaProxy on a database host is prohibited."
     #    exit 1
     #fi
+
+    BIND_ADDRESS=$(remote_cmd_getreply $h "grep -ie 'bind[_-]address' $CONFIGDIR/my.cnf |grep -v '#' |head -n 1 | awk -F= '{print \$2;}' | tr -d '\r\n\t '")
+    
+    if [ -n "$BIND_ADDRESS" ]; then
+        SERVER_ADDRESS="localhost"
+    else
+        SERVER_ADDRESS="127.0.0.1"
+    fi
+    
+    sed -i "s#MYSQL_HOST=.*#MYSQL_HOST=\"$SERVER_ADDRESS\"#g" $TMPDIR/mysqlchk.sh
+    sed -i "s#MYSQL_PASSWORD=.*#MYSQL_PASSWORD=\"$CMON_PASSWORD\"#g" $TMPDIR/mysqlchk.sh
+    sed -i "s#MYSQL_PASSWORD=.*#MYSQL_PASSWORD=\"$CMON_PASSWORD\"#g" $TMPDIR/mysqlchk.sh
+    sed -i "s#MYSQL_USERNAME=.*#MYSQL_USERNAME=\"cmon\"#g" $TMPDIR/mysqlchk.sh
+    sed -i "s#MYSQL_PORT=.*#MYSQL_PORT=\"$MONITORED_MYSQL_PORT\"#g" $TMPDIR/mysqlchk.sh
+    sed -i "s#MYSQL_BIN=.*#MYSQL_BIN=\"$MYSQL_BIN\"#g" $TMPDIR/mysqlchk.sh
+
     remote_cmd $h "mkdir -p $S9S_TMPDIR"
     remote_cmd $h "chown -R $SSH_USER:$SSH_USER $S9S_TMPDIR"
     remote_cmd_nofail $h  "sed  -i  '/mysqlchk        9200\/tcp/d' /etc/services"
@@ -954,13 +983,13 @@ function install_haproxy
 
     log_job 'RUNNING' 'Job is running' 0
     if [ -n "$LB_NODE_LIST" ]; then
-	LB_NODE_LIST2=`echo $LB_NODE_LIST | sed "s/,/','/g" | sed "s/^/'/g" | sed "s/$/'/g" |sed "s/[ ]*//g"`
+        LB_NODE_LIST2=`echo $LB_NODE_LIST | sed "s/,/','/g" | sed "s/^/'/g" | sed "s/$/'/g" |sed "s/[ ]*//g"`
 	
-	QUERY="select group_concat(h.hostname SEPARATOR ' ') from mysql_server m, hosts h WHERE m.id=h.id and h.cid=m.cid and h.ping_status>0 and (h.hostname in ($LB_NODE_LIST2) or h.ip in ($LB_NODE_LIST2)  ) and connected=1 and m.cid=$CLUSTER_ID"
-        hostnames=`$MYSQL_BIN -B -N --host=$CMON_DB_HOST --port=$CMON_DB_PORT --user=cmon --password=$CMON_PASSWORD --database=$CMON_DB_DB -e "$QUERY"`
+        QUERY="select group_concat(h.hostname SEPARATOR ' ') from mysql_server m, hosts h WHERE m.id=h.id and h.cid=m.cid and h.ping_status>0 and (h.hostname in ($LB_NODE_LIST2) or h.ip in ($LB_NODE_LIST2)  ) and connected=1 and m.cid=$CLUSTER_ID"
+        hostnames=`$MYSQL_BIN $MYSQL_OPTS  -NAB --database=$CMON_DB_DB -e "$QUERY"`
     else
-	QUERY="select group_concat(h.hostname SEPARATOR ' ') from mysql_server m, hosts h WHERE m.id=h.id and h.cid=m.cid and h.ping_status>0 and connected=1 and m.cid=$CLUSTER_ID"
-        hostnames=`$MYSQL_BIN -B -N --host=$CMON_DB_HOST --port=$CMON_DB_PORT --user=cmon --password=$CMON_PASSWORD --database=$CMON_DB_DB -e "$QUERY"`
+        QUERY="select group_concat(h.hostname SEPARATOR ' ') from mysql_server m, hosts h WHERE m.id=h.id and h.cid=m.cid and h.ping_status>0 and connected=1 and m.cid=$CLUSTER_ID"
+        hostnames=`$MYSQL_BIN $MYSQL_OPTS  -NAB --database=$CMON_DB_DB -e "$QUERY"`
     fi
 
     if [ -z "$hostnames" ]; then
@@ -996,8 +1025,8 @@ function install_haproxy
     echo "*************************************************************"
     for h in $hostnames
     do
-	log_job 'RUNNING' 'Job is running' 0
-	install_mysqlchk $h
+        log_job 'RUNNING' 'Job is running' 0
+        install_mysqlchk $h
     done
     log_job 'RUNNING' 'Job is running' 0
 
@@ -1014,32 +1043,32 @@ function install_haproxy
     remote_cmd $LB_HOSTNAME "$PKG_MGR wget"
 
     if [ $OS = "rhel" ] || [ $OS = "centos6" ]; then
-	remote_cmd_nofail $LB_HOSTNAME "$HTTP_PROXY wget  --no-check-certificate --tries=5 -O ${S9S_TMPDIR}/epel-release-6-8.noarch.rpm  http://dl.fedoraproject.org/pub/epel/6/x86_64/epel-release-6-8.noarch.rpm"
-	remote_cmd_nofail $LB_HOSTNAME "rpm -Uvh --force ${S9S_TMPDIR}/epel-release-6-8.noarch.rpm"
-	remote_cmd_nofail $LB_HOSTNAME "rpm --import http://apt.sw.be/RPM-GPG-KEY.dag.txt"
-	remote_cmd_nofail $LB_HOSTNAME "$HTTP_PROXY rpm -Uvh http://packages.sw.be/rpmforge-release/rpmforge-release-0.5.2-2.el6.rf.x86_64.rpm"
+        remote_cmd_nofail $LB_HOSTNAME "$HTTP_PROXY wget  --no-check-certificate --tries=5 -O ${S9S_TMPDIR}/epel-release-6-8.noarch.rpm  http://dl.fedoraproject.org/pub/epel/6/x86_64/epel-release-6-8.noarch.rpm"
+        remote_cmd_nofail $LB_HOSTNAME "rpm -Uvh --force ${S9S_TMPDIR}/epel-release-6-8.noarch.rpm"
+        remote_cmd_nofail $LB_HOSTNAME "rpm --import http://apt.sw.be/RPM-GPG-KEY.dag.txt"
+        remote_cmd_nofail $LB_HOSTNAME "$HTTP_PROXY rpm -Uvh http://packages.sw.be/rpmforge-release/rpmforge-release-0.5.2-2.el6.rf.x86_64.rpm"
     fi
     remote_cmd_nofail $LB_HOSTNAME "$PKG_MGR $PHP_CURL"
     if [ -n "$BUILD_FROM_SRC" ]; then
-	HAPROXY_SRC="haproxy-1.5.3.tar.gz"
-	if [ -n "$BUILD_FROM_SRC_FILE" ]; then
-	    if [ ! -f $BUILD_FROM_SRC_FILE ]; then
-		echo "$BUILD_FROM_SRC_FILE could not be found"
-		log_job 'FAILED' 's9s_haproxy failed' 1
-		write_email 's9s_haproxy installation failed' "$BUILD_FROM_SRC_FILE could not be found"
-		exit 1
-	    fi
-	    HAPROXY_SRC=`basename $BUILD_FROM_SRC_FILE`
-	    remote_copy $BUILD_FROM_SRC_FILE $LB_HOSTNAME /tmp/
-	else
-	    remote_cmd $LB_HOSTNAME "sh -c '$HTTP_PROXY wget -O/tmp/${HAPROXY_SRC} http://www.haproxy.org/download/1.5/src/${HAPROXY_SRC}'"
-	fi
-	remote_cmd $LB_HOSTNAME "$PKG_MGR $BUILD"
-	remote_cmd $LB_HOSTNAME "tar xvfz /tmp/${HAPROXY_SRC} -C /tmp/"
-	remote_cmd_nofail $LB_HOSTNAME "killall -q  -9 haproxy"	
-	remote_cmd $LB_HOSTNAME "sh -c 'cd /tmp/`basename ${HAPROXY_SRC} .tar.gz` && make TARGET=linux26 && cp -f haproxy /usr/sbin/'"
+        HAPROXY_SRC="haproxy-1.5.3.tar.gz"
+        if [ -n "$BUILD_FROM_SRC_FILE" ]; then
+            if [ ! -f $BUILD_FROM_SRC_FILE ]; then
+                echo "$BUILD_FROM_SRC_FILE could not be found"
+                log_job 'FAILED' 's9s_haproxy failed' 1
+                write_email 's9s_haproxy installation failed' "$BUILD_FROM_SRC_FILE could not be found"
+                exit 1
+            fi
+            HAPROXY_SRC=`basename $BUILD_FROM_SRC_FILE`
+            remote_copy $BUILD_FROM_SRC_FILE $LB_HOSTNAME /tmp/
+        else
+            remote_cmd $LB_HOSTNAME "sh -c '$HTTP_PROXY wget -O/tmp/${HAPROXY_SRC} http://www.haproxy.org/download/1.5/src/${HAPROXY_SRC}'"
+        fi
+        remote_cmd $LB_HOSTNAME "$PKG_MGR $BUILD"
+        remote_cmd $LB_HOSTNAME "tar xvfz /tmp/${HAPROXY_SRC} -C /tmp/"
+        remote_cmd_nofail $LB_HOSTNAME "killall -q  -9 haproxy"	
+        remote_cmd $LB_HOSTNAME "sh -c 'cd /tmp/`basename ${HAPROXY_SRC} .tar.gz` && make TARGET=linux26 && cp -f haproxy /usr/sbin/'"
     else
-	remote_cmd $LB_HOSTNAME "$PKG_MGR2 haproxy"
+        remote_cmd $LB_HOSTNAME "$PKG_MGR2 haproxy"
     fi
     remote_copy $TMPDIR/${PREFIX}_${LB_NAME}_haproxy.cfg $LB_HOSTNAME /tmp
     remote_cmd_nofail $LB_HOSTNAME "mkdir -p /etc/haproxy/"
@@ -1048,17 +1077,17 @@ function install_haproxy
     #remote_cmd $LB_HOSTNAME "/usr/sbin/haproxy -f /etc/haproxy/haproxy.cfg -p /var/run/haproxy.pid -st \$(cat /var/run/haproxy.pid"                                                                                         
     remote_cmd $LB_HOSTNAME "/usr/sbin/haproxy ${HAPROXY_OPTS}"
     if [ -z "$BUILD_FROM_SRC" ]; then
-	echo ""
-	echo "** Adding init.d/haproxy auto start**"
-	echo ""
+        echo ""
+        echo "** Adding init.d/haproxy auto start**"
+        echo ""
 	
-	if [ $OS = "rhel" ] || [ $OS = "centos6"  ] ; then
+        if [ $OS = "rhel" ] || [ $OS = "centos6"  ] ; then
             remote_cmd $LB_HOSTNAME "/sbin/chkconfig --add haproxy"
             remote_cmd $LB_HOSTNAME "/sbin/chkconfig haproxy on"
-	else
+        else
             remote_cmd $LB_HOSTNAME "sed -i 's#ENABLED=.*#ENABLED=1#g' /etc/default/haproxy"
             remote_cmd $LB_HOSTNAME "/usr/sbin/update-rc.d haproxy defaults"
-	fi
+        fi
     fi
     echo ""
     echo "** Tuning Network **"
@@ -1084,7 +1113,7 @@ function install_haproxy
     remote_cmd $LB_HOSTNAME  "/bin/sh -c 'echo \"net.ipv4.tcp_fin_timeout = 5\" >> /etc/sysctl.conf'"
     
     QUERY="select count(column_name) from information_schema.columns where table_schema='cmon' and table_name='haproxy_server' and column_name='server_addr'"
-    CNT=`$MYSQL_BIN -A -B -N  -ucmon -p$CMON_PASSWORD --host=$CMON_DB_HOST --database=$CMON_DB_DB --port=${CMON_DB_PORT} -e "$QUERY" 2>&1`
+    CNT=`$MYSQL_BIN $MYSQL_OPTS -NAB --database=$CMON_DB_DB --port=${CMON_DB_PORT} -e "$QUERY" 2>&1`
     if [ $CNT -eq 0 ]; then
         QUERY="ALTER TABLE $CMON_DB.haproxy_server ADD COLUMN server_addr VARCHAR(255) DEFAULT ''"
         $bindir/mysql -B -N  -ucmon -p$CMON_PASSWORD --database=$CMON_DB_DB -h$CMON_DB_HOST -P${CMON_DB_PORT} -e "$QUERY" 2>&1 >/tmp/err.log
@@ -1092,9 +1121,9 @@ function install_haproxy
             log_job_message "Query failed: $QUERY"
             echo ""
             cat /tmp/err.log           
-	    log_job 'FAILED' 's9s_haproxy failed' 1
-	    write_email 's9s_haproxy installation failed' "Query failed: $QUERY"
-	    exit 1
+            log_job 'FAILED' 's9s_haproxy failed' 1
+            write_email 's9s_haproxy installation failed' "Query failed: $QUERY"
+            exit 1
         fi
     fi
 
@@ -1104,14 +1133,14 @@ function install_haproxy
 
 
     QUERY="REPLACE INTO ext_proc (cid, hostname,bin, opts,cmd, proc_name, port) VALUES($CLUSTER_ID, '$LB_HOSTNAME','/usr/sbin/haproxy', \"${HAPROXY_OPTS}\", \"/usr/sbin/haproxy ${HAPROXY_OPTS}\",'haproxy', $LB_ADMIN_PORT)"
-    $MYSQL_BIN -B -N  -ucmon -p$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST  --port=${CMON_DB_PORT} -e "$QUERY" 2>&1 >/tmp/err.log
+    $MYSQL_BIN $MYSQL_OPTS -NB --database=$CMON_DB_DB --host=$CMON_DB_HOST  --port=${CMON_DB_PORT} -e "$QUERY" 2>&1 >/tmp/err.log
     if [  $? -ne 0 ]; then
-	log_job_message "Query failed: $QUERY" 1
-	echo ""
-	cat /tmp/err.log
-	log_job 'FAILED' 's9s_haproxy failed' 1
-	write_email 's9s_haproxy installation failed' "Query failed: $QUERY"
-	exit 1
+        log_job_message "Query failed: $QUERY" 1
+        echo ""
+        cat /tmp/err.log
+        log_job 'FAILED' 's9s_haproxy failed' 1
+        write_email 's9s_haproxy installation failed' "Query failed: $QUERY"
+        exit 1
     fi
 
 
@@ -1574,7 +1603,7 @@ function delete_haproxy
     $MYSQL_BIN --host=$CMON_DB_HOST --port=$CMON_DB_PORT --user=cmon --password=$CMON_PASSWORD --database=$CMON_DB_DB -e "$QUERY"
     
     QUERY="DELETE FROM ext_proc WHERE cid=$CLUSTER_ID AND hostname='$LB_HOSTNAME' AND proc_name='haproxy'"
-    $MYSQL_BIN -B -N  -ucmon -p$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST  --port=${CMON_DB_PORT} -e "$QUERY" 2>&1 >/tmp/err.log
+    $MYSQL_BIN $MYSQL_OPTS -NB --database=$CMON_DB_DB --host=$CMON_DB_HOST  --port=${CMON_DB_PORT} -e "$QUERY" 2>&1 >/tmp/err.log
     if [  $? -ne 0 ]; then
         log_job_message "Query failed: $QUERY" 1
        echo ""
@@ -1714,23 +1743,23 @@ function add_node
                 esac
     done
     if [ -z "$CLUSTER_ID" ]; then
-      echo "s9s_haproxy --remove-node -i <cluster id>  missing"
+      echo "s9s_haproxy --add-node -i <cluster id>  missing"
       exit 1
     fi
     init
     
     if [ -z "$CMON_PASSWORD" ]; then
-      echo "s9s_haproxy --remove-node -p  missing"
+      echo "s9s_haproxy --add-node -p  missing"
       exit 1
     fi
 
     if [ -z "$LB_HOSTNAME" ]; then
-        echo "s9s_haproxy --remove-node  -h <loadbalancer host> missing"
+        echo "s9s_haproxy --add-node  -h <loadbalancer host> missing"
         exit 1
     fi
 
     if [ -z "$NODE" ]; then
-        echo "s9s_haproxy --remove-node  -n <serveraddr to add to lb > missing"
+        echo "s9s_haproxy --add-node  -n <serveraddr to add to lb > missing"
         exit 1
     fi
     
@@ -1787,10 +1816,7 @@ function add_node
         ;;
     esac
     cp $TMPDIR/mysqlchk.sh.$CLUSTER_TYPE $TMPDIR/mysqlchk.sh 
-    sed -i "s#MYSQL_PASSWORD=.*#MYSQL_PASSWORD=\"$CMON_PASSWORD\"#g" $TMPDIR/mysqlchk.sh
-    sed -i "s#MYSQL_USERNAME=.*#MYSQL_USERNAME=\"cmon\"#g" $TMPDIR/mysqlchk.sh
-    sed -i "s#MYSQL_PORT=.*#MYSQL_PORT=\"$MONITORED_MYSQL_PORT\"#g" $TMPDIR/mysqlchk.sh
-    sed -i "s#MYSQL_BIN=.*#MYSQL_BIN=\"$MYSQL_BIN\"#g" $TMPDIR/mysqlchk.sh
+    
     install_mysqlchk $NODE
     REMOVE_STR="server $NODE"
     remote_cmd_nofail $LB_HOSTNAME "sed -i.bak '/$REMOVE_STR/d'  /etc/haproxy/haproxy.cfg"
