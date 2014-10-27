@@ -1125,7 +1125,7 @@ backupCmon()
 		mkdir -p $tmp_dir/wwwroot
 		if [ -e $wwwroot/clustercontrol ]; then
 			CC_DB_DB=dcps
-			[ -d $wwwroot/cc-* ] && commandStatus 'Backing up ClusterControl web app (older filename)' "cp -pfR $wwwroot/cc-* $tmp_dir/wwwroot"
+			[[ -d $wwwroot/cc-* ]] && commandStatus 'Backing up ClusterControl web app (older filename)' "cp -pfR $wwwroot/cc-* $tmp_dir/wwwroot"
 			commandStatus 'Backing up ClusterControl web app' "cp -pfR $wwwroot/clustercontrol $wwwroot/cmona* $tmp_dir/wwwroot"
 			if [ ! -z "$backup_db" ]; then
 				($MYSQLDUMP_BIN -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT $CC_DB_DB -r $tmp_dir/dcps_dump.sql) &
