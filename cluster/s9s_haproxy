@@ -309,8 +309,8 @@ echo -n "
 listen  "$DESC"
         bind *:$LISTEN_PORT
         mode tcp
-        timeout client  60000ms
-        timeout server  60000ms
+        timeout client  28800s
+        timeout server  28800s
         balance ${LB_POLICY}
         option httpchk
         option allbackups
@@ -798,6 +798,9 @@ function install_mysqlchk
     sed -i "s#MYSQL_PORT=.*#MYSQL_PORT=\"$MONITORED_MYSQL_PORT\"#g" $TMPDIR/mysqlchk.sh
     sed -i "s#MYSQL_BIN=.*#MYSQL_BIN=\"$MYSQL_BIN\"#g" $TMPDIR/mysqlchk.sh
 
+    if [ $OS = "debian" ]; then
+        remote_cmd $h "apt-get -y update"
+    fi
     remote_cmd $h "mkdir -p $S9S_TMPDIR"
     remote_cmd $h "chown -R $SSH_USER:$SSH_USER $S9S_TMPDIR"
     remote_cmd_nofail $h  "sed  -i  '/mysqlchk        9200\/tcp/d' /etc/services"
@@ -949,7 +952,7 @@ function install_haproxy
             PKG_MGR="$HTTP_PROXY yum -y install "
             PKG_MGR2="$HTTP_PROXY yum -y install "
             PHP_CURL="php-curl"
-	    BUILD="gcc make"
+	        BUILD="gcc make"
             CENTOS=$(remote_cmd_getreply $LB_HOSTNAME 'test -f /etc/redhat-release && cat /etc/redhat-release  | grep -i centos |grep "6"')
 	    if [ -z "$BUILD_FROM_SRC" ]; then
 		if [ -n "$CENTOS" ]; then
@@ -973,7 +976,7 @@ function install_haproxy
             PKG_MGR="$HTTP_PROXY apt-get install -y "
             PKG_MGR2="$HTTP_PROXY apt-get install -y "
             PHP_CURL="php5-curl"
-	    BUILD="gcc make"
+	        BUILD="gcc make"
             OS=debian
             ;;
         *)
@@ -1042,7 +1045,9 @@ function install_haproxy
     echo "*************************************************************"
     echo "* Installing haproxy on $LB_HOSTNAME                            *"
     echo "*************************************************************"
-
+    if [ $OS = "debian" ]; then
+        remote_cmd $LB_HOSTNAME "apt-get -y update"
+    fi
     remote_cmd $LB_HOSTNAME "$PKG_MGR wget"
 
     if [ $OS = "rhel" ] || [ $OS = "centos6" ]; then

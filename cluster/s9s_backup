@@ -1360,12 +1360,14 @@ function install
     if [ -z "$MYSQL_BINDIR" ]; then
 	init
     else
-	MYSQL_BIN=$MYSQL_BINDIR
-	if [ ! -f $MYSQL_BIN ]; then
-	    echo "s9s_backup - mysql client not found, change -B $MYSQL_BINDIR"
-	    exit 1
-	fi
+	    MYSQL_BIN=$MYSQL_BINDIR
+	    if [ ! -f $MYSQL_BIN ]; then
+	        echo "s9s_backup - mysql client not found, change -B $MYSQL_BINDIR"
+	        exit 1
+	    fi
     fi
+    
+    write_mycnfcmon
 
     if [ -z "$BACKUPDIR" ]; then
 	    BACKUPDIR=`$MYSQL_BIN $MYSQL_OPTS -NAB --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='BACKUPDIR' AND cid=$CLUSTER_ID"  2>/dev/null`
