@@ -287,6 +287,7 @@ function collect_mysql_logs()
 	mkdir -p $savedir/$host
 	tmpsavedir=$savedir/$host
 	$MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --port=$MONITORED_MYSQL_PORT -h$host -e "SHOW GLOBAL STATUS" > $tmpsavedir/show_status
+	$MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --port=$MONITORED_MYSQL_PORT -h$host -e "SHOW ENGINE INNODB STATUS" > $tmpsavedir/innodb_status
 	$MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --port=$MONITORED_MYSQL_PORT -h$host -e "SHOW GLOBAL VARIABLES" > $tmpsavedir/show_variables
 	$MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --port=$MONITORED_MYSQL_PORT -h$host -e "SHOW FULL PROCESSLIST" > $tmpsavedir/show_processlist
 	if [ -z "$XDATADIR" ]; then
@@ -538,7 +539,7 @@ function create_report
     
     collect_controller
     if [ "$CLUSTER_TYPE" != "mongodb" ]; then
-	collect_mysql_logs
+	    collect_mysql_logs
     fi
     if [ "$CLUSTER_TYPE" = "mysqlcluster" ]; then
 	collect_ndb_logs
