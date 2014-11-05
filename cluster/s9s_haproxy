@@ -69,6 +69,8 @@ function init
     MYCNF_CMON=`dirname $MYSQL_CONFIG`/my_cmon.cnf
     cat << 'EOF' > $MYCNF_CMON
 [mysql_cmon]
+host=127.0.0.1
+port=3306
 user=cmon
 password=
 EOF
