@@ -34,61 +34,62 @@ do
     echo "s9s_backupc_wd:  $x " >> $BACKUP_LOGFILE
     if [ -n "$x" ]; 
     then
-	scp -q $SCP_OPTS $SSH_USER@$BACKUP_HOSTNAME:$BACKUP_LOGFILE $BACKUP_LOGFILE
-	if  [ $? -ne 0 ]; then
-	    exit 1
-	fi
-	err=`grep "$searchexpr" $BACKUP_LOGFILE`
-	if [ -n "$err" ]; then
+        scp -q $SCP_OPTS $SSH_USER@$BACKUP_HOSTNAME:$BACKUP_LOGFILE $BACKUP_LOGFILE
+        if  [ $? -ne 0 ]; then
+            exit 1
+        fi
+        err=`grep "$searchexpr" $BACKUP_LOGFILE`
+        if [ -n "$err" ]; then
             sleep $SLEEPTIME
             ssh $SSH_OPTS $SSH_USER@$BACKUP_HOSTNAME "$SUDO killall -q -9 xtrabackup innobackupex xtrabackup_55 xtrabackup_56"
             echo "BACKUP FAILED: $err " >> $BACKUP_LOGFILE
             echo "BACKUP FAILED: $err " >> /tmp/s9s_backupc_wd.log
-	    kill -9 $pid 2>/dev/null
+            kill -9 $pid 2>/dev/null
             exit 1
-	fi
-	err=`grep "$searchexpr2" $BACKUP_LOGFILE`
-	if [ -n "$err" ]; then
-	    for p in $x 
-	    do
-		ssh $SSH_OPTS $SSH_USER@$BACKUP_HOSTNAME "$SUDO kill -15 $p"
-	    done
+        fi
+        err=`grep "$searchexpr2" $BACKUP_LOGFILE`
+        if [ -n "$err" ]; then
+            for p in $x 
+            do
+	            ssh $SSH_OPTS $SSH_USER@$BACKUP_HOSTNAME "$SUDO kill -15 $p"
+            done
             echo "BACKUP OK: $err " >> /tmp/s9s_backupc_wd.log
-	    kill -9 $pid 2>/dev/null
-	    exit 0
-	fi
+            kill -9 $pid 2>/dev/null
+            exit 0
+        fi
     else
-
-	scp -q $SCP_OPTS $SSH_USER@$BACKUP_HOSTNAME:$BACKUP_LOGFILE $BACKUP_LOGFILE
-	if  [ $? -ne 0 ]; then
-	    exit 1
-	fi
-	err=`grep "$searchexpr" $BACKUP_LOGFILE`
-	if [ -n "$err" ]; then
+        sleep 5
+        scp -q $SCP_OPTS $SSH_USER@$BACKUP_HOSTNAME:$BACKUP_LOGFILE $BACKUP_LOGFILE
+        if  [ $? -ne 0 ]; then
+            exit 1
+        fi
+        sync        
+        err=`grep "$searchexpr" $BACKUP_LOGFILE`
+        if [ -n "$err" ]; then
             sleep $SLEEPTIME
             ssh $SSH_OPTS $SSH_USER@$BACKUP_HOSTNAME "$SUDO killall -q -9 xtrabackup innobackupex xtrabackup_55 xtrabackup_56"
             echo "BACKUP FAILED: $err " >> $BACKUP_LOGFILE
             echo "BACKUP FAILED: $err " >> /tmp/s9s_backupc_wd.log
-	    kill -9 $pid 2>/dev/null
+            kill -9 $pid 2>/dev/null
             exit 1
-	fi
-	err=`grep "$searchexpr2" $BACKUP_LOGFILE`
-	if [ -n "$err" ]; then
-	    for p in $x 
-	    do
-		ssh $SSH_OPTS $SSH_USER@$BACKUP_HOSTNAME "$SUDO kill -15 $p"
-	    done
+	    fi
+        err=`grep "$searchexpr2" $BACKUP_LOGFILE`
+        if [ -n "$err" ]; then
+            for p in $x 
+            do
+                ssh $SSH_OPTS $SSH_USER@$BACKUP_HOSTNAME "$SUDO kill -15 $p"
+            done
             echo "BACKUP ok: $err " >> /tmp/s9s_backupc_wd.log
-	    kill -9 $pid 2>/dev/null
-	    exit 0
-	fi
-	kill -9 $pid 2>/dev/null
-	exit 0
+            kill -9 $pid 2>/dev/null
+            exit 0
+        fi
+        kill -9 $pid 2>/dev/null
+        exit 0
     fi
     TOTAL_TIME=`expr $TOTAL_TIME + 5`
     sleep 5
     if [ $TOTAL_TIME -gt $TIMEOUT ]; then
-	kill -9 $pid 2>/dev/null
-	exit 1
+        kill -9 $pid 2>/dev/null
+        exit 1
     fi 
 done

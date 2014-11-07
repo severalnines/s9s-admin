@@ -74,10 +74,11 @@ function init
     fi
     
     MYSQL_OPTS="--defaults-file=$MYSQL_CONFIG  --defaults-group-suffix=_cmon --connect-timeout=$CONNECT_TIMEOUT"
-
+    OSUSER=$USER
+        
     if (( EUID != 0 )); then
-	echo "must be executed as 'root' or with 'sudo'"
-	exit 1
+        echo "must be executed as 'root' or with 'sudo'"
+        exit 1
     fi
 }
  
@@ -2021,6 +2022,10 @@ function encrypt_replication()
 
     QUERY="SELECT group_concat(hostname SEPARATOR ' ') FROM $CMON_DB_DB.ext_proc WHERE cid=${CLUSTER_ID} AND proc_name='garbd'"
     GARBD_NODES=`$MYSQL_BIN $MYSQL_OPTS -NAB --host=$CMON_DB_HOST --port=$CMON_DB_PORT --database=$CMON_DB_DB  -e "$QUERY"`
+
+    if [ "$GARBD_NODES" = "NULL" ]; then
+        GARBD_NODES=""
+    fi
 
     ANY_HOSTNAME=`$MYSQL_BIN $MYSQL_OPTS -NAB --host=$CMON_DB_HOST --port=$CMON_DB_PORT --database=$CMON_DB_DB  -e "SELECT hostname FROM $CMON_DB_DB.mysql_server WHERE cid=${CLUSTER_ID} LIMIT 1"`
     if [ -z "$ANY_HOSTNAME" ]; then

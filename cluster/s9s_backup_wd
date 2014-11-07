@@ -24,18 +24,20 @@ do
           rm -rf /tmp/xtrabackup_suspended_2
       fi
    else
-      err=`grep "$searchexpr" $BACKUP_LOGFILE`
-      if [ $? -eq 0 ]; then
-        sleep $SLEEPTIME
-        killall -9 xtrabackup innobackupex xtrabackup_55 xtrabackup_56
-        echo "BACKUP FAILED: $err " >> $BACKUP_LOGFILE
-        exit 1
-      fi
-      err=`grep "$searchexpr2" $BACKUP_LOGFILE`
-      if [ $? -eq 0 ]; then
-          echo "BACKUP Completed OK: $err " >> $BACKUP_LOGFILE
-          exit 0
-      fi
+       sleep 10
+       sync
+       err=`grep "$searchexpr" $BACKUP_LOGFILE`
+       if [ $? -eq 0 ]; then
+           sleep $SLEEPTIME
+           killall -9 xtrabackup innobackupex xtrabackup_55 xtrabackup_56
+           echo "BACKUP FAILED: $err " >> $BACKUP_LOGFILE
+           exit 1
+       fi
+       err=`grep "$searchexpr2" $BACKUP_LOGFILE`
+       if [ $? -eq 0 ]; then
+           echo "BACKUP Completed OK: $err " >> $BACKUP_LOGFILE
+           exit 0
+       fi
       echo "BACKUP FAILED: Unknown reason at this point. " >> $BACKUP_LOGFILE
       exit 1
    fi
