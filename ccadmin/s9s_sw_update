@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Copyright 2012 Severalnines AB
+# Copyright 2012-2014 Severalnines AB
 #
 # MODIFY THE BELOW TO SUIT YOU ENV:
 JOBID=0
@@ -63,11 +63,6 @@ function init
     WWWROOT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='WWWROOT' AND cid=$CLUSTER_ID"`
 
 }
-
-
-
-
-
 
 function log_job_message
 {    
@@ -172,24 +167,6 @@ function remote_copy()
       log_job 'FAILED' 'job failed' 1
       log_job_message "scp $SSH_OPTS2 $srcfile $os_user@$desthost:$destfile" 1
       write_email "s9s_sw_update failed" "s9s_sw_update, remote_cpy failed. Check job messages."
-      printf "\033[31m[failed]\033[0m\n"
-      exit 1
-   fi
-}
-
-function remote_cmdx()
-{
-   desthost=$1
-   xcommand=$2
-   printf "%-4s: Executing '%s'" "$desthost" "$xcommand"
-   ssh -q $SSH_OPTS $SSH_USER@$desthost "$SUDO $xcommand "
-   if [ $? -eq 0 ]; then
-      printf "\033[32m[ok]\033[0m\n"
-      return 0
-   else
-      log_job_message "command failed: $xcommand" 1
-      log_job 'FAILED' 'backup failed' 1
-      write_email "s9s_sw_update failed" "s9s_sw_update, remote_cmdx failed. Check job messages."
       printf "\033[31m[failed]\033[0m\n"
       exit 1
    fi
@@ -494,20 +471,24 @@ function install_mysql
     remote_cmd_nofail $XHOSTNAME "mkdir -p $S9S_TMPDIR"
     remote_cmd_nofail $XHOSTNAME "chown  -R $SSH_USER:$SSH_USER $S9S_TMPDIR"
     if [ "$OS" = "redhat" ]; then
-        if  remote_cmd_getretcode $XHOSTNAME "grep -q -i 'release 6' /etc/redhat-release" ; then
+        if  remote_cmd_getretcode $XHOSTNAME "grep -q -i 'release 7' /etc/redhat-release" ; then
+            RHEL=7
+            EPEL_REL="7-2"
+        elif  remote_cmd_getretcode $XHOSTNAME "grep -q -i 'release 6' /etc/redhat-release" ; then
             RHEL=6
             EPEL_REL="6-8"
-        fi
-        if  remote_cmd_getretcode $XHOSTNAME "grep -q -i 'release 1' /etc/redhat-release" ; then
+        elif  remote_cmd_getretcode $XHOSTNAME "grep -q -i 'release 1' /etc/redhat-release" ; then
             RHEL=5
             EPEL_REL="5-4"
-        fi
-        if  remote_cmd_getretcode $XHOSTNAME "grep -q -i 'Amazon Linux AMI' /etc/issue" ; then
+        elif  remote_cmd_getretcode $XHOSTNAME "grep -q -i 'Amazon Linux AMI' /etc/issue" ; then
             RHEL=6
             EPEL_REL="6-8"
         fi
 	remote_cmd_nofail $XHOSTNAME "rpm -e epel-release"	
-	$HTTP_PROXY wget  -c --no-check-certificate --tries=5 -O$S9S_TMPDIR/epel-release-${EPEL_REL}.noarch.rpm  http://dl.fedoraproject.org/pub/epel/$RHEL/x86_64/epel-release-${EPEL_REL}.noarch.rpm
+	$HTTP_PROXY wget  -c --no-check-certificate --tries=5 -O$S9S_TMPDIR/epel-release-${EPEL_REL}.noarch.rpm \
+        http://dl.fedoraproject.org/pub/epel/$RHEL/x86_64/epel-release-${EPEL_REL}.noarch.rpm || \
+	$HTTP_PROXY wget  -c --no-check-certificate --tries=5 -O$S9S_TMPDIR/epel-release-${EPEL_REL}.noarch.rpm \
+        http://dl.fedoraproject.org/pub/epel/$RHEL/x86_64/e/epel-release-${EPEL_REL}.noarch.rpm
 	if [ $? -ne 0 ]; then
 	    log_job_message "FAILED : download failed - check link and/or that EPEL version. EPEL is needed for socat." 1
 	    log_job 'FAILED' 'job failed' 1	   
@@ -770,6 +751,13 @@ baseurl = http://yum.mariadb.org/5.5/centos6-amd64
 gpgkey=https://yum.mariadb.org/RPM-GPG-KEY-MariaDB
 gpgcheck=1                 
 EOF
+		            cat << 'EOF' > $S9S_TMPDIR/MariaDB.centos7
+[mariadb]
+name = MariaDB
+baseurl = http://yum.mariadb.org/5.5/centos7-amd64
+gpgkey=https://yum.mariadb.org/RPM-GPG-KEY-MariaDB
+gpgcheck=1                 
+EOF
 		            cat << 'EOF' > $S9S_TMPDIR/MariaDB.rhel5
 [mariadb]
 name = MariaDB
@@ -781,6 +769,13 @@ EOF
 [mariadb]
 name = MariaDB
 baseurl = http://yum.mariadb.org/5.5/rhel6-amd64
+gpgkey=https://yum.mariadb.org/RPM-GPG-KEY-MariaDB
+gpgcheck=1                 
+EOF
+		            cat << 'EOF' > $S9S_TMPDIR/MariaDB.rhel7
+[mariadb]
+name = MariaDB
+baseurl = http://yum.mariadb.org/5.5/rhel7-amd64
 gpgkey=https://yum.mariadb.org/RPM-GPG-KEY-MariaDB
 gpgcheck=1                 
 EOF
@@ -800,6 +795,13 @@ baseurl = http://yum.mariadb.org/10.0/centos6-amd64
 gpgkey=https://yum.mariadb.org/RPM-GPG-KEY-MariaDB
 gpgcheck=1                 
 EOF
+		            cat << 'EOF' > $S9S_TMPDIR/MariaDB.centos7
+[mariadb]
+name = MariaDB
+baseurl = http://yum.mariadb.org/10.0/centos7-amd64
+gpgkey=https://yum.mariadb.org/RPM-GPG-KEY-MariaDB
+gpgcheck=1                 
+EOF
 		            cat << 'EOF' > $S9S_TMPDIR/MariaDB.rhel5
 [mariadb]
 name = MariaDB
@@ -814,9 +816,20 @@ baseurl = http://yum.mariadb.org/10.0/rhel6-amd64
 gpgkey=https://yum.mariadb.org/RPM-GPG-KEY-MariaDB
 gpgcheck=1                 
 EOF
+		            cat << 'EOF' > $S9S_TMPDIR/MariaDB.rhel7
+[mariadb]
+name = MariaDB
+baseurl = http://yum.mariadb.org/10.0/rhel7-amd64
+gpgkey=https://yum.mariadb.org/RPM-GPG-KEY-MariaDB
+gpgcheck=1                 
+EOF
                 fi
 		        if [ -f /etc/system-release ]; then
-		            RHEL=6
+		            RHEL=$(cat /etc/system-release | egrep "[0-9]" -o | head -1)
+                    if [ "${RHEL}x" == "2x" ]; then
+                        # On Amazon AMI we have a line like 'Amazon AMI release 201409
+                        RHEL=6
+                    fi
 		            OS2='rhel'		    
 		        else
 		            RHEL=$(cat /etc/redhat-release | egrep "[0-9]" -o | head -1)
@@ -902,6 +915,8 @@ EOF
     remote_cmd $XHOSTNAME "mv -f $S9S_TMPDIR/my.cnf $CONFIGDIR/"
     remote_cmd $XHOSTNAME "chmod 600 $CONFIGDIR/my.cnf"
     remote_cmd_nofail $XHOSTNAME "chown mysql.mysql $CONFIGDIR/my.cnf"
+    remote_cmd_nofail $XHOSTNAME "mkdir -p /var/run/mysqld"
+    remote_cmd_nofail $XHOSTNAME "chown -R mysql.mysql /var/run/mysqld"
     
     case $CLUSTER_TYPE in
 	    galera)
@@ -933,6 +948,14 @@ EOF
     ### POST INSTALL
     mkdir -p $S9S_TMPDIR
     chown  -R $SSH_USER:$SSH_USER $S9S_TMPDIR
+
+    # first check if the package if it is a systemd package
+    if remote_cmd_getretcode $XHOSTNAME "test -f /usr/lib/systemd/system/mysql.service" ; then
+        # enable the mysql service on boot
+		remote_cmd $XHOSTNAME "systemctl enable mysql.service"
+        # and we are finished here then...
+        exit 0
+    fi
 
     case $VENDOR in
 	percona)
@@ -1426,7 +1449,7 @@ function load_opts
     SSH_OPTS="$SSH_OPTSX -p$SSH_PORT $SSH_OPTS"    
     SSH_OPTS2="-P$SSH_PORT $SSH_OPTS2"    
     echo $MYCNF |  sed 's#\\n#\n\r#g' > $S9S_TMPDIR/my.cnf
-    DATADIR=`cat $S9S_TMPDIR/my.cnf  |grep -i datadir |head -n 1 | awk -F= '{print $2;}' | tr -d '\r\n\t '`
+    DATADIR=`cat $S9S_TMPDIR/my.cnf | grep -i datadir | head -n 1 | awk -F= '{print $2;}' | tr -d '\r\n\t '`
     if [ -z "$DATADIR" ]; then
         log_job_message "datadir is not set in my.cnf , verify you have imported the configuration (Manage -> Configuration) - aborting" 1 
         exit 1
