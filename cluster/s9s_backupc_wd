@@ -14,16 +14,20 @@ searchexpr="innobackupex: Error: "
 searchexpr2="innobackupex: completed OK!"
 #give xtrabackup a chance to start
 nc -d -l $NETCAT_PORT > $BACKUPFILE &
-ret=$?
-pid=$!
+sleep 1
+pid=`pgrep -f 'nc -d'`
 
-if [ $ret -ne 0 ]; then
-   nc -d -l $NETCAT_PORT > $BACKUPFILE &
-   ret=$?
-   if [ $ret -ne 0 ]; then
-     echo "Failed to start netcat" >> /tmp/s9s_backupc_wd.log
-     exit 1
-   fi
+if [ -z "$pid" ]; then
+    # give it an another try as nmap-ncat doesn't have
+    # -d (don't read from stdin) option, for CentOS7/RHEL7
+    nc -l $NETCAT_PORT > $BACKUPFILE &
+    sleep 1
+    pid=`pgrep -f 'nc -l'`
+fi
+
+if [ -z "$pid" ]; then
+    echo "Failed to start netcat" >> /tmp/s9s_backupc_wd.log
+    exit 1
 fi
 sleep 60
 

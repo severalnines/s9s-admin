@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copyright 2012 Severalnines AB
+# Copyright 2012-2014 Severalnines AB
 #
 # MODIFY THE BELOW TO SUIT YOU ENV:
 jobid=0
@@ -51,7 +51,7 @@ function init
     NETCAT_PORT=59999
     ULIMIT=32768
 ### NO MODS BELOW UNLESS YOU KNOW WHAT YOU DO:
-    MYSQL_BIN=$mysql_basedir/bin//mysql
+    MYSQL_BIN=$mysql_basedir/bin/mysql
     MYSQL_BIN2=$mysql_bindir/mysql 
     if ! test -f $MYSQL_BIN; then
 	if ! test -f $MYSQL_BIN2; then
@@ -485,8 +485,6 @@ function start_backup
 		        exit 1
 	    esac
 
-        
-
 	    echo $FILENAME 
 	    DATADIR=`$MYSQL_BIN $MYSQL_OPTS -NAB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "SHOW GLOBAL VARIABLES LIKE 'datadir'" | awk '{print $2;}'`
 	    ID=`$MYSQL_BIN $MYSQL_OPTS -NAB --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select ifnull(max(backupid)+1,1) from mysql_backup"`
@@ -559,8 +557,12 @@ function start_backup
 	    sleep 5
 	    nc_pid=`pgrep -f 'nc -d'`
 	    if [ -z "$nc_pid" ]; then
-            write_email "Backup failed" "could not start nc -d -l 59999"
-            log_job_message "could not start nc -d -l 59999" 1
+            # nmap-ncat doesn't have -d option, we might called that
+            nc_pid=`pgrep -f 'nc -l'`
+        fi
+	    if [ -z "$nc_pid" ]; then
+            write_email "Backup failed" "could not start nc -d -l ${NETCAT_PORT}"
+            log_job_message "could not start nc -d -l ${NETCAT_PORT}" 1
             log_job 'FAILED' 'backup failed' 1
             rm -rf $LOCKFILE
             trap - INT TERM EXIT
@@ -918,7 +920,7 @@ function restore
   
   if [ ! -f $MYCNF ]; then
       if [! -f /etc/mysql/my.cnf ]; then
-          if [-f /etc//my.cnf ]; then
+          if [-f /etc/my.cnf ]; then
               echo "could not find my.cnf"
               exit 1
           else
