@@ -1350,20 +1350,19 @@ upgradeCmonRepo()
 		rpm -qa | grep php-ldap &> /dev/null
 		[ $? -ne 0 ] && commandStatus 'Installing PHP LDAP' "$HTTP_PROXY yum install -y php-ldap"
 	else
+		dpkg --get-selections | grep -v deinstall | grep clustercontrol-controller &> /dev/null
+		[ $? -eq 0 ] && commandStatus "Removing clustercontrol-controller package" "$HTTP_PROXY apt-get remove -y clustercontrol-controller"
+		
 		rm -Rf /usr/sbin/cmon
 		rm -Rf /usr/bin/cmon*
 		rm -Rf /usr/bin/s9s_*
 		rm -Rf /usr/local/cmon*
 		rm -Rf /etc/init.d/cmon
 		rm -Rf /etc/cron.d/cmon
-		rm -Rf /usr/local/cmon*
 		
 		commandStatus "Installing clustercontrol-controller package" "$HTTP_PROXY apt-get install -y clustercontrol-controller"
 		dpkg --get-selections | grep -v deinstall | grep php5-ldap &> /dev/null
-		if [ $? -ne 0 ]; then
-			commandStatus "Updating apt-get" "$HTTP_PROXY apt-get update"
-			commandStatus "Installing PHP LDAP" "$HTTP_PROXY apt-get install -y php5-ldap"
-		fi
+		[ $? -ne ] && commandStatus "Installing PHP LDAP" "$HTTP_PROXY apt-get install -y php5-ldap"
 	fi
 	
 	if [ -d /$tmp_dir/cmon.d ]; then
