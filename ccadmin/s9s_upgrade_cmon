@@ -1051,14 +1051,21 @@ restoreCmon()
 			if [ "$os" == "redhat" ]; then
 				share_dir_cmon=/usr/share
 				rm -Rf $share_dir_cmon/cmon*
-				commandStatus 'Restoring CMON share directory' "cp -pfR $backup_dir/local/* $share_dir_cmon/"
+				commandStatus 'Restoring CMON share directory' "cp -pfR $backup_dir/share/* $share_dir_cmon/"
 			fi
 		fi
 
 		if [ "$os" == "debian" ]; then
 			share_dir_cmon=`echo $install_dir_cmon | sed "s|cmon||g"`
-			rm -Rf $share_dir_cmon/cmon*
-			commandStatus 'Restoring CMON install directory' "cp -pfR $backup_dir/local/* $share_dir_cmon/"
+			if [ -e $backup_dir/share ]; then
+				share_dir_cmon=/usr/share
+                                rm -Rf $share_dir_cmon/cmon*
+				commandStatus 'Restoring CMON share directory' "cp -pfR $backup_dir/share/* $share_dir_cmon/"
+			elif [ -e $backup_dir/local ]; then
+				share_dir_cmon=/usr/local
+                                rm -Rf $share_dir_cmon/cmon*
+				commandStatus 'Restoring CMON install directory' "cp -pfR $backup_dir/local/* $share_dir_cmon/"
+			fi
 		fi
 		commandStatus 'Restoring CMON configuration files' "cp -pfR $backup_dir/cmon.cnf /etc"
 		commandStatus 'Restoring CMON log file' "cp -pfR $backup_dir/*.log /var/log/"
@@ -1139,8 +1146,8 @@ backupCmon()
 			echo "NEW_UI=NO" >> $upgrade_details
 		fi
 		
-		mkdir -p $tmp_dir/local
-		[ "$os" == "redhat" ] && commandStatus 'Backup CMON share directory' "cp -pfR /usr/share/cmon $tmp_dir/local/"
+		mkdir -p $tmp_dir/share
+		[ "$os" == "redhat" ] && commandStatus 'Backing up CMON share directory' "cp -pfR /usr/share/cmon $tmp_dir/share/"
 	fi
 
 	commandStatus 'Backing up CMON configuration files' "cp -pfR /etc/cmon* $tmp_dir/"
@@ -1150,7 +1157,16 @@ backupCmon()
 	[ "$os" == "debian" ] && MYSQL_ETC=/etc/mysql
 	[ -f $MYSQL_ETC/my.cnf ] && commandStatus 'Backup my.cnf'  "cp -pfR $MYSQL_ETC/my.cnf $tmp_dir/"
 
-	[ "$os" == "debian" ] && mkdir -p $tmp_dir/local &&  commandStatus 'Backing up CMON install directory' "cp -pfR $install_dir_cmon* $tmp_dir/local/"
+	if [ "$os" == "debian" ]; then
+		[ -e $install_dir_cmon ] && mkdir -p $tmp_dir/share
+		if [ $install_dir_cmon == "/usr/local/cmon" ]; then
+			mkdir -p $tmp_dir/local
+			commandStatus 'Backing up CMON install directory' "cp -pfR $install_dir_cmon* $tmp_dir/local/"
+		else
+			commandStatus 'Backing up CMON share directory' "cp -pfR /usr/share/cmon $tmp_dir/share/"
+		fi
+	fi
+
 	mkdir -p $tmp_dir/bin
 	if [ "$type" == "mongodb" ]; then
 		[ -f /usr/bin/s9s_mongodb_admin ] && commandStatus 'Backing up s9s binary' "cp -pfR /usr/bin/s9s_* $tmp_dir/bin/"
@@ -1446,9 +1462,13 @@ verify_options (){
 verify_topdir()
 {
 	if [ "$mode" == "controller" ] || [ "$mode" == "dual" ]; then
-		install_dir_cmon=/usr/local/cmon
+		install_dir_cmon=/usr
+		if [ "$os" == "debian" ]; then
+			if [ ! -f $install_dir_cmon/sbin/cmon ]; then
+				[ -e "/usr/local/cmon" ] && install_dir_cmon=/usr/local/cmon
+			fi
+		fi
 		[ ! -z "$top_dir" ] && install_dir_cmon=$top_dir
-		[ "$os" == "redhat" ] && install_dir_cmon=/usr
 	fi
 
 	[ ! -f $install_dir_cmon/sbin/cmon ] && echo "Could not find CMON binary at $install_dir_cmon/sbin/cmon. Make sure you specify a correct CMON path. Use -t for custom CMON path." && exit 1
