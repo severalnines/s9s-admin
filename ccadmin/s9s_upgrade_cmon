@@ -108,7 +108,7 @@ if [ ! -e $CMON_CONFIG ] ; then
 	exit 1
 else
 	cat $CMON_CONFIG | grep -v ^# | grep -v ^$ | grep -q -E '[ \t]' 2> /dev/null
-    
+
 	if [ $? -eq 0 ]; then
 		i=0
 	while read line; do
@@ -172,7 +172,7 @@ writeLog()
 	local LABEL=$2
 	local COMMAND=$3
 	local OUTPUT=$4
-	
+
 	if [ $OPT -eq 1 ]; then
 		echo "$(date +"%d-%m-%y %T.%N") $LABEL" >> $UPGRADE_LOG
 	elif [ $OPT -eq 2 ]; then
@@ -198,7 +198,7 @@ adviseRestore()
 	else
 		writeLog 2 '[ERROR] Working backup not found' "$tmp_dir/upgrade_details.txt does not exist"
 		echo -n "Working backup not found. Kindly proceed with manual restoration." && echo "" && exit 1
-	fi	
+	fi
 	read -p "Do you want to restore to the original version? [Y/n]: " answer
 	if [ "$answer" == "N" ] || [ "$answer" == "n" ]; then
 		writeLog 1 '[INFO] Restoration aborted by user'
@@ -333,7 +333,7 @@ diffVersion()
 		buildnumber=$d1
 		v1=`echo $[a1*1000+b1*100+c1]`
 	fi
-	
+
 	if [ "$c_type" == "mongodb" ]; then
 		[ $b1 -eq 0 ] && v1=`echo $[a1*1000+200+c1]` || v1=`echo $[a1*1000+b1*100+c1]`
 	fi
@@ -360,11 +360,11 @@ collectInfo()
 	checkRequirement curl
 	checkRequirement bc
 
-	echo ""	
+	echo ""
 	echo "==================================="
 	echo "      Collecting Information"
 	echo "==================================="
-	
+
 	query_cmon_version="SELECT DISTINCT cmon_version FROM cmon.hosts WHERE cid=$CLUSTER_ID ORDER BY cmon_version ASC;"
 	query_cmon_install_method="SELECT value FROM cmon.cmon_configuration WHERE param='INSTALL_METHOD' AND cid=$CLUSTER_ID;"
 	query_cmon_tables="SET group_concat_max_len=20480;SELECT group_concat(table_name SEPARATOR ' ') FROM information_schema.tables WHERE table_schema='cmon' AND (table_name NOT LIKE '%history%' OR table_name NOT LIKE 'mysql_statistics_tm');"
@@ -421,7 +421,7 @@ collectInfo()
 				echo -n " $q"
 			done
 		echo ""
-		
+
 		if [ "$1" != "--noexit" ]; then
 			echo "This script will assume that you want to upgrade from ${zmod_ver[0]} to the latest version."
 			read -p "Proceed? [Y/n]: " ans
@@ -510,10 +510,10 @@ startCmon()
 {
 	[ ! -z "$1" ] && os=$1
 
-	if [ "$mode" == "controller" ] || [ "$mode" == "dual" ]; then		
+	if [ "$mode" == "controller" ] || [ "$mode" == "dual" ]; then
 		apache_svc=apache2
 		cron_svc=cron
-		[ "$os" == "redhat" ] && apache_svc=httpd && cron_svc=crond	
+		[ "$os" == "redhat" ] && apache_svc=httpd && cron_svc=crond
 		commandStatus 'Stopping Apache web server: ' "service $apache_svc stop"
 		sleep 1
 		commandStatus 'Starting Apache web server: ' "service $apache_svc start"
@@ -614,7 +614,7 @@ upgradeCmonDatabase()
 		writeLog 1 '[INFO] Skip applying cmon_db_mods'
 		echo "** Skip applying cmon_db_mods"
 	fi
-	
+
 	($MYSQL_BIN -f -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT $CMON_DB_DB < $cmon_sql_path/cmon_data.sql) &
 	progressStatus "Upgrading CMON schema data" $!
 
@@ -638,7 +638,7 @@ installCcUi()
 	progressStatus 'Extracting ClusterControl UI' $!
 	commandStatus 'Installing CMONAPI' "ln -sf $wwwroot/cc-cmonapi-${version} $wwwroot/cmonapi"
 	commandStatus 'Installing ClusterControl UI' "ln -sf $wwwroot/cc-ui-${version} $wwwroot/clustercontrol"
-	
+
 	apache_conf=/etc/apache2/sites-available/default
 	apache_conf_ssl=/etc/apache2/sites-available/default-ssl
 	www_user=www-data
@@ -739,7 +739,7 @@ upgradeCcUi()
 		echo "define('CMON_API', APP_URL .'/cmonapi');" | sudo tee -a ${repo_dir}/cc-ui-${version}/bootstrap.php &>/dev/null
 	fi
 	new_version=$(sed -n "s/^define('CC_UI_VERSION'.*'\(.*\)'.*/\1/p" ${repo_dir}/cc-ui-${version}/bootstrap.php.default)
-	[[ -z $new_version ]] && new_version=$version 
+	[[ -z $new_version ]] && new_version=$version
 	$(grep -q "'CC_UI_VERSION'" ${repo_dir}/cc-ui-${version}/bootstrap.php)
 	if [[ $? -eq 1 ]]; then
 		echo "define('CC_UI_VERSION', '${new_version}');" | sudo tee -a ${repo_dir}/cc-ui-${version}/bootstrap.php &>/dev/null
@@ -758,7 +758,7 @@ upgradeCcUi()
 	CC_DB_DB=dcps
 	($MYSQL_BIN -f -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT $CC_DB_DB < $repo_dir/cc-ui-${version}/sql/dc-schema.sql) &
 	progressStatus 'Upgrading ClusterControl schema' $!
-	
+
 	apache_user=www-data
 	[ "$os" == "redhat" ] && apache_user=apache
 	commandStatus 'Applying permission' "chown -R $apache_user:$apache_user $wwwroot"
@@ -784,7 +784,7 @@ upgradeCcUiRepo()
 	commandStatus 'Backing up ClusterControl bootstrap.php' "cp -f $wwwroot/clustercontrol/bootstrap.php $tmp_dir/cc-bootstrap.php"
 	commandStatus 'Backing up CMONAPI bootstrap.php' "cp -f $wwwroot/cmonapi/config/bootstrap.php $tmp_dir/cmonapi-bootstrap.php"
 	commandStatus 'Backing up CMONAPI database.php' "cp -f $wwwroot/cmonapi/config/database.php $tmp_dir/cmonapi-database.php"
-	
+
 	if [ "$os" == "debian" ]; then
 		dpkg --get-selections | grep -v deinstall | grep clustercontrol-cmonapi &> /dev/null
 		[ $? -eq 0 ] && commandStatus "Removing installed clustercontrol/cmonapi packages" "$HTTP_PROXY apt-get remove -y clustercontrol clustercontrol-cmonapi"
@@ -796,9 +796,9 @@ upgradeCcUiRepo()
 	fi
 	commandStatus 'Removing symlink to UI and CMONAPI' "rm -f $wwwroot/clustercontrol $wwwroot/cmonapi"
 	commandStatus 'Removing ClusterControl UI and CMONAPI' "rm -rf $wwwroot/cc-cmonapi* $wwwroot/cc-ui*"
-	
+
 	commandStatus 'Installing clustercontrol/cmonapi latest version' "$package_manager_upgrade_ui"
-	
+
 	CCUI_BOOTSTRAP=$wwwroot/clustercontrol/bootstrap.php
 	CMONAPI_BOOTSTRAP=$wwwroot/cmonapi/config/bootstrap.php
 	CMONAPI_DATABASE=$wwwroot/cmonapi/config/database.php
@@ -810,31 +810,31 @@ upgradeCcUiRepo()
 	CC_DB_HOST=`grep 'DB_HOST' $tmp_dir/cc-bootstrap.php | awk {'print $2'} | tr -d "');"`
 	CC_DB_PASS=`grep 'DB_PASS' $tmp_dir/cc-bootstrap.php | awk {'print $2'} | tr -d "');"`
 	CC_DB_PORT=`grep 'DB_PORT' $tmp_dir/cc-bootstrap.php | awk {'print $2'} | tr -d "');"`
-	
+
 	#writeLog 2 '[DEBUG] Imported clustercontrol variables' "CC_DB_HOST=$CC_DB_HOST, CC_DB_PASS=$CC_DB_PASS, CC_DB_PORT=$CC_DB_PORT"
-		
+
 	sed -i "s|127.0.0.1|$CC_DB_HOST|g" $CCUI_BOOTSTRAP
 	sed -i "s|DBPASS|$CC_DB_PASS|g" $CCUI_BOOTSTRAP
 	sed -i "s|DBPORT|$CC_DB_PORT|g" $CCUI_BOOTSTRAP
-	
+
 	CMON_TOKEN=`grep 'CMON_TOKEN' $tmp_dir/cmonapi-bootstrap.php | awk {'print $2'} | tr -d "');"`
 	CC_URL=`grep 'CC_URL' $tmp_dir/cmonapi-bootstrap.php | awk {'print $2'} | tr -d "');"`
 	CMONAPI_DB_HOST=`grep 'DB_HOST' $tmp_dir/cmonapi-database.php | awk {'print $2'} | tr -d "');"`
 	CMONAPI_DB_PASS=`grep 'DB_PASS' $tmp_dir/cmonapi-database.php | awk {'print $2'} | tr -d "');"`
 	CMONAPI_DB_PORT=`grep 'DB_PORT' $tmp_dir/cmonapi-database.php | awk {'print $2'} | tr -d "');"`
-	
+
 	#writeLog 2 '[DEBUG] Imported cmonapi variables' "CMON_TOKEN=$CMON_TOKEN, CC_URL=$CC_URL, CMONAPI_DB_HOST=$CMONAPI_DB_HOST, CMONAPI_DB_PASS=$CMONAPI_DB_PASS, CMONAPI_DB_PORT=$CMONAPI_DB_PORT"
-	
+
 	sed -i "s|GENERATED_CMON_TOKEN|$CMON_TOKEN|g" $CMONAPI_BOOTSTRAP
 	sed -i "s|https:/\/\clustercontrol.severalnines.com|$CC_URL|g" $CMONAPI_BOOTSTRAP
 	sed -i "s|127.0.0.1|$CMONAPI_DB_HOST|g" $CMONAPI_DATABASE
 	sed -i "s|MYSQL_PASSWORD|$CMONAPI_DB_PASS|g" $CMONAPI_DATABASE
 	sed -i "s|MYSQL_PORT|$CMONAPI_DB_PORT|g" $CMONAPI_DATABASE
-				
+
 	CC_DB_DB=dcps
 	($MYSQL_BIN -f -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT $CC_DB_DB < $wwwroot/clustercontrol/sql/dc-schema.sql) &
 	progressStatus 'Upgrading ClusterControl schema' $!
-	
+
 	apache_user=www-data
 	[ "$os" == "redhat" ] && apache_user=apache
 	commandStatus 'Applying permission' "chown -R $apache_user:$apache_user $wwwroot"
@@ -848,7 +848,7 @@ upgradeCmon()
 	echo "==================================="
 	echo "          Upgrade CMON"
 	echo "==================================="
-	
+
 	stopCmon
 
 	rm -Rf /usr/sbin/cmon
@@ -867,7 +867,7 @@ upgradeCmon()
 		progressStatus "Extracting $cmon_package" $!
 		cmon_name=`ls -1 $install_dir | grep cmon- | tail -1`
 		ln -sf $install_dir/$cmon_name $install_dir_cmon
-		
+
 		commandStatus "Upgrading S9S binary" "cp -rf $install_dir_cmon/bin/s9s_* /usr/bin/"
 		commandStatus "Upgrading CMON sbin binary" "cp -rf $install_dir_cmon/sbin/* /usr/sbin/"
 		commandStatus "Upgrading CMON init.d script" "cp $install_dir_cmon/etc/init.d/cmon /etc/init.d/"
@@ -935,18 +935,18 @@ upgradeCmon()
 		fi
 
 		upgradeCmonDatabase
-		
+
 		if [ "$NEW_UI" == "NO" ]; then
 			installCcUi $LATEST_CCUI_VERSION
 		else
 			upgradeCcUi $LATEST_CCUI_VERSION
 		fi
-		
+
 		if [ -d /$tmp_dir/cmon.d ]; then
 			[ "$(ls -A /$tmp_dir/cmon.d)" ] && commandStatus 'Restoring CMON config directory' "cp -f $tmp_dir/cmon.d/* /etc/cmon.d/"
 		fi
 	fi
-	
+
 	commandStatus 'Restoring CMON config file' "cp -f $tmp_dir/cmon.cnf /etc/"
 	if [ "$mode" == "controller" ] || [ "$mode" == "dual" ]; then
 		if [ -z "$agent_based" ]; then
@@ -958,9 +958,9 @@ upgradeCmon()
 			fi
 		fi
 	fi
-	
+
 	startCmon
-	
+
 	echo "** ClusterControl $mode upgrade for this host has been completed!"
 }
 
@@ -973,7 +973,7 @@ downloadLatest(){
 	echo "==================================="
 	echo " Download ClusterControl Packages"
 	echo "==================================="
-	
+
 	wget=`which wget`
 	[ -z $wget ] && echo "** Couldn't find wget!" && exit 1
 
@@ -1021,7 +1021,7 @@ restoreCmon()
 	echo "==================================="
 
 	source $upgrade_details
-	
+
 	[ "$OLD_CMON_VERSION" != "$LATEST_CMON_VERSION" ] && echo "** From version $LATEST_CMON_VERSION -> $OLD_CMON_VERSION"
 
 	if [ "$BACKUP_STATUS" == "COMPLETED" ]; then
@@ -1091,11 +1091,11 @@ backupCmon()
 
 	host_type=$mode
 	[ "$mode" == "dual" ] && host_type=controller
-	echo ""	
+	echo ""
 	echo "==================================="
 	echo "        Backup CMON $host_type"
 	echo "==================================="
-	
+
 	if [ -e $tmp_dir ]; then
 		read -p "** $tmp_dir will be removed. Ok to proceed? (y/n): " answer
 		if [ "$answer" == "Y" ] || [ "$answer" == "y" ]; then
@@ -1105,7 +1105,7 @@ backupCmon()
 			exit 1
 		fi
 	fi
-	
+
 	commandStatus "Creating backup directory: $tmp_dir" "mkdir -p $tmp_dir"
 	upgrade_details=$tmp_dir/upgrade_details.txt
 	if [ "$mode" == "controller" ] || [ "$mode" == "dual" ]; then
@@ -1132,7 +1132,9 @@ backupCmon()
 		mkdir -p $tmp_dir/wwwroot
 		if [ -e $wwwroot/clustercontrol ]; then
 			CC_DB_DB=dcps
-			[[ -d $wwwroot/cc-* ]] && commandStatus 'Backing up ClusterControl web app (older filename)' "cp -pfR $wwwroot/cc-* $tmp_dir/wwwroot"
+			if test -n "$(find $wwwroot/cc-* -maxdepth 0 -type d -print -quit)"; then
+				commandStatus 'Backing up ClusterControl web app (older filename)' "cp -pfR $wwwroot/cc-* $tmp_dir/wwwroot"
+			fi
 			commandStatus 'Backing up ClusterControl web app' "cp -pfR $wwwroot/clustercontrol $wwwroot/cmona* $tmp_dir/wwwroot"
 			if [ ! -z "$backup_db" ]; then
 				($MYSQLDUMP_BIN -u$CMON_USER -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT $CC_DB_DB -r $tmp_dir/dcps_dump.sql) &
@@ -1145,7 +1147,7 @@ backupCmon()
 		else
 			echo "NEW_UI=NO" >> $upgrade_details
 		fi
-		
+
 		mkdir -p $tmp_dir/share
 		[ "$os" == "redhat" ] && commandStatus 'Backing up CMON share directory' "cp -pfR /usr/share/cmon $tmp_dir/share/"
 	fi
@@ -1173,7 +1175,7 @@ backupCmon()
 	else
 		commandStatus 'Backing up S9S binary' "cp -pfR /usr/bin/s9s_* $tmp_dir/bin/"
 	fi
-	
+
 	[ -f /usr/bin/cmon_install_agent.sh ] && commandStatus 'Backing up CMON binary' "cp -pfR /usr/bin/cmon_* $tmp_dir/bin/"
 	[ -f /usr/sbin/cmon ] && mkdir -p $tmp_dir/sbin && commandStatus 'Backing up CMON sbin binary' "cp -pf /usr/sbin/cmon $tmp_dir/sbin/"
 
@@ -1274,7 +1276,7 @@ disableAgents()
 			echo ""
 		fi
 	done
-	
+
 }
 
 backupAgent()
@@ -1319,14 +1321,14 @@ checkSudo()
 
 installRepo()
 {
-	
+
 	echo ""
 	echo "==================================="
 	echo "  Install Severalnines Repository"
 	echo "==================================="
-	
+
 	writeLog 1 'Installing Severalnines repository'
-	
+
 	if [ "$os" == 'debian' ]; then
 		if [ ! -f /etc/apt/sources.list.d/s9s-repo.list ]; then
 			if [ ! -f severalnines-repos.asc ]; then
@@ -1349,16 +1351,16 @@ installRepo()
 
 upgradeCmonRepo()
 {
-	
+
 	[ "$os" == 'redhat' ] && repotype='YUM' || repotype='APT'
 	echo ""
 	echo "==================================="
 	echo "   Upgrade ClusterControl ($repotype)"
 	echo "==================================="
 	writeLog 1 "Upgrading ClusterControl using $repotype"
-	
+
 	stopCmon
-	
+
 	if [ "$os" == 'redhat' ]; then
 		rpm -qa | grep cmon-controller &> /dev/null
 		[ $? -eq 0 ] && commandStatus "Removing cmon-controller package" "$HTTP_PROXY yum remove -y cmon-controller"
@@ -1368,19 +1370,19 @@ upgradeCmonRepo()
 	else
 		dpkg --get-selections | grep -v deinstall | grep clustercontrol-controller &> /dev/null
 		[ $? -eq 0 ] && commandStatus "Removing clustercontrol-controller package" "$HTTP_PROXY apt-get remove -y clustercontrol-controller"
-		
+
 		rm -Rf /usr/sbin/cmon
 		rm -Rf /usr/bin/cmon*
 		rm -Rf /usr/bin/s9s_*
 		rm -Rf /usr/local/cmon*
 		rm -Rf /etc/init.d/cmon
 		rm -Rf /etc/cron.d/cmon
-		
+
 		commandStatus "Installing clustercontrol-controller package" "$HTTP_PROXY apt-get install -y clustercontrol-controller"
 		dpkg --get-selections | grep -v deinstall | grep php5-ldap &> /dev/null
 		[ $? -ne ] && commandStatus "Installing PHP LDAP" "$HTTP_PROXY apt-get install -y php5-ldap"
 	fi
-	
+
 	if [ -d /$tmp_dir/cmon.d ]; then
 		[ "$(ls -A /$tmp_dir/cmon.d)" ] && commandStatus 'Restoring CMON config directory' "cp -f $tmp_dir/cmon.d/* /etc/cmon.d/"
 	fi
@@ -1396,17 +1398,17 @@ upgradeCmonRepo()
 			fi
 		fi
 	fi
-	
+
 	commandStatus 'Applying permission' "chmod 755 /etc/init.d/cmon"
-	
+
 	upgradeCmonDatabase
-	
+
 	if [ "$NEW_UI" == "NO" ]; then
 		installCcUiRepo $LATEST_CCUI_VERSION
 	else
 		upgradeCcUiRepo $LATEST_CCUI_VERSION
 	fi
-	
+
 	startCmon
 	writeLog 1 'ClusterControl Controller upgrade is complete'
 	echo "** ClusterControl $mode upgrade for this host is complete"
@@ -1530,5 +1532,3 @@ else
 	helpMenu
 	exit 1
 fi
-
-
