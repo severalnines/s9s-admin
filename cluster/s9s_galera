@@ -977,7 +977,7 @@ function install_garbd
     fi
     CLUSTER_NAME=`echo $CLUSTER_NAME | tr -d "\n\r\'\""`
     
-    x=`ssh $SSH_OPTS  $SSH_USER@$XHOSTNAME '$SUDO which apt-get' 2>/dev/null`
+    x=`ssh $SSH_OPTS  $SSH_USER@$XHOSTNAME '$SUDO command -v apt-get' 2>/dev/null`
     if [ "$x" = "" ]; then
         OS="redhat"
     else
