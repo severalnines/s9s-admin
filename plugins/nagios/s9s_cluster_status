@@ -119,17 +119,7 @@ if [ $query_type == "cluster" ]; then
 elif [ $query_type == "alarm" ]; then
 
 	# SQL query
-	query='SELECT severity,cmon.node_state.host,alarm_name,description,cmon.alarm.report_ts \
-FROM cmon.alarm \
-LEFT JOIN cmon.node_state \
-ON cmon.alarm.nodeid=cmon.node_state.nodeid \
-WHERE ignored=0 \
-UNION SELECT severity,cmon.hosts.hostname,alarm_name,description,cmon.alarm_hosts.report_ts \
-FROM cmon.alarm_hosts \
-LEFT JOIN cmon.hosts \
-ON cmon.alarm_hosts.hostid=cmon.hosts.id \
-WHERE ignored=0
-UNION SELECT severity,cmon.hosts.hostname,alarm_name,message,cmon.simple_alarm.report_ts \
+	query='SELECT severity,alarm_name, message,cmon.simple_alarm.report_ts \
 FROM cmon.simple_alarm \
 LEFT JOIN cmon.hosts \
 ON cmon.simple_alarm.hostid=cmon.hosts.id \
