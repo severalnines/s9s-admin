@@ -1186,10 +1186,11 @@ EOF
   echo "Restore OK"
   echo "To copy back the restored data into your datadir of mysqld do:"
   echo "* Shutdown the cmon controller to prevent automatic recovery"
-  echo "* Shutdown the cmon agent on this host to prevent automatic recovery"
-  echo "* Shutdown the mysql server "
+  echo "* Shutdown the cmon agent on this host to prevent automatic recovery (if any)"
+  echo "* Shutdown the mysql server"
   echo "* innobackupex --copy-back ${BASE_DIR}"
-  echo "* chwon mysql:mysql -R <mysqld datadir>"  
+  echo "* chown mysql:mysql -R <mysqld datadir>"
+  echo "* Start the mysql server"
 
   exit 0
 }
