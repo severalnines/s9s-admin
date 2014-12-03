@@ -1097,7 +1097,7 @@ function restore
         
     done
     
-    LIST=`$MYSQL_BIN $MYSQL_OPTS -NAB --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "set group_concat_max_len=1024*1024;select group_concat(concat(parentid ,',', backup_type, ',', concat(directory,'/', filename), ',' , status, ',', size, ',\'' ,  date_format(report_ts, \"%Y-%M-%d_%H:%i:%s\") , '\'', ',', directory, ',', filename, ',', md5sum, ',', compressed) SEPARATOR ' ') from mysql_backup where cid=$CLUSTER_ID and parentid=$BACKUPID and backup_type='incremental' and status='completed' and lsn>0 order by parentid, backupid" 2>/dev/null`
+    LIST=`$MYSQL_BIN $MYSQL_OPTS -NAB --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "set group_concat_max_len=1024*1024;select group_concat(concat(parentid ,',', backup_type, ',', concat(directory,'/', filename), ',' , status, ',', size, ',\'' ,  date_format(report_ts, \"%Y-%M-%d_%H:%i:%s\") , '\'', ',', directory, ',', filename, ',', md5sum, ',', compressed, ',', backupid) SEPARATOR ' ') from mysql_backup where cid=$CLUSTER_ID and parentid=$BACKUPID and backup_type='incremental' and status='completed' and lsn>0 order by parentid, backupid" 2>/dev/null`
     if [ $? -ne 0 ]; then
         echo "Failed to read backups"
         echo "Restore FAILED"
@@ -1118,7 +1118,8 @@ function restore
       for f in $LIST
       do      
 	      backupid=`echo $f | awk -F ',' '{print $1;}'`
-	      if [ $backupid -ge $EXCLUDE_BACKUPID ];  then
+	      backupid2=`echo $f | awk -F ',' '{print $11;}'`
+	      if [ $backupid2 -ge $EXCLUDE_BACKUPID ];  then
 	          continue
 	      fi
 	      backup_type=`echo $f | awk -F ',' '{print $2;}'`
