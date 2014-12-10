@@ -513,6 +513,7 @@ function install_mysql
 	remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY yum -y install nc"	
 	remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY yum -y install perl"	
 	remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY yum -y install libevent"	
+	remote_cmd_nofail $XHOSTNAME "$HTTP_PROXY yum -y install psmisc"
     else
 	remote_cmd_nofail $XHOSTNAME "touch /etc/init.d/mysql"	
 	remote_cmd_nofail $XHOSTNAME "LC_ALL=C DEBIAN_FRONTEND=noninteractive $HTTP_PROXY apt-get -y -f install"
