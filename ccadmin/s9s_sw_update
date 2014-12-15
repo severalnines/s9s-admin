@@ -473,7 +473,7 @@ function install_mysql
     if [ "$OS" = "redhat" ]; then
         if  remote_cmd_getretcode $XHOSTNAME "grep -q -i 'release 7' /etc/redhat-release" ; then
             RHEL=7
-            EPEL_REL="7-2"
+            EPEL_REL="7-5"
         elif  remote_cmd_getretcode $XHOSTNAME "grep -q -i 'release 6' /etc/redhat-release" ; then
             RHEL=6
             EPEL_REL="6-8"
