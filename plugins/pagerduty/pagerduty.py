@@ -99,9 +99,11 @@ else:
     sys.exit(1)
 
 # debug
-print "PUT request to " + resteventurl
+print "POST request to " + resteventurl
 print "JSon: " + json.dumps(jsonRequest)
 # http://developer.pagerduty.com/documentation/integration/events/trigger
  
-request = requests.put(resteventurl, data=json.dumps(jsonRequest))
-
+request = requests.post(resteventurl, data=json.dumps(jsonRequest))
+if not request.code == 200:
+	print "Unable to send PagerDuty alert!"
+	sys.exit(1)
