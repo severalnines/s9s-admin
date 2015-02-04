@@ -27,23 +27,23 @@ On Zabbix agent host aka ClusterControl host, run following command:
 git clone https://github.com/severalnines/s9s-admin
 ```
 
-2) Create a template directory for ClusterControl under `/var/lib/zabbix` and copy `script` directory into it:
+2) Create a template directory for ClusterControl under `/var/lib/zabbix` and copy `scripts` directory into it:
 ```bash
 mkdir -p /var/lib/zabbix/clustercontrol
 cp -Rf ~/s9s-admin/plugins/zabbix/agent/scripts /var/lib/zabbix/clustercontrol
 ```
 
-3) Copy the Zabbix agent user paramater file into `/etc/zabbix/zabbix.agent.d/`:
+3) Copy the ClusterControl template user paramater file into `/etc/zabbix/zabbix.agent.d/`:
 ```bash
 cp -f ~/s9s-admin/plugins/zabbix/agent/userparameter_clustercontrol.conf /etc/zabbix/zabbix.agent.d/
 ```
 
-4) This template use ClusterControl API to collect stats. Configure the value of ClusterControl  inside `/var/lib/zabbix/clustercontrol/scripts/clustercontrol.conf`, similar to example below:
+4) This template uses ClusterControl API to collect stats. Configure the value of ClusterControl  API URL and token inside `/var/lib/zabbix/clustercontrol/scripts/clustercontrol.conf`, similar to example below:
 ```bash
 ccapi_url='https://192.168.1.101/cmonapi'
 ccapi_token='39b9db69a538f09273b3cb482df4192006662a43'
 ```
-** If you do not configure this correctly, the script will not work.
+** *If you do not configure this correctly, the script will not work. **
 
 5) Test the script by invoking a cluster ID and `test` argument:
 ```bash
