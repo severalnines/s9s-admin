@@ -80,7 +80,7 @@ The template will report following items' key from ClusterControl:
 User Parameter
 --------------
 
-The default user parameter configuration file assumes you are running one database cluster under ClusterControl with cluster ID 1. If you want to monitor more clusters, just append the same parameters with respective cluster ID value.
+The default user parameter file assumes you are running a database cluster under ClusterControl with cluster ID 1. If you want to monitor more clusters, just append the same parameters with respective cluster ID value.
 
 E.g: For cluster ID 3, the user parameter should be:
 ```bash
