@@ -1,7 +1,7 @@
 <?php
 /*
 clustercontrol_stats.php <cluster_id> <options>
-Supported options: test, backups, cluster, alarms-critical, alarms-warning
+Supported options: test, backup, cluster, alarms-critical, alarms-warning
 */
 
 array_shift($argv);
@@ -9,7 +9,7 @@ $cluster_id = $argv[0];
 $arg1 = $argv[1];
 
 switch ($arg1) {
-	case 'backups':
+	case 'backup':
 		process_data ($cluster_id, "backups/all", "cmonapi");
 		break;
 	case 'cluster':
@@ -44,14 +44,31 @@ function call_cmonapi ( $cid, $arg ) {
 }
 
 function process_cmonapi ( $cid, $arg, $xopt ) {
-	$arr = json_decode(call_cmonapi($cid,$arg));
+	$ncid = explode(",",$cid);
+	$arr = array();
+	if ( $arg == 'clusters/all' ) {
+		$arr = json_decode(call_cmonapi($ncid[0],$arg));
+	}
+	else {
+		foreach ($ncid as $value) {
+			array_push($arr,json_decode(call_cmonapi($value,$arg)));
+		}
+	}
+
+	//print_r($arr);
 	if ( $arg == 'backups/all' ) {
-		$i=0;
-		foreach ( $arr->data as $obj ) {
-			if ( $obj->error != 0 ) {
-				$i++;
+		if (empty($arr->data)) {
+			$i=0;
+		}
+		else {
+			$i=0;
+			foreach ( $arr as $obj ) {
+				if ( $obj->data->error != 0 ) {
+					$i++;
+				}
 			}
 		}
+		
 		if ( $i == 0 ){
 			return 0;
 		}
@@ -60,37 +77,46 @@ function process_cmonapi ( $cid, $arg, $xopt ) {
 		}
 	} 
 	elseif ( $arg == 'clusters/info' ) {
-		$cluster_status = strtoupper($arr->data->status);
-		switch ($cluster_status) {
-			case 'FAILURE':
-			case 'CRITICAL':
-			case 'STOPPED':
-			case 'SHUTTING_DOWN':
-				return 0; 
+		foreach ( $arr as $a ) {
+			$cluster_status = $a->data->status;
+
+			if ( $cluster_status == 'FAILURE' || $cluster_status == 'CRITICAL' || $cluster_status == 'STOPPED' || $cluster_status == 'SHUTTING_DOWN' ) {
+				$retval=0;
 				break;
-			case 'DEGRADED':
-				return 2; 
+			}
+			elseif ( $cluster_status == 'DEGRADED' ) {
+				$retval=2;
 				break;
-			case 'ACTIVE':
-			case 'STARTED':
-				return 1; 
+			}
+			elseif ( $cluster_status == 'ACTIVE' || $cluster_status == 'STARTED') {
+				$retval=1;
+				continue;
+			}
+			else { //unknown
+				$retval=3;
 				break;
-			default: //unknown
-				return 3; 
-				break;
+			}
 		}
+
+		return $retval;
+
 	}
 	elseif ( $arg == 'clusters/all' ) {
-		$cluster_type = strtoupper($arr->data[0]->type);
-		return $cluster_type;
+		foreach ( $arr->data as $obj ) {
+			echo 'Cluster ID: '. strtoupper($obj->id) . ', Type: ' . strtoupper($obj->type) . ", Status: " . strtoupper($obj->status) . "\n" ;
+		}
 	}
 	elseif ( $arg == 'alarms/all' && $xopt == 'warning' ){
 		$i=0;
-		foreach ( $arr->data as $obj ) {
-			if ( $obj->ignored == 0 && strtoupper($obj->severity) == "WARNING" ) {
-				$i++;
+		//print_r($arr);
+		foreach ( $arr as $obj ) {
+			foreach ($obj->data as $data) {
+				if ( $data->ignored == 0 && strtoupper($data->severity) == "WARNING" ) {
+					$i++;
+				}
 			}
 		}
+
 		if ( $i != 0 ){
 			return $i;
 		}
@@ -100,12 +126,14 @@ function process_cmonapi ( $cid, $arg, $xopt ) {
 	}
 	elseif ( $arg == 'alarms/all' && $xopt == 'critical' ){
 		$i=0;
-		foreach ( $arr->data as $obj ) {
-			//var_dump($obj->ignored);
-			if ( $obj->ignored == 0 && strtoupper($obj->severity) == "CRITICAL" ) {
-				$i++;
+		foreach ( $arr as $obj ) {
+			foreach ($obj->data as $data) {
+				if ( $data->ignored == 0 && strtoupper($data->severity) == "CRITICAL" ) {
+					$i++;
+				}
 			}
 		}
+
 		if ( $i != 0 ){
 			return $i;
 		}

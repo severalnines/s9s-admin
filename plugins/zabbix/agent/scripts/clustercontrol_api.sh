@@ -3,7 +3,13 @@
 # curl, openssl, python2.6+ must be installed
 # usage: clustercontrol_api.sh [-r|-j] [-o]
  
-source ./clustercontrol.conf
+config_file="./clustercontrol.conf"
+if [ -f $config_file ]; then
+  source $config_file
+else
+  echo 'Error: Unable to find clustercontrol.conf'
+  exit 1
+fi
  
 check_binary ()
 {
@@ -84,5 +90,5 @@ if [ ! -z "${job}" ]; then
   url="$ccapi_url/jobs/job_command"
 fi
  
-result=`curl -g -s -H "CMON_TOKEN: $cmon_token" "$post_data" "$url"`
+result=`curl -k -g -s -H "CMON-TOKEN: $cmon_token" "$post_data" "$url"`
 echo $result | python -mjson.tool
