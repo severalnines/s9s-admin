@@ -56,11 +56,27 @@ You should get an output of your database cluster type, indicating the script is
 Configure Zabbix Server
 -----------------------
 
-1. Download the Zabbix template file from [here](https://raw.githubusercontent.com/severalnines/s9s-admin/master/plugins/zabbix/server/zbx_clustercontrol_templates.xml) to your desktop.
+1. Due to [this bug](https://support.zabbix.com/browse/ZBXNEXT-1679), we need to create a value mapping manually in Zabbix server. Log into the Zabbix front-end UI and go to Administration > General > Value Mapping (the drop-down list) > Create Value Map as per below:
 
-2. Import the XML template using Zabbix UI (Configuration > Templates > Import).
+* Name: ClusterControl DB cluster status
+* Value:
+-- 0 = Failed
+-- 1 = Active
+-- 2 = Degraded
+-- 3 = Unknown
 
-3. Create/edit hosts and linking them the template "ClusterControl Template" (Configuration > Hosts > choose a host > Templates tab).
+* Name: ClusterControl DB backup status
+* Value:
+-- 0 = No error
+-- 1 = Backups got error
+
+** If you skip this step, the import will fail.
+
+2. Download the Zabbix template file from [here](https://raw.githubusercontent.com/severalnines/s9s-admin/master/plugins/zabbix/server/zbx_clustercontrol_templates.xml) to your desktop.
+
+3. Import the XML template using Zabbix UI (Configuration > Templates > Import).
+
+4. Create/edit hosts and linking them the template "ClusterControl Template" (Configuration > Hosts > choose a host > Templates tab).
 
 You are done.
 
