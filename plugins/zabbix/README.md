@@ -38,12 +38,12 @@ cp -Rf ~/s9s-admin/plugins/zabbix/agent/scripts /var/lib/zabbix/clustercontrol
 cp -f ~/s9s-admin/plugins/zabbix/agent/userparameter_clustercontrol.conf /etc/zabbix/zabbix.agent.d/
 ```
 
-4) This template uses ClusterControl API to collect stats. Configure the value of ClusterControl  API URL and token inside `/var/lib/zabbix/clustercontrol/scripts/clustercontrol.conf`, similar to example below:
+4) This template uses ClusterControl API to collect stats. Configure the value of ClusterControl API URL and token inside `/var/lib/zabbix/clustercontrol/scripts/clustercontrol.conf`, similar to example below:
 ```bash
 ccapi_url='https://192.168.1.101/cmonapi'
 ccapi_token='39b9db69a538f09273b3cb482df4192006662a43'
 ```
-** *If you do not configure this correctly, the script will not work. **
+** If you do not configure this correctly, the script will not work. You can retrieve the API token value at {Apache Document Root}/cmonapi/config/bootstrap.php on ClusterControl node**
 
 5) Test the script by invoking a cluster ID and `test` argument:
 ```bash
