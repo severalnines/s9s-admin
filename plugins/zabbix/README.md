@@ -43,7 +43,7 @@ cp -f ~/s9s-admin/plugins/zabbix/agent/userparameter_clustercontrol.conf /etc/za
 ccapi_url='https://192.168.1.101/cmonapi'
 ccapi_token='39b9db69a538f09273b3cb482df4192006662a43'
 ```
-** If you do not configure this correctly, the script will not work. You can retrieve the API token value at {Apache Document Root}/cmonapi/config/bootstrap.php on ClusterControl node**
+** If you do not configure this correctly, the script will not work. You can retrieve the API token value at `{Apache Document Root}/cmonapi/config/bootstrap.php` on ClusterControl node
 
 5) Test the script by invoking a cluster ID and `test` argument:
 ```bash
@@ -58,17 +58,20 @@ Configure Zabbix Server
 
 1) Due to [this bug](https://support.zabbix.com/browse/ZBXNEXT-1679), we need to create a value mapping manually in Zabbix server. Log into the Zabbix front-end UI and go to Administration > General > Value Mapping (the drop-down list) > Create Value Map as per below:
 
-* Name: ClusterControl DB cluster status
-* Value:
---* 0 = Failed
---* 1 = Active
---* 2 = Degraded
---* 3 = Unknown
-
-* Name: ClusterControl DB backup status
-* Value:
---* 0 = No error
---* 1 = Backups got error
+```
+Name: ClusterControl DB cluster status
+Value:
+0 = Failed
+1 = Active
+2 = Degraded
+3 = Unknown
+```
+```
+Name: ClusterControl DB backup status
+Value:
+0 = No error
+1 = Backups got error
+```
 
 ** If you skip this step, the import will fail.
 
