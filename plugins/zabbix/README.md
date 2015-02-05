@@ -1,7 +1,7 @@
 ClusterControl Template for Zabbix
 ==================================
 
-This template is a collection of scripts to report database cluster status, backups and alarms (warning & critical) on ClusterControl host (Zabbix agent).
+Use this template to report database cluster status, backups and alarms (warning & critical) on ClusterControl host (Zabbix agent) to Zabbix server.
 
 - The items are populated by polling Zabbix agent
 - There are predefined triggers available to use
@@ -20,22 +20,22 @@ Installation Instructions
 Configure Zabbix Agent
 ----------------------
 
-On Zabbix agent host aka ClusterControl host, run following command:
+On Zabbix agent host aka ClusterControl host, run following command (omit sudo if you run as root):
 
 1) Get the package from GitHub:
 ```bash
-git clone https://github.com/severalnines/s9s-admin
+$ git clone https://github.com/severalnines/s9s-admin
 ```
 
 2) Create a template directory for ClusterControl under `/var/lib/zabbix` and copy `scripts` directory into it:
 ```bash
-mkdir -p /var/lib/zabbix/clustercontrol
-cp -Rf ~/s9s-admin/plugins/zabbix/agent/scripts /var/lib/zabbix/clustercontrol
+$ sudo mkdir -p /var/lib/zabbix/clustercontrol
+$ sudo cp -Rf ~/s9s-admin/plugins/zabbix/agent/scripts /var/lib/zabbix/clustercontrol
 ```
 
 3) Copy the ClusterControl template user paramater file into `/etc/zabbix/zabbix.agent.d/`:
 ```bash
-cp -f ~/s9s-admin/plugins/zabbix/agent/userparameter_clustercontrol.conf /etc/zabbix/zabbix.agent.d/
+$ sudo cp -f ~/s9s-admin/plugins/zabbix/agent/userparameter_clustercontrol.conf /etc/zabbix/zabbix.agent.d/
 ```
 
 4) This template uses ClusterControl API to collect stats. Configure the value of ClusterControl API URL and token inside `/var/lib/zabbix/clustercontrol/scripts/clustercontrol.conf`, similar to example below:
@@ -47,9 +47,9 @@ ccapi_token='39b9db69a538f09273b3cb482df4192006662a43'
 
 5) Test the script by invoking a cluster ID and `test` argument:
 ```bash
-/var/lib/zabbix/clustercontrol/scripts/clustercontrol_stats.sh 1 test
-Cluster ID: 1, Type: GALERA, 				Status: STARTED
-Cluster ID: 2, Type: MYSQL_SINGLE, 	Status: STARTED
+$ sudo /var/lib/zabbix/clustercontrol/scripts/clustercontrol_stats.sh 1 test
+Cluster ID: 1, Type: GALERA, Status: STARTED
+Cluster ID: 2, Type: MYSQL_SINGLE, Status: STARTED
 ```
 
 You should get an output of your database cluster summary, indicating the script is able to retrieve information using the provided ClusterControl API and token in `clustercontrol.conf`.
@@ -100,7 +100,9 @@ The template will report following items' key from ClusterControl:
 User Parameter
 --------------
 
-The default user parameter file assumes you are running a database cluster under ClusterControl with cluster ID 1. If you want to monitor multiple clusters, specify a comma-delimited value of cluster IDs on the second argument, similar to example below:
+The default user parameter file assumes you are running a database cluster under ClusterControl with cluster ID 1. If you want to monitor multiple clusters, specify a comma-delimited value of cluster IDs on the second argument.
+
+Example below shows user parameters to monitor multiple clusters with ID 1,2 and 5:
 ```bash
 UserParameter=clustercontrol.db.status,/var/lib/zabbix/clustercontrol/scripts/clustercontrol_stats.php 1,2,5 cluster
 UserParameter=clustercontrol.db.backup,/var/lib/zabbix/clustercontrol/scripts/clustercontrol_stats.php 1,2,5 backup
@@ -111,6 +113,6 @@ UserParameter=clustercontrol.db.alarms-critical,/var/lib/zabbix/clustercontrol/s
 Debugging
 =========
 
-- Set DebugLevel=4 on /etc/zabbix/zabbix_agentd.conf
+- Set `DebugLevel=4` on `/etc/zabbix/zabbix_agentd.conf`
 - Use zabbix_get to retrieve monitoring data from Zabbix server
-- Zabbix log file: /var/log/zabbix/zabbix_agentd.log
+- Zabbix log file: `/var/log/zabbix/zabbix_agentd.log`
