@@ -298,7 +298,7 @@
             <dependencies/>
         </trigger>
         <trigger>
-            <expression>{ClusterControl Template:clustercontrol.db.backups.last(0)}=1</expression>
+            <expression>{ClusterControl Template:clustercontrol.db.backup.last(0)}=1</expression>
             <name>Some backups got error</name>
             <url/>
             <status>0</status>
