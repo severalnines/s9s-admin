@@ -54,7 +54,10 @@ Cluster ID: 2, Type: MYSQL_SINGLE, Status: STARTED
 
 You should get an output of your database cluster summary, indicating the script is able to retrieve information using the provided ClusterControl API and token in `clustercontrol.conf`.
 
-6) Finally, restart Zabbix agent to load the 
+6) Finally, restart Zabbix agent:
+```bash
+$ sudo service zabbix-agent restart
+```
 
 Configure Zabbix Server
 -----------------------
