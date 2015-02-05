@@ -57,18 +57,16 @@ Configure Zabbix Server
 -----------------------
 
 1. Due to [this bug](https://support.zabbix.com/browse/ZBXNEXT-1679), we need to create a value mapping manually in Zabbix server. Log into the Zabbix front-end UI and go to Administration > General > Value Mapping (the drop-down list) > Create Value Map as per below:
-
 * Name: ClusterControl DB cluster status
 * Value:
--- 0 = Failed
--- 1 = Active
--- 2 = Degraded
--- 3 = Unknown
-
+--* 0 = Failed
+--* 1 = Active
+--* 2 = Degraded
+--* 3 = Unknown
 * Name: ClusterControl DB backup status
 * Value:
--- 0 = No error
--- 1 = Backups got error
+--* 0 = No error
+--* 1 = Backups got error
 
 ** If you skip this step, the import will fail.
 
