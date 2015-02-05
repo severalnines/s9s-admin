@@ -109,10 +109,10 @@ The default user parameter file assumes you are running a database cluster under
 
 Example below shows user parameters to monitor multiple clusters with ID 1,2 and 5:
 ```bash
-UserParameter=clustercontrol.db.status,/var/lib/zabbix/clustercontrol/scripts/clustercontrol_stats.php 1,2,5 cluster
-UserParameter=clustercontrol.db.backup,/var/lib/zabbix/clustercontrol/scripts/clustercontrol_stats.php 1,2,5 backup
-UserParameter=clustercontrol.db.alarms-warning,/var/lib/zabbix/clustercontrol/scripts/clustercontrol_stats.php 1,2,5 alarms-warning
-UserParameter=clustercontrol.db.alarms-critical,/var/lib/zabbix/clustercontrol/scripts/clustercontrol_stats.php 1,2,5 alarms-critical
+UserParameter=clustercontrol.db.status,/var/lib/zabbix/clustercontrol/scripts/clustercontrol_stats.sh 1,2,5 cluster
+UserParameter=clustercontrol.db.backup,/var/lib/zabbix/clustercontrol/scripts/clustercontrol_stats.sh 1,2,5 backup
+UserParameter=clustercontrol.db.alarms-warning,/var/lib/zabbix/clustercontrol/scripts/clustercontrol_stats.sh 1,2,5 alarms-warning
+UserParameter=clustercontrol.db.alarms-critical,/var/lib/zabbix/clustercontrol/scripts/clustercontrol_stats.sh 1,2,5 alarms-critical
 ```
 
 Debugging
