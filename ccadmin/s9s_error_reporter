@@ -306,6 +306,7 @@ function collect_mysql_logs()
 	    fi
 	fi
 	remote_cmd_nofail $host "cp -a $CONFIGDIR/my.cnf /tmp"
+	remote_cmd_nofail $host "sed -i \"s#.*wsrep_sst_auth.*=.*#wsrep_sst_auth=***S9S-HIDDEN***#g\" /tmp/my.cnf"
 	remote_cmd_nofail $host "cp -a $ERRLOG /tmp"
 	if [ "$CLUSTER_TYPE" = "galera" ]; then
 	    remote_cmd_nofail $host "cp -a $DATADIR/GRA* /tmp"
@@ -494,7 +495,9 @@ function collect_ui_logs()
 
     cp -arf $UI_WWWROOT/clustercontrol/app/tmp/logs/*.log $savedir/ui/clustercontrol/logs/ &>/dev/null
     cp -af $UI_WWWROOT/clustercontrol/bootstrap.php $savedir/ui/clustercontrol/ &>/dev/null
+    sed -i "s|define('DB_PASS'.*|define('DB_PASS', '***S9S-HIDDEN***');|g" $savedir/ui/clustercontrol/bootstrap.php
     cp -arf $UI_WWWROOT/cmonapi/config/bootstrap.php $UI_WWWROOT/cmonapi/config/database.php $savedir/ui/cmonapi/config/ &>/dev/null
+    sed -i "s|define('DB_PASS'.*|define('DB_PASS', '***S9S-HIDDEN***');|g" $savedir/ui/cmonapi/config/database.php
     cp -af $apache_log_dir/*.log $savedir/ui/apache/log/ &>/dev/null
 }
 
