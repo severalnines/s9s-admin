@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+[[ $# -lt 4 ]] && echo "${0##*/} -uroot -p<password> <target-dir> <dest-dir>" && exit 1
+
+mysqluser=$1
+mysqlpass=$2
+targetdir=$3
+destdir=$4
+schema=${targetdir##*/}
+
+import_table() {
+tbl=$1
+    echo "==> Discarding tablespace for ${schema}.${tbl}"
+    mysql ${mysqluser} ${mysqlpass} -e "ALTER TABLE ${schema}.${tbl} DISCARD TABLESPACE" &>/dev/null
+    [[ $? != 0 ]] && echo "==> Unable to discard tablespace for ${schema}.${tbl}" && exit 1 
+
+    echo "==> Copying ${schema}/${tbl}.{ibd,exp} to ${destdir}"
+    chown mysql.mysql ${targetdir}/${tbl}.{ibd,exp}
+    cp -vaf ${targetdir}/${tbl}.{ibd,exp} ${destdir}
+    [[ $? != 0 ]] && echo "==> Unable to cp ${targetdir}/${tbl}.{ibd,exp} to ${destdir}" && exit 1
+
+    mysql ${mysqluser} ${mysqlpass} -e "ALTER TABLE ${schema}.${tbl} IMPORT TABLESPACE" &>/dev/null
+    [[ $? != 0 ]] && echo "Unable to import tablespace for ${schema}.${tbl}" && exit 1
+    echo -e "==> Imported tablespace ${schema}.${tbl}\n"
+}
+
+for tfile in $(ls ${targetdir}/*.exp); do
+    table=${tfile##*/}
+    table=${table%.*}
+    echo "==> Importing ${schema}.${table} ..."
+    import_table ${table}
+done
