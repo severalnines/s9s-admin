@@ -307,6 +307,8 @@ function collect_mysql_logs()
 	fi
 	remote_cmd_nofail $host "cp -a $CONFIGDIR/my.cnf /tmp"
 	remote_cmd_nofail $host "sed -i \"s#.*wsrep_sst_auth.*=.*#wsrep_sst_auth=***S9S-HIDDEN***#g\" /tmp/my.cnf"
+	remote_cmd_nofail $host "cp -a $CONFIGDIR/my.cnf.d/*.cnf /tmp"
+	remote_cmd_nofail $host "sed -i \"s#.*wsrep_sst_auth.*=.*#wsrep_sst_auth=***S9S-HIDDEN***#g\" /tmp/cluster.cnf"
 	remote_cmd_nofail $host "cp -a $ERRLOG /tmp"
 	if [ "$CLUSTER_TYPE" = "galera" ]; then
 	    remote_cmd_nofail $host "cp -a $DATADIR/GRA* /tmp"
@@ -327,7 +329,7 @@ function collect_mysql_logs()
 	remote_cmd_nofail $host "chown $SSH_USER /tmp/mysql*.log"
 	remote_copy_from_r2 $host /tmp/error.log $tmpsavedir/
 	remote_copy_from_r2 $host /tmp/mysql*.log $tmpsavedir/
-	remote_copy_from_r2 $host /tmp/my.cnf $tmpsavedir/
+	remote_copy_from_r2 $host /tmp/*.cnf $tmpsavedir/
 	if [ $AGENTLESS -eq 0 ]; then 
 	   remote_cmd_nofail $host "cp -a /var/log/cmon.log* /tmp"
 	   remote_cmd_nofail $host "chown $SSH_USER /tmp/cmon.log*"
@@ -339,7 +341,7 @@ function collect_mysql_logs()
 	   remote_cmd_nofail $host "rm /tmp/cmon.log*"
        fi
        remote_cmd_nofail $host "rm /tmp/error.log"
-       remote_cmd_nofail $host "rm /tmp/my.cnf"
+       remote_cmd_nofail $host "rm /tmp/*.cnf"
        remote_cmd_nofail $host "rm /tmp/mysql*.log"
     done
 }
