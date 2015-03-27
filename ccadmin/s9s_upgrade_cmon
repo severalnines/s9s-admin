@@ -794,7 +794,7 @@ upgradeCcUiRepo()
 		[ $? -eq 0 ] && commandStatus "Removing installed clustercontrol/cmonapi packages" "$HTTP_PROXY yum remove -y clustercontrol clustercontrol-cmonapi"
 		package_manager_upgrade_ui="$HTTP_PROXY yum install -y clustercontrol clustercontrol-cmonapi"
 	fi
-	if [ ! -L $wwwroot/clustercontrol ]; then
+	if [ -L $wwwroot/clustercontrol ]; then
     	commandStatus 'Removing symlink to UI and CMONAPI' "rm -f $wwwroot/clustercontrol $wwwroot/cmonapi"
     else
         commandStatus 'Removing existing ClusterControl UI and CMONAPI' "rm -rf $wwwroot/clustercontrol $wwwroot/cmonapi"
