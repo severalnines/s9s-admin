@@ -146,7 +146,6 @@ root_dir=`cd $rel_dir;pwd`
 repo_dir_name=s9s_repo
 repo_dir=$root_dir/$repo_dir_name
 now=`date +%Y-%m-%d-%H_%M_%S`
-[ -z "$backup_dir" ] && tmp_dir=$backup_dir
 
 install_config_path=/etc
 
@@ -154,6 +153,8 @@ install_config_path=/etc
 [ ! -z "$osuser" ] && os_user=$osuser
 tmp_dir=~/s9s_backup/s9s_backup_${now}
 [ "$os_user" != "root" ] && tmp_dir=/home/$os_user/s9s_backup/s9s_backup_${now}
+[ ! -z "$backup_dir" ] && tmp_dir=$backup_dir/s9s_backup_${now}
+
 if [ -z "$wwwroot" ]; then
 	if [ "$os" == "debian" ]; then
 	       [ -e /var/www/html/clustercontrol ] && wwwroot=/var/www/html ||  wwwroot=/var/www
