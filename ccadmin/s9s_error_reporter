@@ -259,11 +259,16 @@ function collect_controller()
     mkdir -p $savedir/controller
     tmpsavedir=$savedir/controller
     $MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "SELECT * FROM mysql_server WHERE cid=$CLUSTER_ID" > $tmpsavedir/mysql_server
+    $MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "SELECT * FROM server_node WHERE cid=$CLUSTER_ID" > $tmpsavedir/server_node
     $MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "SELECT * FROM hosts WHERE cid=$CLUSTER_ID" > $tmpsavedir/hosts
     $MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "SELECT * FROM processes WHERE cid=$CLUSTER_ID" > $tmpsavedir/processes
     $MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "SELECT * FROM cmon_configuration WHERE cid=$CLUSTER_ID" > $tmpsavedir/cmon_configuration
     $MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "SELECT * FROM cmon_job_message WHERE cid=$CLUSTER_ID" > $tmpsavedir/cmon_job_messages
     $MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "SELECT * FROM cmon_job WHERE cid=$CLUSTER_ID" > $tmpsavedir/cmon_job
+    $MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "SELECT * FROM simple_alarm WHERE cid=$CLUSTER_ID" > $tmpsavedir/simple_alarm
+
+    
+    curl -o $tmpsavedir/getHosts  -X POST -d '{"operation": "getHosts" }' http://localhost:9500/${CLUSTER_ID}/stat 2>/dev/null
     
     echo $configfile
     cp  -a $configfile $tmpsavedir
@@ -287,7 +292,6 @@ function collect_mysql_logs()
 	mkdir -p $savedir/$host
 	tmpsavedir=$savedir/$host
 	$MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --port=$MONITORED_MYSQL_PORT -h$host -e "SHOW GLOBAL STATUS" > $tmpsavedir/show_status
-	$MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --port=$MONITORED_MYSQL_PORT -h$host -e "SHOW ENGINE INNODB STATUS" > $tmpsavedir/innodb_status
 	$MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --port=$MONITORED_MYSQL_PORT -h$host -e "SHOW GLOBAL VARIABLES" > $tmpsavedir/show_variables
 	$MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --port=$MONITORED_MYSQL_PORT -h$host -e "SHOW FULL PROCESSLIST" > $tmpsavedir/show_processlist
 	if [ -z "$XDATADIR" ]; then
@@ -306,9 +310,7 @@ function collect_mysql_logs()
 	    fi
 	fi
 	remote_cmd_nofail $host "cp -a $CONFIGDIR/my.cnf /tmp"
-	remote_cmd_nofail $host "sed -i \"s#.*wsrep_sst_auth.*=.*#wsrep_sst_auth=***S9S-HIDDEN***#g\" /tmp/my.cnf"
-	remote_cmd_nofail $host "cp -a $CONFIGDIR/my.cnf.d/*.cnf /tmp"
-	remote_cmd_nofail $host "sed -i \"s#.*wsrep_sst_auth.*=.*#wsrep_sst_auth=***S9S-HIDDEN***#g\" /tmp/cluster.cnf"
+        remote_cmd_nofail $host "sed -i \"s#.*wsrep_sst_auth.*=.*#wsrep_sst_auth=***S9S-HIDDEN***#g\" /tmp/my.cnf"
 	remote_cmd_nofail $host "cp -a $ERRLOG /tmp"
 	if [ "$CLUSTER_TYPE" = "galera" ]; then
 	    remote_cmd_nofail $host "cp -a $DATADIR/GRA* /tmp"
@@ -329,7 +331,7 @@ function collect_mysql_logs()
 	remote_cmd_nofail $host "chown $SSH_USER /tmp/mysql*.log"
 	remote_copy_from_r2 $host /tmp/error.log $tmpsavedir/
 	remote_copy_from_r2 $host /tmp/mysql*.log $tmpsavedir/
-	remote_copy_from_r2 $host /tmp/*.cnf $tmpsavedir/
+	remote_copy_from_r2 $host /tmp/my.cnf $tmpsavedir/
 	if [ $AGENTLESS -eq 0 ]; then 
 	   remote_cmd_nofail $host "cp -a /var/log/cmon.log* /tmp"
 	   remote_cmd_nofail $host "chown $SSH_USER /tmp/cmon.log*"
@@ -341,7 +343,7 @@ function collect_mysql_logs()
 	   remote_cmd_nofail $host "rm /tmp/cmon.log*"
        fi
        remote_cmd_nofail $host "rm /tmp/error.log"
-       remote_cmd_nofail $host "rm /tmp/*.cnf"
+       remote_cmd_nofail $host "rm /tmp/my.cnf"
        remote_cmd_nofail $host "rm /tmp/mysql*.log"
     done
 }
@@ -544,7 +546,7 @@ function create_report
     
     collect_controller
     if [ "$CLUSTER_TYPE" != "mongodb" ]; then
-	    collect_mysql_logs
+	collect_mysql_logs
     fi
     if [ "$CLUSTER_TYPE" = "mysqlcluster" ]; then
 	collect_ndb_logs
@@ -553,6 +555,8 @@ function create_report
     if [ "$CLUSTER_TYPE" = "mongodb" ]; then
 	collect_mongodb_logs
     fi    
+
+
     collect_host_info
     collect_ui_logs
 
