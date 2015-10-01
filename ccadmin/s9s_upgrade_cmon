@@ -41,7 +41,7 @@ helpMenu()
   echo '-d, --backupdir           : Custom path for ClusterControl backup directory (default: /tmp/s9s_backup_{time})'
   echo "-r, --restore             : Restore from ClusterControl backup (all|controller|agent)"
   echo "-a, --agent-based         : Remain the agent-based deployment upgrade (default: agentless)"
-  echo "-z, --beta                : Upgrade ClusterControl to beta release"
+  echo "-z, --beta                : Upgrade ClusterControl to beta/nightly release"
   echo "-h, --help                : Print help"
   echo ""
   echo "For more information, kindly go to http://support.severalnines.com/entries/24053181-Upgrade-ClusterControl-to-Latest-Version"
@@ -373,7 +373,7 @@ collectInfo()
   cmon_monitor_address=`$MYSQL_BIN -ucmon -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT -A -Bse "$query_cmon_monitor_address" 2>/dev/null`
   query_cmon_agent_hosts="SELECT hostname FROM cmon.hosts WHERE (hostname<>'$cmon_monitor_address' OR ip<>'$cmon_monitor_address') AND cid=$CLUSTER_ID;"
   version_url="$DOWNLOAD_URL/version.txt"
-  [ "$beta" == "1" ] && version_url="$DOWNLOAD_URL/version_cc.txt"
+  [ "$beta" == "1" ] && version_url="$DOWNLOAD_URL/version_nightly.txt"
   CMON_VERSION_DB=$(cmon -v | grep version | awk {'print $3'})
   if [ -z $CMON_VERSION_DB ]; then
     CMON_VERSION_DB=`$MYSQL_BIN -ucmon -p$CMON_PASSWORD -h$CMON_DB_HOST -P$CMON_DB_PORT -A -Bse "$query_cmon_version" 2>/dev/null`
@@ -1347,20 +1347,25 @@ installRepo()
 
   writeLog 1 'Installing Severalnines repository'
 
+
   if [ "$os" == 'debian' ]; then
-    if [ ! -f /etc/apt/sources.list.d/s9s-repo.list ]; then
+    repo_file=s9s-repo.list
+    [ $beta -eq 1 ] && repo_file=s9s-repo-nightly.list
+    if [ ! -f /etc/apt/sources.list.d/$repo_file ]; then
       if [ ! -f severalnines-repos.asc ]; then
         commandStatus 'Downloading Severalnines public key' 'wget http://repo.severalnines.com/severalnines-repos.asc'
       fi
       commandStatus "Adding Severalnines public key" 'apt-key add severalnines-repos.asc'
-      commandStatus "Setting up Severalnines APT repository" "wget $DOWNLOAD_URL/s9s-repo.list -P /etc/apt/sources.list.d/"
+      commandStatus "Setting up Severalnines APT repository" "wget $DOWNLOAD_URL/$repo_file -P /etc/apt/sources.list.d/"
     fi
     commandStatus 'Updating apt-get repo list' 'apt-get update'
     commandStatus 'Verifying ClusterControl packages existance' 'apt-cache show clustercontrol'
   else
-    if [ ! -f /etc/yum.repos.d/s9s-repo.repo ]; then
+    repo_file=s9s-repo.repo
+    [ $beta -eq 1 ] && repo_file=s9s-repo-nightly.repo
+    if [ ! -f /etc/yum.repos.d/$repo_file ]; then
       commandStatus "Adding Severalnines public key" 'rpm --import http://repo.severalnines.com/severalnines-repos.asc'
-      commandStatus "Setting up Severalnines YUM repository" "wget $DOWNLOAD_URL/s9s-repo.repo -P /etc/yum.repos.d/"
+      commandStatus "Setting up Severalnines YUM repository" "wget $DOWNLOAD_URL/$repo_file -P /etc/yum.repos.d/"
     fi
     commandStatus 'Clearing YUM cache' 'yum clean all'
     commandStatus 'Verifying ClusterControl packages existance' 'yum list clustercontrol'
