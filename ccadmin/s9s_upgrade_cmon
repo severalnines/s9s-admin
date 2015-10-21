@@ -1362,7 +1362,7 @@ installRepo()
     commandStatus 'Verifying ClusterControl packages existance' 'apt-cache show clustercontrol'
   else
     repo_file=s9s-repo.repo
-    [ $beta -eq 1 ] && repo_file=s9s-repo-nightly.repo
+    [ "$beta" == 1 ] && repo_file=s9s-repo-nightly.repo
     if [ ! -f /etc/yum.repos.d/$repo_file ]; then
       commandStatus "Adding Severalnines public key" 'rpm --import http://repo.severalnines.com/severalnines-repos.asc'
       commandStatus "Setting up Severalnines YUM repository" "wget $DOWNLOAD_URL/$repo_file -P /etc/yum.repos.d/"
