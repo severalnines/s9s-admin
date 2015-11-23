@@ -137,7 +137,7 @@ CLUSTER_TYPE=$type
 MYSQL_OPTS="--connect-timeout=$CONNECT_TIMEOUT"
 OSUSER=$os_user
 MYSQL_ETC=/etc
-DOWNLOAD_URL='http://www.severalnines.com/downloads/cmon'
+DOWNLOAD_URL='http://severalnines.com/downloads/cmon'
 UPGRADE_LOG=s9s_upgrade_cmon.log
 
 rel_dir=`dirname "$0"`
@@ -1350,7 +1350,7 @@ installRepo()
 
   if [ "$os" == 'debian' ]; then
     repo_file=s9s-repo.list
-    [ $beta -eq 1 ] && repo_file=s9s-repo-nightly.list
+    [ "$beta" == "1" ] && repo_file=s9s-repo-nightly.list
     if [ ! -f /etc/apt/sources.list.d/$repo_file ]; then
       if [ ! -f severalnines-repos.asc ]; then
         commandStatus 'Downloading Severalnines public key' 'wget http://repo.severalnines.com/severalnines-repos.asc'
