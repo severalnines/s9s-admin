@@ -1,0 +1,41 @@
+#!/bin/bash
+# All files in this package is subject to the GPL v2 license
+# More information is in the COPYING file in the top directory of this package.
+# Copyright (C) 2011 severalnines.com
+#
+# MODIFY THE BELOW TO SUIT YOU ENV:
+
+function delete_file
+{
+    if [ ! -f ${FILENAME} ]; then
+        echo "${FILENAME} does not exist"
+        exit 0
+    fi
+    rm ${FILENAME}
+    if [ -f ${FILENAME} ]; then
+        echo "Failed to delete ${FILENAME}"
+        exit 1
+    else
+        echo "${FILENAME} deleted successfully"
+        exit 0
+    fi
+}
+
+args=`getopt p:s:P:h:i:N:n:f:j:d:w $*`
+set -- $args
+for i
+do
+    case "$i" in
+        -f)
+            FILENAME="$2"; shift;
+            shift;;
+        --)
+            shift; break;;
+    esac
+done
+if [ -z "$FILENAME" ]; then
+    echo "s9s_delete_error_report -f <filename>"
+    exit 1
+fi
+
+delete_file
