@@ -497,6 +497,15 @@ function collect_ui_logs()
         log_job_message "Unable to collect ui logs. No web root found (/var/www/html or /var/www)." 1
     fi
 
+    DCPS_DB=dcps
+    $MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --database=$DCPS_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "SELECT * FROM apis" > $savedir/ui/clustercontrol/dcps.apis
+    $MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --database=$DCPS_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "SELECT * FROM clusters" > $savedir/ui/clustercontrol/dcps.clusters
+    $MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --database=$DCPS_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "SELECT * FROM users" > $savedir/ui/clustercontrol/dcps.users
+    $MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --database=$DCPS_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "SELECT * FROM user_roles" > $savedir/ui/clustercontrol/dcps.user_roles
+    $MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --database=$DCPS_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "SELECT * FROM roles" > $savedir/ui/clustercontrol/dcps.roles
+    $MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --database=$DCPS_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "SELECT * FROM role_acls" > $savedir/ui/clustercontrol/dcps.role_acls
+    $MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --database=$DCPS_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "SELECT * FROM acls" > $savedir/ui/clustercontrol/dcps.acls
+    $MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --database=$DCPS_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "SELECT * FROM companies" > $savedir/ui/clustercontrol/dcps.companies
     cp -arf $UI_WWWROOT/clustercontrol/app/tmp/logs/*.log $savedir/ui/clustercontrol/logs/ &>/dev/null
     cp -af $UI_WWWROOT/clustercontrol/bootstrap.php $savedir/ui/clustercontrol/ &>/dev/null
     sed -i "s|define('DB_PASS'.*|define('DB_PASS', '***S9S-HIDDEN***');|g" $savedir/ui/clustercontrol/bootstrap.php
