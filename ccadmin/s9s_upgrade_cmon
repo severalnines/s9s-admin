@@ -49,6 +49,12 @@ helpMenu()
 }
 
 [ ! -z "$help" ] && helpMenu && exit 1
+
+echo 'This script is deprecated and should not be used.'
+echo 'Kindly go to https://severalnines.com/docs/administration.html#upgrading-clustercontrol'
+echo 'for upgrade instructions.'
+exit 1
+
 [ `whoami` != "root" ] && echo "Please run this script as root or using sudo" && exit 1
 
 if [ ! -z "$backup" ] && [ "$backup" != "all" ] && [ "$backup" != "controller" ]  && [ "$backup" != "agent" ]; then
@@ -1498,6 +1504,11 @@ verify_topdir()
 
   [ ! -f $install_dir_cmon/sbin/cmon ] && echo "Could not find CMON binary at $install_dir_cmon/sbin/cmon. Make sure you specify a correct CMON path. Use -t for custom CMON path." && exit 1
 }
+
+echo 'This script is deprecated and should not be used.'
+echo 'Kindly go to https://severalnines.com/docs/administration.html#upgrading-clustercontrol'
+echo 'for upgrade instructions.'
+exit 1
 
 if [ "$latest" == 1 ]; then
   verify_topdir
