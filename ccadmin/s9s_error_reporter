@@ -34,7 +34,6 @@ function init
     CMON_USER=cmon
     CMON_PASSWORD=$mysql_password
     CMON_DB_HOST=$mysql_hostname
-    RPC_KEY=$rpc_key
     CMON_DB_DB=cmon
     BACKUP_LOGFILE=/tmp/s9s_backup.log
     LOCKFILE="/tmp/s9s_backup.lock"
@@ -214,7 +213,7 @@ function create_job
     MSG=$1
     STATUS=$2
     EXIT_CODE=$3
-    QUERY="INSERT INTO cmon_job(cid, JOBID, jobspec,status,status_txt,exit_code,report_ts) VALUES($CLUSTER_ID,$JOBID,'internal','$STATUS',\"$MSG\",$EXIT_CODE,now())"
+    QUERY="INSERT INTO cmon_job(cid, JOBID, jobspec,status,status_txt,exit_code,report_ts) VALUES($CLUSTER_ID,$JOBID,'{\"operation\":\"internal\"}','$STATUS',\"$MSG\",$EXIT_CODE,now())"
     echo $QUERY >> /tmp/queries
     if [ $JOBID -ne 0 ]; then 
 	$MYSQL_BIN  -B -N  --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
@@ -269,11 +268,7 @@ function collect_controller()
     $MYSQL_BIN -E -ucmon -p$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "SELECT * FROM simple_alarm WHERE cid=$CLUSTER_ID" > $tmpsavedir/simple_alarm
 
     
-    if [ -z "$RPC_KEY" ]; then
-        curl -o $tmpsavedir/getHosts  -X POST -d '{"operation": "getHosts" }' http://localhost:9500/${CLUSTER_ID}/stat 2>/dev/null
-    else
-        curl -o $tmpsavedir/getHosts  -X POST -d "{"operation": "getHosts", "token": "${RPC_KEY}" }" http://localhost:9500/${CLUSTER_ID}/stat 2>/dev/null
-    fi
+    http_proxy="" curl -o $tmpsavedir/getHosts -X POST -d "{\"token\":\"$rpc_key\",\"operation\": \"getHosts\" }" http://localhost:9500/${CLUSTER_ID}/stat 2>&1
     
     echo $configfile
     cp  -a $configfile $tmpsavedir
