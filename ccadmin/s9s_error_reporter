@@ -1,70 +1,9 @@
 #!/bin/bash
+#
 # All files in this package is subject to the GPL v2 license
 # More information is in the COPYING file in the top directory of this package.
-# Copyright (C) 2011 severalnines.com
+# Copyright (C) 2011-2017 severalnines.com
 #
-# MODIFY THE BELOW TO SUIT YOU ENV:
-function init
-{    
-    FILES=`ls /etc/cmon*cnf 2>&1`
-    FILES2=`ls /etc/cmon.d/*.cnf 2>&1`
-    FILES="$FILES $FILES2"
-    configfile=""
-    for f in $FILES
-    do
-	X=`grep -l cluster_id=${CLUSTER_ID} $f 2>&1 `
-	if [ $? -eq 0 ]; then
-            source $f
-            configfile=$f
-	    break
-        fi
-    done
-
-    if [ -z "$configfile" ]; then
-        echo "No matching configuration file found having cluster_id=${CLUSTER_ID}"
-        exit 1
-    fi
-
-    source $configfile;
-
-    CLUSTER_ID=$cluster_id
-    CMON_DB_PORT=$mysql_port
-    CLUSTER_TYPE=$type
-    CMON_USER=cmon
-    CMON_PASSWORD=$mysql_password
-    CMON_DB_HOST=$mysql_hostname
-    CMON_DB_DB=cmon
-    BACKUP_LOGFILE=/tmp/s9s_backup.log
-    LOCKFILE="/tmp/s9s_backup.lock"
-### NO MODS BELOW UNLESS YOU KNOW WHAT YOU DO:
-    
-    MYSQL_BIN=$mysql_basedir/bin//mysql
-    MYSQL_BIN2=$mysql_bindir/mysql 
-    MYSQL_BIN3=/usr/bin/mysql 
-    if ! test -f $MYSQL_BIN; then
-	    if ! test -f $MYSQL_BIN2; then
-            if ! test -f $MYSQL_BIN3; then
-	            echo "Could not find mysql client binary"
-	            echo "Change MYSQL_BIN in beginning of the scipt"
-	            exit 1
-            else
-	            MYSQL_BIN=$MYSQL_BIN3
-            fi
-	    else
-	        MYSQL_BIN=$MYSQL_BIN2
-        fi
-    fi
-    WWWROOT=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='WWWROOT' AND cid=$CLUSTER_ID"`
-    SSH_USER=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='SSH_USER' AND cid=$CLUSTER_ID"`
-    if [ -z "$SSH_USER" ]; then
-        SSH_USER=`$MYSQL_BIN -N -B -A --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='OS_USER' AND cid=$CLUSTER_ID"`
-    fi
-
-    if [ -z "$SSH_USER" ]; then
-        echo "Could not determine SSH_USER/OS_USER."
-        exit 1
-    fi
-}
 
 function ensure_wget_installed
 {
@@ -80,42 +19,18 @@ function ensure_wget_installed
 
 function ensure_tools_installed
 {
-    s9s --version &>/dev/null
-    if [[ $? -ne 0 ]]; then
-        echo "=> Installing s9s-tools for error-reporting."
-        # make sure we have wget
-        ensure_wget_installed
-        wget -qO install-s9s-tools.sh http://repo.severalnines.com/s9s-tools/install-s9s-tools.sh
-        chmod a+rx install-s9s-tools.sh
-        bash install-s9s-tools.sh
-    fi
+    echo "=> Install/upgrade s9s-tools for error-reporting."
+    # make sure we have wget
+    ensure_wget_installed
+    wget -qO install-s9s-tools.sh http://repo.severalnines.com/s9s-tools/install-s9s-tools.sh
+    chmod a+rx install-s9s-tools.sh
+    bash install-s9s-tools.sh
     # and lets print out the version to verify
     s9s --version
 }
 
 function create_report
 {
-    init
-
-    if [ -n "$DESTINATION" ]; then
-	    S9S_TMPDIR=$DESTINATION
-    fi
-
-    now=$(date +"%Y%m%d-%H%M%S")
-    error_pkg_tgz=error_report_$now.tar.gz    
-
-    if [ $WWWSTORE -eq 1 ]; then	
-        if [[ -d /var/www/html ]]; then
-            UI_WWWROOT="/var/www/html"
-        else
-            [[ -d /var/www ]] && UI_WWWROOT="/var/www"
-        fi
-        S9S_TMPDIR=$UI_WWWROOT/clustercontrol/app/tmp/logs/
-    fi
-    savedir=$S9S_TMPDIR/error_report_$now
-
-    mkdir -p $savedir
-
     ## call s9s tool here to create the report
     unset cmon_user
     if [ -r ~/.s9s/s9s.conf ]; then
@@ -144,7 +59,7 @@ function create_report
 
 WWWSTORE=0
 
-args=`getopt p:s:P:h:i:N:n:f:j:d:w $*`
+args=`getopt i:d: $*`
 set -- $args
 for i
 do
@@ -152,21 +67,16 @@ do
         -i)
             CLUSTER_ID="$2"; shift;
             shift;;
-	-j)
-            JOBID="$2"; shift;
-            shift;;
-	-d)
+        -d)
             DESTINATION="$2"; shift;
             shift;;
-	-w)
-            WWWSTORE=1; 
-	    shift;;
         --)
             shift; break;;
     esac
 done
+
 if [ -z "$CLUSTER_ID" ]; then
-    echo "s9s_error_report -i <clusterid>"
+    echo "s9s_error_report -i <clusterid> [-d destination-dir]"
     exit 1
 fi
 
