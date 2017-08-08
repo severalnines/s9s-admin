@@ -123,15 +123,15 @@ function create_report
     fi
 
     # check if s9s.conf doesn't have a user configured, then create one
-    if [ -z "$REALUSER" ]; then
+    if [ -z "$cmon_user" ]; then
 	    if [ -z "$SUDO_USER" ]; then
-	        REALUSER='root'
+	        cmon_user='root'
 	    else
-	        REALUSER=$SUDO_USER
+	        cmon_user=$SUDO_USER
 	    fi
-        s9s user --create --generate-key --controller="https://localhost:9501" --cmon-user="$REALUSER"
-        chown $REALUSER /var/lib/cmon/usermgmt.fifo
-        chown $REALUSER ~/.s9s/s9s.conf
+        s9s user --create --generate-key --controller="https://localhost:9501" --cmon-user="$cmon_user"
+        #chown $cmon_user /var/lib/cmon/usermgmt.fifo
+        chown $cmon_user ~/.s9s/s9s.conf
     fi
 
     if [ -n "$DESTINATION" ]; then
