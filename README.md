@@ -21,15 +21,15 @@ s9s-admin/cluster
 
 You can copy the s9s-admin/cluster  to /usr/bin/ or run them from s9s-admin/cluster.
 
-s9s_backup* must be installed on all nodes in /usr/bin/ 
-
-
 s9s-admin/ccadmin
 
 * s9s_change_password - change password for the cmon and the root user on all nodes in the cluster
 
 * s9s_sw_update - update SW packages before performing an upgrade
 
+* s9s_error_reporter - The new error reporter (requires >= 1.4.2 of the backend)
+
+* s9s_error_reporter_old - Error reporter for older controllers ( < 1.4.2 )
 
 s9s-admin/plugins
 
