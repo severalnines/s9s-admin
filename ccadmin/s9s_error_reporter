@@ -45,12 +45,11 @@ function create_report
 	        cmon_user=$SUDO_USER
 	    fi
         s9s user --create --generate-key --controller="https://localhost:9501" --cmon-user="$cmon_user"
-        #chown $cmon_user /var/lib/cmon/usermgmt.fifo
-        chown $cmon_user ~/.s9s/s9s.conf
+        chown -R $cmon_user ~/.s9s
     fi
 
     if [ -n "$DESTINATION" ]; then
-        s9s cluster --create-report --output-dir=$savedir --cluster-id=$CLUSTER_ID --log
+        s9s cluster --create-report --output-dir=$DESTINATION --cluster-id=$CLUSTER_ID --log
     else
         s9s cluster --create-report --cluster-id=$CLUSTER_ID --log
     fi
