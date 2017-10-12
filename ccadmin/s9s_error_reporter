@@ -29,24 +29,36 @@ function ensure_tools_installed
     s9s --version
 }
 
+function create_local_s9s_user
+{
+	unset cmon_user
+	if [ -r ~/.s9s/s9s.conf ]; then
+		source ~/.s9s/s9s.conf &>/dev/null
+	fi
+
+	# check if s9s.conf doesn't have a user configured, then create one
+	if [ -z "$cmon_user" ]; then
+		if [ -z "$SUDO_USER" ]; then
+			cmon_user='root'
+		else
+			cmon_user=$SUDO_USER
+		fi
+
+		# new s9s CLI requires the username defined alone without --cmon-user
+		# only the new one has BUILD info in --version:
+		if s9s --version | grep BUILD >/dev/null; then
+			s9s user --create --generate-key --controller="https://localhost:9501" $cmon_user
+		else
+			s9s user --create --generate-key --controller="https://localhost:9501" --cmon-user="$cmon_user"
+		fi
+
+		chown -R $cmon_user ~/.s9s
+	fi
+}
+
 function create_report
 {
-    ## call s9s tool here to create the report
-    unset cmon_user
-    if [ -r ~/.s9s/s9s.conf ]; then
-	    source ~/.s9s/s9s.conf &>/dev/null
-    fi
-
-    # check if s9s.conf doesn't have a user configured, then create one
-    if [ -z "$cmon_user" ]; then
-	    if [ -z "$SUDO_USER" ]; then
-	        cmon_user='root'
-	    else
-	        cmon_user=$SUDO_USER
-	    fi
-        s9s user --create --generate-key --controller="https://localhost:9501" --cmon-user="$cmon_user"
-        chown -R $cmon_user ~/.s9s
-    fi
+	create_local_s9s_user
 
     if [ -n "$DESTINATION" ]; then
         s9s cluster --create-report --output-dir=$DESTINATION --cluster-id=$CLUSTER_ID --log
