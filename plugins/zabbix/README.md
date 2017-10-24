@@ -65,24 +65,11 @@ $ sudo service zabbix-agent restart
 Configure Zabbix Server
 -----------------------
 
-1) Due to [this bug](https://support.zabbix.com/browse/ZBXNEXT-1679), we need to manually create the value mapping for ClusterControl items in Zabbix server. Log into the Zabbix front-end UI and go to *Administration > General > Value Mapping (the drop-down list) > Create Value Map* as per below:
+1) Download the Zabbix template file from [here](https://raw.githubusercontent.com/severalnines/s9s-admin/master/plugins/zabbix/server/zbx_clustercontrol_templates.xml) to your desktop.
 
-```
-Name: ClusterControl DB Cluster Status
-Value:
-0 = Failed
-1 = Active
-2 = Degraded
-3 = Unknown
-```
+2) Import the XML template using Zabbix UI (*Configuration > Templates > Import*).
 
-** Please follow the exact name/value as above. If you skip this step, the import will fail.
-
-2) Download the Zabbix template file from [here](https://raw.githubusercontent.com/severalnines/s9s-admin/master/plugins/zabbix/server/zbx_clustercontrol_templates.xml) to your desktop.
-
-3) Import the XML template using Zabbix UI (*Configuration > Templates > Import*).
-
-4) Create/edit hosts and linking them the template "ClusterControl Template" (*Configuration > Hosts > choose a host > Templates tab*).
+3) Create/edit hosts and linking them the template "ClusterControl Template" (*Configuration > Hosts > choose a host > Templates tab*).
 
 You are done.
 
