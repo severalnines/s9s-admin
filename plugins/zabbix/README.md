@@ -1,7 +1,7 @@
-ClusterControl Template for Zabbix
-==================================
+ClusterControl Template for Zabbix 2.0
+======================================
 
-Use this template to report database cluster status, backups and alarms (warning & critical) on ClusterControl host (Zabbix agent) to Zabbix server.
+Use this template to report database cluster status, and alarms (warning & critical) on ClusterControl host (Zabbix agent) to Zabbix server.
 
 - The items are populated by polling Zabbix agent
 - There are predefined triggers available to use
@@ -9,10 +9,9 @@ Use this template to report database cluster status, backups and alarms (warning
 System Requirements
 ===================
 
-- Zabbix version 2.2.x. The actual testing has been done on version 2.2.8 (revision 51174)
-- Zabbix agent, php-cli/php5-cli, php-common/php5-common, git, curl, openssl, python2.6+
-- ClutserControl is running on the agent host
-- Tested database cluster: Galera cluster, MySQL single and replication
+- Zabbix version 3.x. The actual testing has been done on version 3.4.2 (revision 72885)
+- Zabbix agent, php-cli/php5-cli, php-common/php5-common, php-curl
+- ClusterControl is running on the Zabbix agent host
 
 Installation Instructions
 =========================
@@ -33,26 +32,30 @@ $ sudo mkdir -p /var/lib/zabbix/clustercontrol
 $ sudo cp -Rf ~/s9s-admin/plugins/zabbix/agent/scripts /var/lib/zabbix/clustercontrol
 ```
 
-3) Copy the ClusterControl template user paramater file into `/etc/zabbix/zabbix.agent.d/`:
+3) Copy the ClusterControl template user parameter file into `/etc/zabbix/zabbix.agent.d/`:
 ```bash
 $ sudo cp -f ~/s9s-admin/plugins/zabbix/agent/userparameter_clustercontrol.conf /etc/zabbix/zabbix.agent.d/
 ```
 
-4) This template uses ClusterControl API to collect stats. Configure the value of ClusterControl API URL and token inside `/var/lib/zabbix/clustercontrol/scripts/clustercontrol.conf`, similar to example below:
-```bash
-ccapi_url='http://192.168.1.101/cmonapi'
-ccapi_token='39b9db69a538f09273b3cb482df4192006662a43'
+4) This template uses ClusterControl CMON RPC interface to collect stats. The script will copy `/var/www/html/clustercontrol/bootstrap.php` into the template directory to read ClusterControl configuration options. If you are running on non-default path for ClusterControl UI, configure the exact path manually inside `clustercontrol_stats.php`, similar to example below:
+```php
+$BOOTSTRAP_PATH = '/var/www/html/clustercontrol/bootstrap.php';
 ```
-** If you do not configure this correctly, the script will not work. You can retrieve the API token value at `{Apache Document Root}/cmonapi/config/bootstrap.php` on ClusterControl node
+** If you do not configure this correctly, the script will not work.
 
-5) Test the script by invoking a cluster ID and `test` argument:
+5) Test the script by invoking cluster ID and `test` argument (multiple cluster IDs are supported):
 ```bash
-$ sudo /var/lib/zabbix/clustercontrol/scripts/clustercontrol_stats.sh 1 test
-Cluster ID: 1, Type: GALERA, Status: STARTED
-Cluster ID: 2, Type: MYSQL_SINGLE, Status: STARTED
+$ sudo /var/lib/zabbix/clustercontrol/scripts/clustercontrol_stats.sh 1,2,3,4,5 test
+Cluster ID: 1, Cluster Name: MariaDB 10.1, Cluster Type: galera, Cluster Status: STARTED
+Cluster ID: 2, Cluster Name: PostgreSQL, Cluster Type: postgresql_single, Cluster Status: STARTED
+Cluster ID: 3, Cluster Name: MySQLRep, Cluster Type: replication, Cluster Status: STARTED
+Cluster ID 4 not found.
+Cluster ID 5 not found.
 ```
 
-You should get an output of your database cluster summary, indicating the script is able to retrieve information using the provided ClusterControl API and token in `clustercontrol.conf`.
+** This example shows that this ClusterControl instance only has 3 clusters, although we specified 5 cluster IDs in the command line.
+
+You should get an output of your database cluster summary, indicating the script is able to retrieve information using the provided ClusterControl RPC interface with correct token in `bootstrap.php`.
 
 6) Finally, restart Zabbix agent:
 ```bash
@@ -71,12 +74,6 @@ Value:
 1 = Active
 2 = Degraded
 3 = Unknown
-```
-```
-Name: ClusterControl DB Backup Status
-Value:
-0 = No error
-1 = Some backups got error
 ```
 
 ** Please follow the exact name/value as above. If you skip this step, the import will fail.
@@ -98,9 +95,11 @@ Item key
 The template will report following items' key from ClusterControl:
 
 * `clustercontrol.db.status` - Database cluster status.
-* `clustercontrol.db.backup` - Backup status. If it finds error on any created backups, it will raise a trigger.
 * `clustercontrol.db.alarms-critical` - The number of unignored alarms raised by ClusterControl with critical severity.
 * `clustercontrol.db.alarms-warning` - The number of unignored alarms raised by ClusterControl with warning severity.
+* `net.tcp.service[http,,9500]` - Status of ClusterControl Controller service (cmon).
+* `net.tcp.service[http,,9511]` - Status of ClusterControl SSH service (web-based SSH inside ClusterControl UI).
+* `net.tcp.service[http,,9510]` - Status of ClusterControl Events service (third-party integration with external notification service like PagerDuty and Slack).
 
 User Parameter
 --------------
@@ -110,7 +109,6 @@ The default user parameter file assumes you are running a database cluster under
 Example below shows user parameters to monitor multiple clusters with ID 1,2 and 5:
 ```bash
 UserParameter=clustercontrol.db.status,/var/lib/zabbix/clustercontrol/scripts/clustercontrol_stats.sh 1,2,5 cluster
-UserParameter=clustercontrol.db.backup,/var/lib/zabbix/clustercontrol/scripts/clustercontrol_stats.sh 1,2,5 backup
 UserParameter=clustercontrol.db.alarms-warning,/var/lib/zabbix/clustercontrol/scripts/clustercontrol_stats.sh 1,2,5 alarms-warning
 UserParameter=clustercontrol.db.alarms-critical,/var/lib/zabbix/clustercontrol/scripts/clustercontrol_stats.sh 1,2,5 alarms-critical
 ```
