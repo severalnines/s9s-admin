@@ -33,7 +33,7 @@ Step 2: Configure Nagios Plugin
 
   define command{
         command_name    s9s_cluster_status
-        command_line    $USER1$/s9s_cluster_status -H $HOSTADDRESS$ -c $ARG1$ -t $ARG2$
+        command_line    $USER1$/s9s_cluster_status -H $HOSTADDRESS$ -c $ARG1$ -n $ARG2$ -t $ARG3$
   }
 
 
@@ -50,7 +50,7 @@ Step 2: Configure Nagios Plugin
         use                             generic-service
         host_name                       clustercontrol.mydomain.org
         service_description             Database Cluster
-        check_command                   s9s_cluster_status!<your credentials file>
+        check_command                   s9s_cluster_status!<your credentials file>!<cluster name>
         notifications_enabled           1
         }
 
@@ -58,7 +58,7 @@ Step 2: Configure Nagios Plugin
         use                             generic-service
         host_name                       clustercontrol.mydomain.org
         service_description             Alarms
-        check_command                   s9s_cluster_status!<your credentials file>!alarm
+        check_command                   s9s_cluster_status!<your credentials file>!<cluster name>!<alarm>
         notifications_enabled           1
         }
 
