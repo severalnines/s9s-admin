@@ -50,7 +50,7 @@ Step 2: Configure Nagios Plugin
         use                             generic-service
         host_name                       clustercontrol.mydomain.org
         service_description             Database Cluster
-        check_command                   s9s_cluster_status!<your credentials file>!<cluster name>
+        check_command                   s9s_cluster_status!<your credentials file>!<cluster name>!cluster
         notifications_enabled           1
         }
 
@@ -58,9 +58,84 @@ Step 2: Configure Nagios Plugin
         use                             generic-service
         host_name                       clustercontrol.mydomain.org
         service_description             Alarms
-        check_command                   s9s_cluster_status!<your credentials file>!<cluster name>!<alarm>
+        check_command                   s9s_cluster_status!<your credentials file>!<cluster name>!alarm
         notifications_enabled           1
         }
+	
+===============================
+Step 2: Configure Icinga2 Plugin
+===============================
+
+- Login into Cluster control host and copy the plugin into Icinga2 plugin directory, for example:
+  $ cp s9s-admin/plugin/nagios/s9s_cluster_status /usr/local/icinga2/plugin
+  
+ - Create Icinga2 check command:
+ object CheckCommand "check-clustercontrol-cluster" {
+  import "plugin-check-command"
+
+  command = [ CustomPluginDir + "/s9s_cluster_status" ]
+
+  arguments = {
+    "-c" = "$cmon_login$"
+    "-H" = "$host$"
+    "-n" = "$name$"
+    "-t" = "$type$"
+  }
+ }
+ object CheckCommand "check-clustercontrol-cluster-alarm" {
+  import "plugin-check-command"
+
+  command = [ CustomPluginDir + "/s9s_cluster_status" ]
+
+  arguments = {
+    "-c" = "$cmon_login$"
+    "-H" = "$host$"
+    "-n" = "$name$"
+    "-t" = "$type$"
+  }
+ }
+ 
+ - Create Icinga2 service definitions:
+ 
+ apply Service for (cluster => config in host.vars.config.clustercontrol) {
+  import "generic-service"
+
+  vars += config
+  if (host.vars.config.cmon.credentials.file) {
+    vars.cmon_login = host.vars.config.cmon.credentials.file
+  } else {
+    vars.cmon_login = "/etc/icinga2/localconf.d/icinga_my.cnf"
+  }
+  vars.type = "cluster"
+
+  enable_perfdata = 0
+  command_endpoint = host.vars.client_endpoint
+  check_command = "check-clustercontrol-cluster"
+  assign where host.vars.service.clustercontrol == "yes"
+ }
+ apply Service "cluster-alarms" {
+  import "generic-service"
+
+  if (host.vars.config.cmon.credentials.file) {
+    vars.cmon_login = host.vars.config.cmon.credentials.file
+  } else {
+    vars.cmon_login = "/etc/icinga2/localconf.d/icinga_my.cnf"
+  }
+  vars.host = "localhost"
+  vars.type = "alarm"
+  
+  enable_perfdata = 0
+  command_endpoint = host.vars.client_endpoint
+  check_command = "check-clustercontrol-cluster-alarm"
+  assign where host.vars.service.clustercontrol == "yes"
+ }
+
+ - Add host variables to host object to monitor cluster with name my_cluster on localhost:
+   
+   vars.config.clustercontrol.cluster_name.host = "localhost"
+   vars.config.clustercontrol.cluster_name.cluster_name = "my_cluster"
+   vars.service.clustercontrol = "yes"
+
 
 =====
 Notes
