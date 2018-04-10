@@ -82,18 +82,6 @@ Step 2: Configure Icinga2 Plugin
     "-t" = "$type$"
   }
  }
- object CheckCommand "check-clustercontrol-cluster-alarm" {
-  import "plugin-check-command"
-
-  command = [ CustomPluginDir + "/s9s_cluster_status" ]
-
-  arguments = {
-    "-c" = "$cmon_login$"
-    "-H" = "$host$"
-    "-n" = "$name$"
-    "-t" = "$type$"
-  }
- }
  
  - Create Icinga2 service definitions:
  
@@ -126,7 +114,7 @@ Step 2: Configure Icinga2 Plugin
   
   enable_perfdata = 0
   command_endpoint = host.vars.client_endpoint
-  check_command = "check-clustercontrol-cluster-alarm"
+  check_command = "check-clustercontrol-cluster"
   assign where host.vars.service.clustercontrol == "yes"
  }
 
