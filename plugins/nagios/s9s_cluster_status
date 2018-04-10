@@ -5,7 +5,7 @@
 
 VERSION=0.5
 
-TEMP=`getopt -o H:,c:,t:,P:,i:,h,v --long host:,config:,type:,port:,id:,help,version -n 's9s_cluster_status' -- "$@"`
+TEMP=`getopt -o H:,c:,t:,P:,n:,h,v --long host:,config:,type:,port:,name:,help,version -n 's9s_cluster_status' -- "$@"`
 eval set -- "$TEMP"
 
 while true ; do
@@ -14,7 +14,7 @@ while true ; do
     -c|--config) cmon_db_config="$2" ; shift 2 ;;
     -t|--type) query_type="$2" ; shift 2 ;;
     -P|--port) cmon_db_port="$2" ; shift 2 ;;
-    -i|--id) cmon_db_cluster_id="$2" ; shift 2 ;;
+    -n|--name) cmon_cluster_name="$2" ; shift 2 ;;
     -h|--help) help="1" ; shift ;;
     -v|--version) version="1" ; shift ;;
     --) shift ; break ;;
@@ -36,10 +36,10 @@ helpMenu(){
   echo "-c, --config    : MySQL credential file for user cmon"
   echo "-t, --type      : Query type [cluster|alarm] (default: cluster)"
   echo "-P, --port      : MySQL port for the host (default: 3306)"
-  echo "-i, --id        : Cluster ID to check"
+  echo "-n, --name      : Cluster name to check"
   echo "-h, --help      : Print help"
   echo ""
-  echo "Example: `basename $0` -H 127.0.0.1 -c config -t cluster -i 1"
+  echo "Example: `basename $0` -H 127.0.0.1 -c config -t cluster -n default"
   echo ""
 }
 
@@ -58,7 +58,7 @@ fi
 # Set default value
 [ -z $cmon_db_port ] && cmon_db_port=3306
 [ -z $query_type ] && query_type="cluster"
-[ -z $cmon_db_cluster_id ] && cmon_db_cluster_id=1
+[ -z $cmon_cluster_name ] && cmon_cluster_name="default"
 
 if [ -z "$cmon_db_host" ] || [ -z "$cmon_db_config" ]; then
   echo ""
@@ -89,7 +89,7 @@ check_mysqlbin(){
 
 if [ $query_type == "cluster" ]; then
   # SQL query
-  query="SELECT status FROM cmon.cluster_state WHERE id=$cmon_db_cluster_id;"
+  query="SELECT status FROM cmon.cluster_state cs LEFT JOIN cmon.cluster c USING (id) WHERE c.name=\"$cmon_cluster_name\";"
 
   check_mysqlbin
   if [ $? -eq 0 ]; then
