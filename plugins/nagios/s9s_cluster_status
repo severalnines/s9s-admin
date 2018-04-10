@@ -3,17 +3,18 @@
 # More information is in the COPYING file in the top directory of this package.
 # Copyright (C) 2011 Severalnines
 
-VERSION=0.4
+VERSION=0.5
 
-TEMP=`getopt -o H:,p:,t:,P:,h,v --long host:,password:,type:,port:,help,version -n 's9s_cluster_status' -- "$@"`
+TEMP=`getopt -o H:,c:,t:,P:,n:,h,v --long host:,config:,type:,port:,name:,help,version -n 's9s_cluster_status' -- "$@"`
 eval set -- "$TEMP"
 
 while true ; do
   case "$1" in
     -H|--host) cmon_db_host="$2" ; shift 2 ;;
-    -p|--password) cmon_db_password="$2" ; shift 2 ;;
+    -c|--config) cmon_db_config="$2" ; shift 2 ;;
     -t|--type) query_type="$2" ; shift 2 ;;
     -P|--port) cmon_db_port="$2" ; shift 2 ;;
+    -n|--name) cmon_cluster_name="$2" ; shift 2 ;;
     -h|--help) help="1" ; shift ;;
     -v|--version) version="1" ; shift ;;
     --) shift ; break ;;
@@ -22,169 +23,166 @@ while true ; do
 done
 
 printVersion(){
-        echo "Plugin  : Check Database Cluster Status (Nagios)"
-        echo "Version : $VERSION"
-        echo "Author  : Severalnines"
-        echo ""
+  echo "Plugin  : Check Database Cluster Status (Nagios)"
+  echo "Version : $VERSION"
+  echo "Author  : Severalnines"
+  echo ""
 }
 
 helpMenu(){
-        echo "Usage   : `basename $0` -H [host] -p [cmon_password] [options]"
-        echo ""
-        echo "-H, --host      : ClusterControl/cmon IP address"
-        echo "-p, --password  : DB password for user cmon"
-        echo "-t, --type      : Query type [cluster|alarm] (default: cluster)"
-        echo "-P, --port      : MySQL port for the host (default: 3306)"
-        echo "-h, --help      : Print help"
-        echo ""
-        echo "Example: `basename $0` -H 127.0.0.1 -p 'password' -t cluster"
-        echo ""
+  echo "Usage   : `basename $0` -H [host] -c [cmon_mysql_config] [options]"
+  echo ""
+  echo "-H, --host      : ClusterControl/cmon IP address"
+  echo "-c, --config    : MySQL credential file for user cmon"
+  echo "-t, --type      : Query type [cluster|alarm] (default: cluster)"
+  echo "-P, --port      : MySQL port for the host (default: 3306)"
+  echo "-n, --name      : Cluster name to check"
+  echo "-h, --help      : Print help"
+  echo ""
+  echo "Example: `basename $0` -H 127.0.0.1 -c config -t cluster -n default"
+  echo ""
 }
 
 if [ ! -z "$version" ]; then
-	printVersion
-	exit 0
+  printVersion
+  exit 0
 fi
 
 # Help menu
 if [ ! -z "$help" ]; then
-	printVersion
-	helpMenu
-	exit 0
+  printVersion
+  helpMenu
+  exit 0
 fi
 
 # Set default value
 [ -z $cmon_db_port ] && cmon_db_port=3306
 [ -z $query_type ] && query_type="cluster"
+[ -z $cmon_cluster_name ] && cmon_cluster_name="default"
 
-if [ -z "$cmon_db_host" ] || [ -z "$cmon_db_password" ]; then
-	echo ""
+if [ -z "$cmon_db_host" ] || [ -z "$cmon_db_config" ]; then
+  echo ""
         helpMenu
-	exit 1
+  exit 1
 fi
 
 check_mysqlbin(){
-	mysqlbin=`which mysql`
-	if [ -z "$mysqlbin" ]; then
-		echo "MySQL client not found. Kindly add the MySQL client into PATH or install MySQL client package"
-		echo "or change and specify the full path to the mysql client (in the beginning of this file): "
-		echo "mysqlbin=\`which mysql\`"
-		echo "to:"
-		echo "mysqlbin=/path/to/mysql"
-	        exit 1
-	fi
+  mysqlbin=`which mysql`
+  if [ -z "$mysqlbin" ]; then
+    echo "MySQL client not found. Kindly add the MySQL client into PATH or install MySQL client package"
+    echo "or change and specify the full path to the mysql client (in the beginning of this file): "
+    echo "mysqlbin=\`which mysql\`"
+    echo "to:"
+    echo "mysqlbin=/path/to/mysql"
+    exit 1
+  fi
 
-	test_query="SELECT * from cmon.hosts;"
-	$mysqlbin -h$cmon_db_host -ucmon -p$cmon_db_password -P$cmon_db_port -A -Bse "$test_query" > /dev/null
-	retval=$?
-	if [ $retval != 0 ]; then
-		echo "Failed to query cmon database. Please check MySQL cmon user privileges on $cmon_db_host." && exit 1
-	fi
+  test_query="SELECT * from cmon.hosts;"
+  $mysqlbin --defaults-file=$cmon_db_config -h$cmon_db_host -P$cmon_db_port -A -Bse "$test_query" > /dev/null
+  retval=$?
+  if [ $retval != 0 ]; then
+    echo "Failed to query cmon database. Please check MySQL cmon user privileges on $cmon_db_host." && exit 1
+  fi
 
-	return 0
+  return 0
 }
 
 if [ $query_type == "cluster" ]; then
+  # SQL query
+  query="SELECT status FROM cmon.cluster_state cs LEFT JOIN cmon.cluster c USING (id) WHERE c.name=\"$cmon_cluster_name\";"
 
-	# SQL query
-	query='SELECT status FROM cmon.cluster_state WHERE id=1;'
-	
-	check_mysqlbin
-	
-	if [ $? -eq 0 ]; then
-		execute_query=`$mysqlbin -h$cmon_db_host -ucmon -p$cmon_db_password -P$cmon_db_port -A -Bse "$query"`
-		if [ ! "$execute_query" ]; then
-			echo "Failed to query cmon database. The following query failed : $query"
-			echo "Unknown: Cluster status is UNKNOWN"
-			stateid=3
-			exit $stateid
-		else
-			clustate=$execute_query
-		fi
-	fi
+  check_mysqlbin
+  if [ $? -eq 0 ]; then
+    execute_query=`$mysqlbin --defaults-file=$cmon_db_config -h$cmon_db_host -P$cmon_db_port -A -Bse "$query"`
+    if [ ! "$execute_query" ]; then
+      echo "Failed to query cmon database. The following query failed : $query"
+      echo "Unknown: Cluster status is UNKNOWN"
+      stateid=3
+      exit $stateid
+    else
+      clustate=$execute_query
+    fi
+  fi
 
-	if [ "$clustate" == "STARTED" ]; then
-		echo "OK: Cluster status is STARTED"
-	        stateid=0
-	elif  [ "$clustate" == "CRITICAL" ] || [ "$clustate" == "FAILURE" ] || [ "$clustate" == "STOPPED" ] || [ "$clustate" == "SHUTTING_DOWN" ]; then
-        	echo "Critical: Cluster status is $clustate"
-	        stateid=2
-	else
-	        echo "Warning: Cluster status is $clustate"
-	        stateid=1
-	fi
+  if [ "$clustate" == "STARTED" ]; then
+    echo "OK: Cluster status is STARTED"
+    stateid=0
+  elif  [ "$clustate" == "CRITICAL" ] || [ "$clustate" == "FAILURE" ] || [ "$clustate" == "STOPPED" ] || [ "$clustate" == "SHUTTING_DOWN" ]; then
+    echo "Critical: Cluster status is $clustate"
+    stateid=2
+  else
+    echo "Warning: Cluster status is $clustate"
+    stateid=1
+  fi
 
-	exit $stateid
+  exit $stateid
 
 elif [ $query_type == "alarm" ]; then
-
-	# SQL query
-	query='SELECT severity,alarm_name, message,cmon.simple_alarm.report_ts \
+  # SQL query
+query='SELECT severity,alarm_name, message,cmon.simple_alarm.report_ts \
 FROM cmon.simple_alarm \
 LEFT JOIN cmon.hosts \
 ON cmon.simple_alarm.hostid=cmon.hosts.id \
 WHERE ignored=0;'
 
-	check_mysqlbin
+  check_mysqlbin
+  if [ $? -eq 0 ]; then
+    # Comma delimited on query result
+    execute_query=`$mysqlbin --defaults-file=$cmon_db_config -h$cmon_db_host -P$cmon_db_port -A -Bse "$query" | sed "s/'/\'/;s/\t/,/g;s/^//;s/$//;s/\n//g"`
+  if [ "$execute_query" ]; then
+    # Count severity's number
+    INPUT=/tmp/query_result
+    OUTPUT=/tmp/output
+    [ -f $INPUT ] && rm -Rf $INPUT
+    [ -f $OUTPUT ] && rm -Rf $OUTPUT
+    echo "$execute_query" > $INPUT
 
-	if [ $? -eq 0 ]; then
-		# Comma delimited on query result
-		execute_query=`$mysqlbin -h$cmon_db_host -ucmon -p$cmon_db_password -P$cmon_db_port -A -Bse "$query" | sed "s/'/\'/;s/\t/,/g;s/^//;s/$//;s/\n//g"`
-		if [ "$execute_query" ]; then
-			# Count severity's number
-			INPUT=/tmp/query_result
-			OUTPUT=/tmp/output
-			[ -f $INPUT ] && rm -Rf $INPUT
-			[ -f $OUTPUT ] && rm -Rf $OUTPUT
-			echo "$execute_query" > $INPUT
+    OLDIFS=$IFS
+    IFS=,
+    critical=0; warning=0;
+    while read severity hostname alarm description timestamp
+    do
+      if [ ! -z $severity ]; then
+        if [ $severity == "CRITICAL" ]; then
+          critical=$(($critical+1))
+        fi
+        if [ $severity == "WARNING" ]; then
+          warning=$(($warning+1))
+        fi
+      fi
+      # Turn output to array
+      full_status=($severity $hostname $alarm)
+      echo -n "${full_status[*]} | " >> $OUTPUT
+    done < $INPUT
+    IFS=$OLDIFS
 
-			
-			OLDIFS=$IFS
-			IFS=,
-			critical=0; warning=0;
-			while read severity hostname alarm description timestamp
-			do
-				if [ ! -z $severity ]; then
-					if [ $severity == "CRITICAL" ]; then
-						critical=$(($critical+1))
-					fi
-					if [ $severity == "WARNING" ]; then
-						warning=$(($warning+1))
-					fi
-				fi
-			# Turn output to array
-			full_status=($severity $hostname $alarm)
-			echo -n "${full_status[*]} | " >> $OUTPUT
-			done < $INPUT
-			IFS=$OLDIFS
-
-			if [ $critical != 0 ] && [ $warning != 0 ]; then
-				echo "CRITICAL: $critical alarm(s), WARNING: $warning alarm(s) | $(cat $OUTPUT)"
-				stateid=2
-                        elif [ $critical != 0 ]; then
-                                echo "CRITICAL: $critical alarm(s) | $(cat $OUTPUT)"
-				stateid=2
-			elif [ $warning != 0 ]; then
-				echo "WARNING: $warning alarm(s) | $(cat $OUTPUT)"
-				stateid=1
-			else
-				echo "OK: No alarms"
-				stateid=0
-			fi
-		else
-                        if [ $retval -eq 0 ]; then
-                                echo "OK: No alarms"
-                                stateid=0
-			else
-                                echo "Failed to query cmon database. The following query failed : $query"
-                                echo "Unknown: Alarm status is UNKNOWN"
-                                stateid=3
-			fi
-		fi
-		exit $stateid
-	fi
+  if [ $critical != 0 ] && [ $warning != 0 ]; then
+    echo "CRITICAL: $critical alarm(s), WARNING: $warning alarm(s) | $(cat $OUTPUT)"
+    stateid=2
+    elif [ $critical != 0 ]; then
+      echo "CRITICAL: $critical alarm(s) | $(cat $OUTPUT)"
+      stateid=2
+    elif [ $warning != 0 ]; then
+      echo "WARNING: $warning alarm(s) | $(cat $OUTPUT)"
+      stateid=1
+    else
+      echo "OK: No alarms"
+      stateid=0
+    fi
+    else
+    if [ $retval -eq 0 ]; then
+      echo "OK: No alarms"
+      stateid=0
+    else
+      echo "Failed to query cmon database. The following query failed : $query"
+      echo "Unknown: Alarm status is UNKNOWN"
+      stateid=3
+    fi
+  fi
+  exit $stateid
+fi
 
 else
-	echo "Unknown query type. Use following query type: [alarm|cluster]"
-	exit 1
+  echo "Unknown query type. Use following query type: [alarm|cluster]"
+  exit 1
 fi
