@@ -16,7 +16,11 @@ Step 1: Grant permission for cmon DB user
 - Login into ClusterControl host:
   mysql> GRANT SELECT ON cmon.* TO 'cmon'@'<nagios_host_ip>' IDENTIFIED BY '<cmon_password>';
   mysql> FLUSH PRIVILEGES;
-
+ 
+- Create credentials file:
+  [client]
+  user=<cmon_user>
+  password=<cmon_password>
 
 ===============================
 Step 2: Configure Nagios Plugin
@@ -29,7 +33,7 @@ Step 2: Configure Nagios Plugin
 
   define command{
         command_name    s9s_cluster_status
-        command_line    $USER1$/s9s_cluster_status -H $HOSTADDRESS$ -p $ARG1$ -t $ARG2$
+        command_line    $USER1$/s9s_cluster_status -H $HOSTADDRESS$ -c $ARG1$ -n $ARG2$ -t $ARG3$
   }
 
 
@@ -46,7 +50,7 @@ Step 2: Configure Nagios Plugin
         use                             generic-service
         host_name                       clustercontrol.mydomain.org
         service_description             Database Cluster
-        check_command                   s9s_cluster_status!yourcmonpassword
+        check_command                   s9s_cluster_status!<your credentials file>!<cluster name>!cluster
         notifications_enabled           1
         }
 
@@ -54,19 +58,82 @@ Step 2: Configure Nagios Plugin
         use                             generic-service
         host_name                       clustercontrol.mydomain.org
         service_description             Alarms
-        check_command                   s9s_cluster_status!yourcmonpassword!alarm
+        check_command                   s9s_cluster_status!<your credentials file>!<cluster name>!alarm
         notifications_enabled           1
         }
+	
+===============================
+Step 2: Configure Icinga2 Plugin
+===============================
+
+- Login into Cluster control host and copy the plugin into Icinga2 plugin directory, for example:
+  $ cp s9s-admin/plugin/nagios/s9s_cluster_status /usr/local/icinga2/plugin
+  
+ - Create Icinga2 check command:
+ object CheckCommand "check-clustercontrol-cluster" {
+  import "plugin-check-command"
+
+  command = [ CustomPluginDir + "/s9s_cluster_status" ]
+
+  arguments = {
+    "-c" = "$cmon_login$"
+    "-H" = "$host$"
+    "-n" = "$name$"
+    "-t" = "$type$"
+  }
+ }
+ 
+ - Create Icinga2 service definitions:
+ 
+ apply Service for (cluster => config in host.vars.config.clustercontrol) {
+  import "generic-service"
+
+  vars += config
+  if (host.vars.config.cmon.credentials.file) {
+    vars.cmon_login = host.vars.config.cmon.credentials.file
+  } else {
+    vars.cmon_login = "/etc/icinga2/localconf.d/icinga_my.cnf"
+  }
+  vars.type = "cluster"
+
+  enable_perfdata = 0
+  command_endpoint = host.vars.client_endpoint
+  check_command = "check-clustercontrol-cluster"
+  assign where host.vars.service.clustercontrol == "yes"
+ }
+ apply Service "cluster-alarms" {
+  import "generic-service"
+
+  if (host.vars.config.cmon.credentials.file) {
+    vars.cmon_login = host.vars.config.cmon.credentials.file
+  } else {
+    vars.cmon_login = "/etc/icinga2/localconf.d/icinga_my.cnf"
+  }
+  vars.host = "localhost"
+  vars.type = "alarm"
+  
+  enable_perfdata = 0
+  command_endpoint = host.vars.client_endpoint
+  check_command = "check-clustercontrol-cluster"
+  assign where host.vars.service.clustercontrol == "yes"
+ }
+
+ - Add host variables to host object to monitor cluster with name my_cluster on localhost:
+   
+   vars.config.clustercontrol.cluster_name.host = "localhost"
+   vars.config.clustercontrol.cluster_name.cluster_name = "my_cluster"
+   vars.service.clustercontrol = "yes"
+
 
 =====
 Notes
 ===== 
 
 - If you used non-default MySQL port, add another option and argument under command_line directive:
-	command_line	$USER1$/s9s_cluster_status -H $HOSTADDRESS$ -p $ARG1$ -P $ARG2$
+	command_line	$USER1$/s9s_cluster_status -H $HOSTADDRESS$ -c $ARG1$ -P $ARG2$
 
 - Then, under check_command directive, add the port argument:
-	check_command	s9s_cluster_status!password!3307   ## Format: <command name>!<cmon password>!<MySQL port>
+	check_command	s9s_cluster_status!credential file!3307   ## Format: <command name>!<cmon crendential file>!<MySQL port>
 
 - If you create an individual object config file under "objects" directory, do not forget to call the config file inside nagios.cfg, for example:
 	cfg_file=/usr/local/nagios/etc/objects/clustercontrol.cfg
