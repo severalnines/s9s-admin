@@ -2,7 +2,7 @@
 #
 # All files in this package is subject to the GPL v2 license
 # More information is in the COPYING file in the top directory of this package.
-# Copyright (C) 2011-2017 severalnines.com
+# Copyright (C) 2011-2018 severalnines.com
 #
 
 function ensure_wget_installed
@@ -31,34 +31,44 @@ function ensure_tools_installed
 
 function create_local_s9s_user
 {
-	unset cmon_user
-	if [ -r ~/.s9s/s9s.conf ]; then
-		source ~/.s9s/s9s.conf &>/dev/null
-	fi
+    unset cmon_user
+    if [ -r ~/.s9s/s9s.conf ]; then
+        source ~/.s9s/s9s.conf &>/dev/null
+    fi
 
-	# check if s9s.conf doesn't have a user configured, then create one
-	if [ -z "$cmon_user" ]; then
-		if [ -z "$SUDO_USER" ]; then
-			cmon_user='root'
-		else
-			cmon_user=$SUDO_USER
-		fi
+    # verify if the specified user works
+    if [ -n "$cmon_user" ]; then
+        s9s user --whoami
+        if (( $? == 3 )); then
+            # access denied, backup the ~/.s9s directory and create a new user
+            mv ~/.s9s ~/.s9s_bak_`date +%F_%H%M`
+            cmon_user=""
+        fi
+    fi
 
-		# new s9s CLI requires the username defined alone without --cmon-user
-		# only the new one has BUILD info in --version:
-		if s9s --version | grep BUILD >/dev/null; then
-			s9s user --create --generate-key --controller="https://localhost:9501" $cmon_user
-		else
-			s9s user --create --generate-key --controller="https://localhost:9501" --cmon-user="$cmon_user"
-		fi
+    # check if s9s.conf doesn't have a user configured, then create one
+    if [ -z "$cmon_user" ]; then
+        if [ -z "$SUDO_USER" ]; then
+            cmon_user='root'
+        else
+            cmon_user=$SUDO_USER
+        fi
 
-		chown -R $cmon_user ~/.s9s
-	fi
+        # new s9s CLI requires the username defined alone without --cmon-user
+        # only the new one has BUILD info in --version:
+        if s9s --version | grep BUILD >/dev/null; then
+            s9s user --create --generate-key --group=admins --controller="https://localhost:9501" $cmon_user
+        else
+            s9s user --create --generate-key --group=admins --controller="https://localhost:9501" --cmon-user="$cmon_user"
+        fi
+
+        chown -R $cmon_user ~/.s9s
+    fi
 }
 
 function create_report
 {
-	create_local_s9s_user
+    create_local_s9s_user
 
     if [ -n "$DESTINATION" ]; then
         s9s cluster --create-report --output-dir=$DESTINATION --cluster-id=$CLUSTER_ID --log
