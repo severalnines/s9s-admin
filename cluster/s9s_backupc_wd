@@ -13,6 +13,9 @@ TOTAL_TIME=0
 searchexpr="innobackupex: Error: "
 searchexpr2="innobackupex: completed OK!"
 #give xtrabackup a chance to start
+echo "This script is deprecated."
+exit
+
 nc -d -l $NETCAT_PORT > $BACKUPFILE &
 sleep 1
 pid=`pgrep -f 'nc -d'`

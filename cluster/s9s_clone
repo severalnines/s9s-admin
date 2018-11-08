@@ -289,7 +289,7 @@ function load_opts
 	fi
 	SSH_OPTS=" -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY"
 	if [ "$SUDO" = "" ] || [ "$SUDO" = "NULL" ];  then
-           SUDO=sudo
+           SUDO="sudo -n"
         fi
     fi
     if [ "$SSH_PORT" = "" ] || [ "$SSH_PORT" = "NULL" ];  then
@@ -1063,6 +1063,9 @@ function check_mysql_client()
 	fi
    fi
 }
+
+echo "This script is deprecated."
+exit 1
 
 if [ ! -e $LOCKFILE ]; then
     trap "rm -f $LOCKFILE; sync; exit" INT TERM EXIT

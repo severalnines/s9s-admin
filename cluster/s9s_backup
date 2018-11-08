@@ -20,7 +20,6 @@ S9S_XB_INCLUDE_DB=/tmp/s9s_xb_include_db
 
 PERCONA_RELEASE_LINK='http://www.percona.com/redir/downloads/percona-release/redhat/0.0-1/percona-release-0.0-1.x86_64.rpm'
 
-
 #INNOBACKUP_OPTS=" --lock-wait-threshold=40 --lock-wait-query-type=all --lock-wait-timeout=180 --kill-long-queries-timeout=20"
 INNOBACKUP_OPTS=" "
 
@@ -142,7 +141,7 @@ function load_opts
 	SSH_OPTS="-q -t -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY"
 	SCP_OPTS="-q -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY"
 	if [ "$SUDO" = "" ] || [ "$SUDO" = "NULL" ];  then
-           SUDO=sudo
+           SUDO="sudo -n"
         fi
     fi
     MONITORED_MYSQL_PORT=`$MYSQL_BIN $MYSQL_OPTS -NAB --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MONITORED_MYSQL_PORT' AND cid=$CLUSTER_ID" 2>/dev/null`
@@ -1097,7 +1096,7 @@ function restore
         
     done
     
-    LIST=`$MYSQL_BIN $MYSQL_OPTS -NAB --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "set group_concat_max_len=1024*1024;select group_concat(concat(parentid ,',', backup_type, ',', concat(directory,'/', filename), ',' , status, ',', size, ',\'' ,  date_format(report_ts, \"%Y-%M-%d_%H:%i:%s\") , '\'', ',', directory, ',', filename, ',', md5sum, ',', compressed, ',', backupid) SEPARATOR ' ') from mysql_backup where cid=$CLUSTER_ID and parentid=$BACKUPID and backup_type='incremental' and status='completed' and lsn>0 order by parentid, backupid" 2>/dev/null`
+    LIST=`$MYSQL_BIN $MYSQL_OPTS -NAB --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "set group_concat_max_len=1024*1024;select group_concat(concat(parentid ,',', backup_type, ',', concat(directory,'/', filename), ',' , status, ',', size, ',\'' ,  date_format(report_ts, \"%Y-%M-%d_%H:%i:%s\") , '\'', ',', directory, ',', filename, ',', md5sum, ',', compressed) SEPARATOR ' ') from mysql_backup where cid=$CLUSTER_ID and parentid=$BACKUPID and backup_type='incremental' and status='completed' and lsn>0 order by parentid, backupid" 2>/dev/null`
     if [ $? -ne 0 ]; then
         echo "Failed to read backups"
         echo "Restore FAILED"
@@ -1118,8 +1117,7 @@ function restore
       for f in $LIST
       do      
 	      backupid=`echo $f | awk -F ',' '{print $1;}'`
-	      backupid2=`echo $f | awk -F ',' '{print $11;}'`
-	      if [ $backupid2 -ge $EXCLUDE_BACKUPID ];  then
+	      if [ $backupid -ge $EXCLUDE_BACKUPID ];  then
 	          continue
 	      fi
 	      backup_type=`echo $f | awk -F ',' '{print $2;}'`
@@ -1187,11 +1185,10 @@ EOF
   echo "Restore OK"
   echo "To copy back the restored data into your datadir of mysqld do:"
   echo "* Shutdown the cmon controller to prevent automatic recovery"
-  echo "* Shutdown the cmon agent on this host to prevent automatic recovery (if any)"
-  echo "* Shutdown the mysql server"
+  echo "* Shutdown the cmon agent on this host to prevent automatic recovery"
+  echo "* Shutdown the mysql server "
   echo "* innobackupex --copy-back ${BASE_DIR}"
-  echo "* chown mysql:mysql -R <mysqld datadir>"
-  echo "* Start the mysql server"
+  echo "* chwon mysql:mysql -R <mysqld datadir>"  
 
   exit 0
 }
@@ -1496,6 +1493,18 @@ function check_mysql_client()
 	    fi
     fi
 }
+
+echo "This script is deprecated."
+exit 1
+
+read -p 's9s_backup has been deprecated (use backup/restore from UI). Are you sure you want to continue? [y/N]: ' ans
+if [ "$ans" == "y" ] || [ "$ans" == "Y" ] ; then
+    echo "Proceeding, not supported."
+else
+    echo 'Aborting.'
+    exit 1
+fi
+
 
 check_mysql_client
 ulimit -n $ULIMIT

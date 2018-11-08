@@ -1,5 +1,8 @@
 #!/bin/bash
 
+echo "This script is deprecated."
+exit
+
 BACKUP_LOGFILE=$1
 SLEEPTIME=10
 

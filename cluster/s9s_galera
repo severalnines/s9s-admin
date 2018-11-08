@@ -4,6 +4,9 @@
 # MODIFY THE BELOW TO SUIT YOU ENV:
 LOCKFILE="/tmp/s9s_galera.lock"
 
+echo "This script is deprecated."
+exit 1
+
 [ ! -f /etc/mysql/my.cnf ] && MYSQL_CONFIG=/etc/my.cnf || MYSQL_CONFIG=/etc/mysql/my.cnf
 MYSQL_OPTIONS="--defaults-file=$MYSQL_CONFIG --defaults-group-suffix=_cmon"
 PERCONA_RELEASE_LINK='http://www.percona.com/redir/downloads/percona-release/redhat/0.0-1/percona-release-0.0-1.x86_64.rpm'

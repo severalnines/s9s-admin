@@ -146,9 +146,9 @@ setupSudo()
 	echo "Enter your sudo password: "
 	read -s pswd
 	if [ -z "$pswd" ]; then
-		sudo=sudo
+		sudo="sudo -n"
 	else
-		sudo="echo $pswd | sudo -S "
+		sudo="echo $pswd | sudo -n -S "
 	fi
 }
 
@@ -308,7 +308,7 @@ checkSudo ()
 	[ ! -z "$SSH_IDENTITY" ] && ssh_key=$SSH_IDENTITY
 
 	if [ "$mode" == "controller" ] || [ "$mode" == "dual" ]; then
-		sudo=sudo
+		sudo="sudo -n"
 		[ "$os_user" == "root" ] && sudo="" || setupSudo
 	fi
 

@@ -16,7 +16,7 @@ MYSQL_OPTIONS="--defaults-file=$MYSQL_CONFIG --defaults-group-suffix=_cmon"
 
 LOCKFILE="/tmp/s9s_haproxy.lock"
 function init
-{
+{    
     FILES=`ls /etc/cmon.cnf 2>&1`
     FILES2=`ls /etc/cmon.d/*.cnf 2>&1`
     FILES="$FILES $FILES2"
@@ -45,10 +45,7 @@ function init
     MYSQL_BIN=$mysql_basedir/bin/mysql
     CONNECT_TIMEOUT=10
     CLUSTER_TYPE=$type
-
 #    MYSQL_OPTS="--connect-timeout=$CONNECT_TIMEOUT"
-    OSUSER=$USER
-
     SUFFIX="1"
     PREFIX="s9s"
     HAPROXY_OPTS="-f /etc/haproxy/haproxy.cfg -p /var/run/haproxy.pid -st \$(cat /var/run/haproxy.pid)"
@@ -57,14 +54,13 @@ function init
     LB_ADMIN_PASSWORD='admin'
     echo $mysql_password
 
-
     if (( EUID != 0 )); then
         echo "must be executed as 'root' or with 'sudo'"
         exit 1
     fi
     echo "" > $HAPROXY_LOG
     echo "" > $HAPROXY_LOG2
-
+    
 
     MYCNF_CMON=`dirname $MYSQL_CONFIG`/my_cmon.cnf
     cat << 'EOF' > $MYCNF_CMON
@@ -72,7 +68,7 @@ function init
 user=cmon
 password=
 EOF
-    sed -i.bak "s#password=#password=$mysql_password#g" $MYCNF_CMON
+    sed -i.bak "s#password=#password=$mysql_password#g" $MYCNF_CMON 
     chmod 600 $MYCNF_CMON
     chown mysql.mysql $MYCNF_CMON
     MYSQL_OPTS="--defaults-file=$MYCNF_CMON  --defaults-group-suffix=_cmon --connect-timeout=$CONNECT_TIMEOUT"
@@ -83,7 +79,7 @@ function write_email
   SUBJECT=$1
   MSG=$2
   cat $HAPROXY_LOG | sed  -e "s/'/\\\'/g" -e 's/"/\\"/g' > /tmp/s9s_haproxy_log_escaped
-  MSG="$MSG \nInstallation log follows:\n `cat /tmp/s9s_haproxy_log_escaped`"
+  MSG="$MSG \nInstallation log follows:\n `cat /tmp/s9s_haproxy_log_escaped`" 
   QUERY="INSERT INTO outgoing_messages(cid,component, subject, body) VALUES($CLUSTER_ID,'SoftwareInstallation', \"$SUBJECT\", \"$MSG\")"
   echo "$QUERY" > /tmp/query.sql
   $MYSQL_BIN  $MYSQL_OPTS -B -N  --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  < /tmp/query.sql 2>&1 >/tmp/err.log
@@ -92,14 +88,14 @@ function write_email
 
 
 function log_job_message
-{
+{    
     MSG=$1
     EXIT_CODE=$2
     if [ -z "$EXIT_CODE" ]; then
 	EXIT_CODE=1
     fi
     QUERY="INSERT INTO cmon_job_message(cid, jobid,message,exit_code,report_ts) VALUES($CLUSTER_ID,$JOBID,\"$MSG\",$EXIT_CODE,now())"
-    if [ $JOBID -ne 0 ]; then
+    if [ $JOBID -ne 0 ]; then 
 	$MYSQL_BIN   $MYSQL_OPTS  -B -N  --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
 	if [ $EXIT_CODE -ne 0 ]; then
 	    echo "Failed: $MSG" >> $HAPROXY_LOG
@@ -112,25 +108,25 @@ function log_job_message
 	    echo "Failed: $MSG"
 	else
 	    echo "$MSG" >> $HAPROXY_LOG
-	    echo "$MSG"
+	    echo "$MSG" 
 	fi
     fi
 }
 
 function log_message
-{
+{    
     MSG=$1
     echo "$MSG" >> $HAPROXY_LOG2
     echo "$MSG"
 }
 
 function log_job
-{
+{    
     STATUS=$1
     STATUS_TXT=$2
     EXIT_CODE=$3
     QUERY="UPDATE cmon_job SET status='$STATUS', status_txt='$STATUS_TXT', exit_code=$EXIT_CODE, report_ts=NOW()  WHERE cid=$CLUSTER_ID AND jobid=$JOBID"
-    if [ $JOBID -ne 0 ]; then
+    if [ $JOBID -ne 0 ]; then 
 	$MYSQL_BIN  $MYSQL_OPTS  -B -N --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT  -e "$QUERY" 2>&1 >/tmp/err.log
     fi
 }
@@ -195,7 +191,7 @@ vrrp_script chk_haproxy {
    interval 2                    # check every 2 seconds
    weight 2                      # add 2 points of prio if OK
 }
-
+ 
 vrrp_instance VI_1 {
    interface ETHINTERFACE                # interface to monitor
    state MASTER
@@ -213,7 +209,7 @@ EOF
 sed -i.bak "s#PRIORITY#$3#g" $TMPDIR/keepalived.conf.$1
 sed -i.bak "s#VIRTUAL_IP#$2#g" $TMPDIR/keepalived.conf.$1
 sed -i.bak "s#ETHINTERFACE#$4#g" $TMPDIR/keepalived.conf.$1
-}
+}	
 
 
 function write_haproxy_cfg_tmpl_debian()
@@ -263,7 +259,7 @@ listen admin_page 0.0.0.0:ADMIN_PORT
         stats http-request auth realm admin_page unless AuthOkay_ReadOnly
         #stats admin if AuthOkay_Admin
 EOF
-}
+}	
 
 function write_makecfg
 {
@@ -289,7 +285,7 @@ if [ -z "$BACKENDFILES" ]; then
     echo "No backend files found for $DC
                 *.backend files are lists of hostnames in files with naming convention  <prefix>_<port>_<name>.backend
                 example: dt_9906_production.backend
-                the list in the file is seperated by whitespace and each server can optionally have ',disabled'
+                the list in the file is seperated by whitespace and each server can optionally have ',disabled' 
                 appended to its name to add it as disabled by default.
                 example: slave1 slave2,disabled"
         exit 1
@@ -437,7 +433,7 @@ function test_ssh()
        echo "   http://support.severalnines.com/tickets/new"
        log_job_message 'Could not ssh to remote host, you must setup shared keys to the host first.' 1
        log_job 'FAILED' 's9s_haproxy failed' 1
-       write_email 's9s_haproxy installation failed' 'Could not ssh to remote host, you must setup shared keys to the host first.'
+       write_email 's9s_haproxy installation failed' 'Could not ssh to remote host, you must setup shared keys to the host first.' 
        exit 1
        return 1
   fi
@@ -522,7 +518,7 @@ function remote_cmd()
    MAX_RETRIES=3
    printf "%-4s: Executing '%s' " "$desthost" "$xcommand"
    retry=0
-   while [ $retry -lt $MAX_RETRIES ];
+   while [ $retry -lt $MAX_RETRIES ]; 
    do
       x=`ssh -q $SSH_OPTS $SSH_USER@$desthost "$SUDO $xcommand " 2>&1  >> $HOME/s9s_deploy.log`
       if [ $? -eq 0 ]; then
@@ -564,93 +560,6 @@ function remote_cmd3()
        write_email 's9s_haproxy installation failed' "FAILED: ${desthost} : ${xcommand}"
        exit 1
    fi
-}
-
-function write_keepalived_init
-{
-cat << 'EOF' > $TMPDIR/keepalived.init
-#! /bin/sh
-#
-# keepalived   LVS cluster monitor daemon.
-#
-#              Written by Andres Salomon <dilinger@voxel.net>
-#
-### BEGIN INIT INFO
-# Provides:          keepalived
-# Required-Start:    $syslog $network
-# Required-Stop:     $syslog $network
-# Default-Start:     2 3 4 5
-# Default-Stop:      1
-# Short-Description: Starts keepalived
-# Description:       Starts keepalived lvs loadbalancer
-### END INIT INFO
-PATH=/sbin:/bin:/usr/sbin:/usr/bin
-DAEMON=/usr/sbin/keepalived
-NAME=keepalived
-DESC=keepalived
-CONFIG=/etc/keepalived/keepalived.conf
-TMPFILES="/tmp/.vrrp /tmp/.healthcheckers"
-
-#includes lsb functions
-. /lib/lsb/init-functions
-
-set -e
-test -f $CONFIG || exit 0
-test -f $DAEMON || exit 0
-
-case "$1" in
-  start)
-        log_daemon_msg "Starting $DESC" "$NAME"
-        for file in $TMPFILES
-        do
-                test -e $file && test ! -L $file && rm $file
-        done
-        if start-stop-daemon --start --quiet --pidfile /var/run/$NAME.pid \
-               --exec $DAEMON; then
-                log_end_msg 0
-        else
-                log_end_msg 1
-        fi
-       ;;
-  stop)
-        log_daemon_msg "Stopping $DESC" "$NAME"
-        if start-stop-daemon --oknodo --stop --quiet --pidfile /var/run/$NAME.pid \
-                --exec $DAEMON; then
-                log_end_msg 0
-        else
-                log_end_msg 1
-        fi
-       ;;
-  reload|force-reload)
-        log_action_begin_msg "Reloading $DESC configuration..."
-        if start-stop-daemon --stop --quiet --signal 1 --pidfile \
-               /var/run/$NAME.pid --exec $DAEMON; then
-               log_end_msg 0
-        else
-                log_action_end_msg 1
-        fi
-       ;;
-  restart)
-        log_action_begin_msg "Restarting $DESC" "$NAME"
-
-        start-stop-daemon --stop --quiet --pidfile \
-                /var/run/$NAME.pid --exec $DAEMON
-       sleep 1
-       if start-stop-daemon --start --quiet --pidfile \
-               /var/run/$NAME.pid --exec $DAEMON; then
-               log_end_msg 0
-        else
-                log_end_msg 1
-        fi
-       ;;
-  *)
-       echo "Usage: /etc/init.d/$NAME {start|stop|restart|reload|force-reload}" >&2
-       exit 1
-       ;;
-esac
-
-exit 0
-EOF
 }
 
 function write_mysqlchk_mc
@@ -785,26 +694,26 @@ function load_opts
 
 
     MONITORED_MYSQL_PORT=`$MYSQL_BIN $MYSQL_OPTS  -NAB --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "select value from cmon_configuration where param='MONITORED_MYSQL_PORT' AND cid=$CLUSTER_ID" 2>/dev/null`
-
+    
     if [ "$MONITORED_MYSQL_PORT" = "" ] || [ "$MONITORED_MYSQL_PORT" = "NULL" ];  then
         MONITORED_MYSQL_PORT="3306"
     fi
+    
 
-
-    if [ $? -ne 0 ]; then
-        log_job_message "load opts failed"
-	log_job 'FAILED' 's9s_haproxy failed' 1
+    if [ $? -ne 0 ]; then 
+        log_job_message "load opts failed"     
+	log_job 'FAILED' 's9s_haproxy failed' 1  
         exit 1
     fi
 
-    if [ -z "$MYSQL_PORT" ]; then
+    if [ -z "$MYSQL_PORT" ]; then 
         log_job_message "MYSQL_PORT not set in Cluster Settings"
 	log_job 'FAILED' 's9s_haproxy failed' 1
 	write_email 's9s_haproxy installation failed' "MYSQL_PORT not set in Cluster Settings"
         exit 1
     fi
 
-    if [ -z "$SSH_USER" ]; then
+    if [ -z "$SSH_USER" ]; then 
         log_job_message "SSH_USER not set in Cluster Settings"
 	write_email 's9s_haproxy installation failed' "SSH_USER not set in Cluster Settings"
 	log_job 'FAILED' 's9s_haproxy failed' 1
@@ -815,8 +724,8 @@ function load_opts
 	S9S_TMPDIR="/tmp/"
 	TMPDIR="/tmp/"
     fi
-
-    if [ -z "$OS" ]; then
+    
+    if [ -z "$OS" ]; then 
         log_job_message "OS not set in Cluster Settings"
 	write_email 's9s_haproxy installation failed' "OS not set in Cluster Settings"
 	log_job 'FAILED' 's9s_haproxy failed' 1
@@ -841,7 +750,7 @@ function load_opts
 
 	SSH_OPTS="-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY"
 	if [ "$SUDO" = "" ] || [ "$SUDO" = "NULL" ];  then
-           SUDO="sudo"
+           SUDO="sudo -n"
         fi
     fi
     if [ "$SSH_PORT" = "" ] || [ "$SSH_PORT" = "NULL" ];  then
@@ -852,8 +761,8 @@ function load_opts
 	S9S_TMPDIR="/tmp/"
 	TMPDIR="/tmp/"
     fi
-    SSH_OPTS="$SSH_OPTSX -p$SSH_PORT $SSH_OPTS"
-    SSH_OPTS2="-P$SSH_PORT $SSH_OPTS2"
+    SSH_OPTS="$SSH_OPTSX -p$SSH_PORT $SSH_OPTS"    
+    SSH_OPTS2="-P$SSH_PORT $SSH_OPTS2"    
 
 
 
@@ -869,15 +778,18 @@ function install_mysqlchk
     #    echo "ERROR: Trying to install HaProxy on a database host is prohibited."
     #    exit 1
     #fi
+    if [ $OS = "debian" ]; then
+        remote_cmd $h "apt-get -y update"
+    fi
 
     BIND_ADDRESS=$(remote_cmd_getreply $h "grep -ie 'bind[_-]address' $CONFIGDIR/my.cnf |grep -v '#' |head -n 1 | awk -F= '{print \$2;}' | tr -d '\r\n\t '")
-
+    
     if [ -n "$BIND_ADDRESS" ]; then
         SERVER_ADDRESS="localhost"
     else
         SERVER_ADDRESS="127.0.0.1"
     fi
-
+    
     sed -i "s#MYSQL_HOST=.*#MYSQL_HOST=\"$SERVER_ADDRESS\"#g" $TMPDIR/mysqlchk.sh
     sed -i "s#MYSQL_PASSWORD=.*#MYSQL_PASSWORD=\"$CMON_PASSWORD\"#g" $TMPDIR/mysqlchk.sh
     sed -i "s#MYSQL_PASSWORD=.*#MYSQL_PASSWORD=\"$CMON_PASSWORD\"#g" $TMPDIR/mysqlchk.sh
@@ -898,9 +810,7 @@ function install_mysqlchk
     remote_cmd $h "$PKG_MGR xinetd"
     remote_copy $TMPDIR/xinetd_mysqlchk $h $S9S_TMPDIR
     remote_cmd $h "mv $S9S_TMPDIR/xinetd_mysqlchk /etc/xinetd.d/mysqlchk"
-    remote_cmd_nofail $h "/etc/init.d/xinetd stop"
-    remote_cmd $h "/etc/init.d/xinetd start"
-    [ $OS = "debian" ] && remote_cmd $h "/etc/init.d/xinetd restart"
+    remote_cmd $h "/etc/init.d/xinetd restart"
     if [ $OS = "rhel" ] || [ $OS = "centos6" ]; then
         remote_cmd $h "/sbin/chkconfig --add xinetd"
     else
@@ -924,7 +834,6 @@ function prepare
 function prepare_keepalived
 {
     write_keepalived_cfg_tmpl $1 $2 $3 $4
-    [ $OS = "debian" ] && write_keepalived_init
 }
 
 function install_haproxy
@@ -952,10 +861,10 @@ function install_haproxy
                 LB_NODE_LIST="$2"; shift;
                 shift;;
             -s)
-                BUILD_FROM_SRC="1";
+                BUILD_FROM_SRC="1"; 
                 shift;;
             -f)
-                BUILD_FROM_SRC_FILE="$2";
+                BUILD_FROM_SRC_FILE="$2"; 
                 shift;;
             -c)
                 MAX_CONNECTIONS="$2"; shift;
@@ -979,7 +888,7 @@ function install_haproxy
 	log_job 'FAILED' 's9s_haproxy failed' 1
       exit 1
     fi
-
+    
     init
     log_job 'RUNNING' 'Job is running' 0
 
@@ -994,7 +903,7 @@ function install_haproxy
 	log_job 'FAILED' 's9s_haproxy failed' 1
         exit 1
     fi
-
+    
     if [ -z "$LB_NAME" ]; then
         LB_NAME="production"
     fi
@@ -1056,12 +965,12 @@ function install_haproxy
 		    OS=rhel
 		fi
 	    fi
-	    OS=rhel
+	    OS=rhel		
             ;;
 	centos6)
 	    BUILD="gcc make"
 	    OS=centos6
-	    ;;
+	    ;;	
         debian|ubuntu)
             PKG_MGR="$HTTP_PROXY apt-get install -y "
             PKG_MGR2="$HTTP_PROXY apt-get install -y "
@@ -1080,7 +989,7 @@ function install_haproxy
     log_job 'RUNNING' 'Job is running' 0
     if [ -n "$LB_NODE_LIST" ]; then
         LB_NODE_LIST2=`echo $LB_NODE_LIST | sed "s/,/','/g" | sed "s/^/'/g" | sed "s/$/'/g" |sed "s/[ ]*//g"`
-
+	
         QUERY="select group_concat(h.hostname SEPARATOR ' ') from mysql_server m, hosts h WHERE m.id=h.id and h.cid=m.cid and h.ping_status>0 and (h.hostname in ($LB_NODE_LIST2) or h.ip in ($LB_NODE_LIST2)  ) and connected=1 and m.cid=$CLUSTER_ID"
         hostnames=`$MYSQL_BIN $MYSQL_OPTS  -NAB --database=$CMON_DB_DB -e "$QUERY"`
     else
@@ -1106,7 +1015,7 @@ function install_haproxy
     sed -i "s#ADMIN_PASSWORD#$LB_ADMIN_PASSWORD#g" $TMPDIR/haproxy.cfg.tmpl
     sed -i "s#ADMIN_USER#$LB_ADMIN_USER#g" $TMPDIR/haproxy.cfg.tmpl
     sed -i "s#ADMIN_PORT#$LB_ADMIN_PORT#g" $TMPDIR/haproxy.cfg.tmpl
-    cp $TMPDIR/mysqlchk.sh.$CLUSTER_TYPE $TMPDIR/mysqlchk.sh
+    cp $TMPDIR/mysqlchk.sh.$CLUSTER_TYPE $TMPDIR/mysqlchk.sh 
 
 
     rm -rf  $TMPDIR/${PREFIX}*.backend  2>/dev/null
@@ -1115,7 +1024,7 @@ function install_haproxy
     sed -i "s#MYSQL_PORT=.*#MYSQL_PORT=\"$MONITORED_MYSQL_PORT\"#g" $TMPDIR/mysqlchk.sh
     sed -i "s#MYSQL_BIN=.*#MYSQL_BIN=\"$MYSQL_BIN\"#g" $TMPDIR/mysqlchk.sh
 
-
+    
     echo "*************************************************************"
     echo "* installing xinetd, mysqlchk.sh, and creating backend file *"
     echo "*************************************************************"
@@ -1135,6 +1044,7 @@ function install_haproxy
     echo "*************************************************************"
     echo "* Installing haproxy on $LB_HOSTNAME                            *"
     echo "*************************************************************"
+
     if [ $OS = "debian" ]; then
         remote_cmd $LB_HOSTNAME "apt-get -y update"
     fi
@@ -1163,7 +1073,7 @@ function install_haproxy
         fi
         remote_cmd $LB_HOSTNAME "$PKG_MGR $BUILD"
         remote_cmd $LB_HOSTNAME "tar xvfz /tmp/${HAPROXY_SRC} -C /tmp/"
-        remote_cmd_nofail $LB_HOSTNAME "killall -q  -9 haproxy"
+        remote_cmd_nofail $LB_HOSTNAME "killall -q  -9 haproxy"	
         remote_cmd $LB_HOSTNAME "sh -c 'cd /tmp/`basename ${HAPROXY_SRC} .tar.gz` && make TARGET=linux26 && cp -f haproxy /usr/sbin/'"
     else
         remote_cmd $LB_HOSTNAME "$PKG_MGR2 haproxy"
@@ -1172,13 +1082,13 @@ function install_haproxy
     remote_cmd_nofail $LB_HOSTNAME "mkdir -p /etc/haproxy/"
     remote_cmd $LB_HOSTNAME "rm -f /etc/haproxy/haproxy.cfg"
     remote_cmd $LB_HOSTNAME "mv /tmp/${PREFIX}_${LB_NAME}_haproxy.cfg /etc/haproxy/haproxy.cfg"
-    #remote_cmd $LB_HOSTNAME "/usr/sbin/haproxy -f /etc/haproxy/haproxy.cfg -p /var/run/haproxy.pid -st \$(cat /var/run/haproxy.pid"
+    #remote_cmd $LB_HOSTNAME "/usr/sbin/haproxy -f /etc/haproxy/haproxy.cfg -p /var/run/haproxy.pid -st \$(cat /var/run/haproxy.pid"                                                                                         
     remote_cmd $LB_HOSTNAME "/usr/sbin/haproxy ${HAPROXY_OPTS}"
     if [ -z "$BUILD_FROM_SRC" ]; then
         echo ""
         echo "** Adding init.d/haproxy auto start**"
         echo ""
-
+	
         if [ $OS = "rhel" ] || [ $OS = "centos6"  ] ; then
             remote_cmd $LB_HOSTNAME "/sbin/chkconfig --add haproxy"
             remote_cmd $LB_HOSTNAME "/sbin/chkconfig haproxy on"
@@ -1209,7 +1119,7 @@ function install_haproxy
     remote_cmd $LB_HOSTNAME  "/bin/sh -c 'echo \"net.core.somaxconn=40000\" >> /etc/sysctl.conf'"
     remote_cmd_nofail $LB_HOSTNAME "sed  -i.bak  '/net.ipv4.tcp_fin_timeout.*/d' /etc/sysctl.conf"
     remote_cmd $LB_HOSTNAME  "/bin/sh -c 'echo \"net.ipv4.tcp_fin_timeout = 5\" >> /etc/sysctl.conf'"
-
+    
     QUERY="select count(column_name) from information_schema.columns where table_schema='cmon' and table_name='haproxy_server' and column_name='server_addr'"
     CNT=`$MYSQL_BIN $MYSQL_OPTS -NAB --database=$CMON_DB_DB --port=${CMON_DB_PORT} -e "$QUERY" 2>&1`
     if [ $CNT -eq 0 ]; then
@@ -1218,7 +1128,7 @@ function install_haproxy
         if [  $? -ne 0 ]; then
             log_job_message "Query failed: $QUERY"
             echo ""
-            cat /tmp/err.log
+            cat /tmp/err.log           
             log_job 'FAILED' 's9s_haproxy failed' 1
             write_email 's9s_haproxy installation failed' "Query failed: $QUERY"
             exit 1
@@ -1230,7 +1140,7 @@ function install_haproxy
 
 
 
-    QUERY="REPLACE INTO ext_proc (cid, hostname,bin, opts,cmd, proc_name, port) VALUES($CLUSTER_ID, '$LB_HOSTNAME','/usr/sbin/haproxy', \"${HAPROXY_OPTS}\", \"/usr/sbin/haproxy ${HAPROXY_OPTS}\",'haproxy', $LB_ADMIN_PORT)"
+    QUERY="REPLACE INTO ext_proc (cid, hostname,bin,cmd, proc_name, port) VALUES($CLUSTER_ID, '$LB_HOSTNAME','/usr/sbin/haproxy', \"/usr/sbin/haproxy ${HAPROXY_OPTS}\",'haproxy', $LB_ADMIN_PORT)"
     $MYSQL_BIN $MYSQL_OPTS -NB --database=$CMON_DB_DB --host=$CMON_DB_HOST  --port=${CMON_DB_PORT} -e "$QUERY" 2>&1 >/tmp/err.log
     if [  $? -ne 0 ]; then
         log_job_message "Query failed: $QUERY" 1
@@ -1242,7 +1152,7 @@ function install_haproxy
     fi
 
 
-    log_message ""
+    log_message ""  
     log_message  "** Reboot is recommended of $LB_HOSTNAME for network settings to take effect! **"
     log_message  ""
     log_message  "FIREWALL: To access HAproxy within ClusterControl, you should allow the clustercontrol server to connect to $LB_HOSTNAME on port ${LB_ADMIN_PORT}, and HAProxy must be able to communicate on port 9200 and 3306 with the MySQL Servers."
@@ -1256,12 +1166,12 @@ function install_haproxy
     log_job_message  " ** Don't forget to GRANT ${LB_HOSTNAME} on your mysql servers:" 0
     log_job_message  "  GRANT <privs> ON <db>.* TO '<user>'@'${LB_HOSTNAME}' IDENTIFIED BY '<password>'" 0
     log_message  ""
-
+    
     cat $HAPROXY_LOG2  > /tmp/s9s_result
     cat $HAPROXY_LOG  >> /tmp/s9s_result
-    mv /tmp/s9s_result  $HAPROXY_LOG
+    mv /tmp/s9s_result  $HAPROXY_LOG 
     rm $HAPROXY_LOG2
-
+    
     log_job 'FINISHED' 's9s_haproxy --install completed' 0
     write_email 's9s_haproxy installation completed' "s9s_haproxy --install completed"
     exit 0
@@ -1282,7 +1192,7 @@ function install_keepalived
                 CMON_PASSWORD="$2"; shift;
                 shift;;
             -v)
-								VIRTUAL_IP="$2"; shift;
+		        VIRTUAL_IP="$2"; shift;
                 shift;;
             -i)
                 CLUSTER_ID="$2"; shift;
@@ -1299,12 +1209,6 @@ function install_keepalived
             -N)
                 KEEPALIVED_NAME="$2"; shift;
                 shift;;
-						-s)
-                BUILD_FROM_SRC="1";
-                shift;;
-            -f)
-                BUILD_FROM_SRC_FILE="$2";
-                shift;;
             -j)
                 JOBID="$2"; shift;
                 shift;;
@@ -1320,7 +1224,7 @@ function install_keepalived
     fi
     init
 
-
+    
     if [ -z "$CMON_PASSWORD" ]; then
       log_job_message  "s9s_haproxy --install-ka -p  missing" 1
       log_job 'FAILED' 's9s_haproxy failed' 1
@@ -1333,25 +1237,25 @@ function install_keepalived
 
     if [ -z "$LB_HOSTNAME1" ]; then
         log_job_message "s9s_haproxy --install-ka  -x <loadbalancer host> missing" 1
-	write_email 's9s_haproxy keepalived installation failed' "s9s_haproxy --install-ka  -x <loadbalancer host> missing"
+	write_email 's9s_haproxy keepalived installation failed' "s9s_haproxy --install-ka  -x <loadbalancer host> missing" 
 	log_job 'FAILED' 's9s_haproxy failed' 1
         exit 1
     fi
 
     if [ -z "$LB_HOSTNAME2" ]; then
-	write_email 's9s_haproxy keepalived installation failed' "s9s_haproxy --install-ka  -y <loadbalancer host> missing"
+	write_email 's9s_haproxy keepalived installation failed' "s9s_haproxy --install-ka  -y <loadbalancer host> missing" 
         log_job_message "s9s_haproxy --install-ka  -y <loadbalancer host> missing" 1
 	log_job 'FAILED' 's9s_haproxy failed' 1
         exit 1
     fi
 
     if [ -z "$VIRTUAL_IP" ]; then
-	write_email 's9s_haproxy keepalived installation failed' "s9s_haproxy --install-ka  -v <virtual ip> missing"
+	write_email 's9s_haproxy keepalived installation failed' "s9s_haproxy --install-ka  -v <virtual ip> missing" 
         log_job_message "s9s_haproxy --install-ka  -v <virtual ip> missing" 1
 	log_job 'FAILED' 's9s_haproxy failed' 1
         exit 1
     fi
-
+    
 
     if [ -z "$JOBID" ]; then
 	JOBID=0
@@ -1363,83 +1267,49 @@ function install_keepalived
     prepare_keepalived $LB_HOSTNAME1 $VIRTUAL_IP 101 $ETHINTERFACE
     prepare_keepalived $LB_HOSTNAME2 $VIRTUAL_IP 100 $ETHINTERFACE
     case $OS in
-			rhel|redhat)
-	    	PKG_MGR="$HTTP_PROXY yum -y install "
-				PHP_CURL="php-curl"
-				BUILD="gcc make openssl-devel"
-				OS=rhel
-				;;
-			centos6)
-	    	OS=centos6
-	    	BUILD="gcc make openssl-devel"
-	    	;;
-			debian|ubuntu)
-				PKG_MGR="$HTTP_PROXY apt-get install -y "
-				OS=debian
-				BUILD="gcc make libssl-dev"
-				;;
-			*)
+        rhel|redhat)
+            PKG_MGR="$HTTP_PROXY yum -y install "
+            PHP_CURL="php-curl"
+	    OS=rhel
+            ;;
+	centos6)
+	    OS=centos6
+	    ;;	
+        debian|ubuntu)
+            PKG_MGR="$HTTP_PROXY apt-get install -y "	    
+            OS=debian
+            ;;
+        *)
         echo "OS $OS not supported"
         exit
         ;;
     esac
 
     case $CLUSTER_TYPE in
-			galera)
-				;;
-			mysqlcluster)
-				;;
-			*)
-				log_job_message "Cluster $CLUSTER_TYPE not supported" 1
-				log_job 'FAILED' 's9s_haproxy failed' 1
-				exit 1
-				;;
+        galera)
+            ;;
+        mysqlcluster)
+            ;;
+        *)
+            log_job_message "Cluster $CLUSTER_TYPE not supported" 1
+	    log_job 'FAILED' 's9s_haproxy failed' 1
+	    exit 1
+            ;;
     esac
 
-	for LB_HOSTNAME in $LB_HOSTNAME1 $LB_HOSTNAME2
-	do
+    for LB_HOSTNAME in $LB_HOSTNAME1 $LB_HOSTNAME2
+    do    
 	echo "Installing keepalived on $LB_HOSTNAME"
-
-	if [ -n "$BUILD_FROM_SRC" ]; then
-		KEEPALIVED_SRC="keepalived-1.2.13.tar.gz"
-		if [ -n "$BUILD_FROM_SRC_FILE" ]; then
-			if [ ! -f $BUILD_FROM_SRC_FILE ]; then
-				echo "$BUILD_FROM_SRC_FILE could not be found"
-				log_job 'FAILED' 's9s_haproxy failed' 1
-				write_email 's9s_haproxy installation failed' "$BUILD_FROM_SRC_FILE could not be found"
-				exit 1
-			fi
-			KEEPALIVED_SRC=`basename $BUILD_FROM_SRC_FILE`
-			remote_copy $BUILD_FROM_SRC_FILE $LB_HOSTNAME /tmp/
-		else
-			remote_cmd $LB_HOSTNAME "sh -c '$HTTP_PROXY wget -O/tmp/${KEEPALIVED_SRC} http://www.keepalived.org/software/${KEEPALIVED_SRC}'"
-		fi
-
-		remote_cmd $LB_HOSTNAME "$PKG_MGR $BUILD"
-		remote_cmd $LB_HOSTNAME "tar xvfz /tmp/${KEEPALIVED_SRC} -C /tmp/"
-		remote_cmd $LB_HOSTNAME "sh -c 'cd /tmp/`basename ${KEEPALIVED_SRC} .tar.gz` && ./configure --sysconfdir=/etc && make && make install'"
-		remote_cmd $LB_HOSTNAME "mv /usr/local/sbin/keepalived /usr/sbin/keepalived"
-		remote_cmd_getretcode $LB_HOSTNAME "test -f /etc/init.d/keepalived"
-		[ $? -ne 0 ] && remote_cmd $LB_HOSTNAME "mv /etc/rc.d/init.d/keepalived /etc/init.d/keepalived"
-		if [ $OS = "debian" ]; then
-			remote_copy $TMPDIR/keepalived.init $LB_HOSTNAME /tmp/
-			remote_cmd $LB_HOSTNAME "mv /tmp/keepalived.init /etc/init.d/keepalived"
-		fi
-		remote_cmd $LB_HOSTNAME "chmod 755 /etc/init.d/keepalived"
-	else
-		remote_cmd $LB_HOSTNAME "$PKG_MGR keepalived"
-	fi
-
 	remote_cmd_nofail $LB_HOSTNAME "killall -q -15 keepalived"
+	remote_cmd $LB_HOSTNAME "$PKG_MGR keepalived"
 	remote_copy $TMPDIR/keepalived.conf.$LB_HOSTNAME $LB_HOSTNAME /tmp/
 	remote_cmd $LB_HOSTNAME "mkdir -p /etc/keepalived/"
 	remote_cmd $LB_HOSTNAME "rm -f /etc/keepalived/keepalived.conf"
 	remote_cmd $LB_HOSTNAME "mv /tmp/keepalived.conf.$LB_HOSTNAME /etc/keepalived/keepalived.conf"
-
 	echo ""
 	echo "** Adding init.d/keepalived auto start**"
 	echo ""
-
+	
 	if [ $OS = "rhel" ] || [ $OS = "centos6"  ] ; then
             remote_cmd $LB_HOSTNAME "/sbin/chkconfig --add keepalived"
             remote_cmd $LB_HOSTNAME "/sbin/chkconfig keepalived on"
@@ -1448,10 +1318,10 @@ function install_keepalived
 	fi
 	echo ""
 	echo "** Tuning Network **"
-	echo ""
+	echo ""    
 	remote_cmd $LB_HOSTNAME  "/bin/sh -c 'echo \"net.ipv4.ip_nonlocal_bind=1\" >> /etc/sysctl.conf'"
-	remote_cmd $LB_HOSTNAME  "/sbin/sysctl -e -p"
-
+	remote_cmd $LB_HOSTNAME  "/sbin/sysctl -e -p"    
+	
 
 	QUERY="REPLACE INTO keepalived(cid, keepalived_addr, virtual_ip ,haproxy_addr1,haproxy_addr2, name) VALUES ($CLUSTER_ID, '$LB_HOSTNAME','$VIRTUAL_IP','$LB_HOSTNAME1','$LB_HOSTNAME2','$KEEPALIVED_NAME')"
 	$MYSQL_BIN --host=$CMON_DB_HOST --port=$CMON_DB_PORT --user=cmon --password=$CMON_PASSWORD --database=$CMON_DB_DB -e "$QUERY"
@@ -1464,7 +1334,7 @@ function install_keepalived
 	    exit 1
 	fi
 
-	QUERY="REPLACE INTO ext_proc (cid, hostname,bin, opts,cmd, proc_name, port) VALUES($CLUSTER_ID, '$LB_HOSTNAME','/usr/sbin/keepalived', \" \", \"nohup nice /usr/sbin/keepalived\",'keepalived', 0)"
+	QUERY="REPLACE INTO ext_proc (cid, hostname,bin, cmd, proc_name, port) VALUES($CLUSTER_ID, '$LB_HOSTNAME','/usr/sbin/keepalived',  \"/usr/sbin/keepalived\",'keepalived', 0)"
 	$MYSQL_BIN -B -N  -ucmon -p$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST  --port=${CMON_DB_PORT} -e "$QUERY" 2>&1 >/tmp/err.log
 	if [  $? -ne 0 ]; then
 	    log_job_message "Query failed: $QUERY"
@@ -1475,13 +1345,13 @@ function install_keepalived
 	fi
     done
     for LB_HOSTNAME in $LB_HOSTNAME1 $LB_HOSTNAME2
-    do
+    do        
 	echo "** starting keepalived on $LB_HOSTNAME **"
 	remote_cmd $LB_HOSTNAME "nohup nice /usr/sbin/keepalived"
     done
     log_job_message "Access your cluster on $VIRTUAL_IP and the listening port ${HAPROXY_MYSQL_LISTEN_PORT} " 0
     log_job 'FINISHED' 's9s_haproxy --install-ka completed' 0
-    write_email 's9s_haproxy keepalived installation completed' "Access your cluster on $VIRTUAL_IP and the listening port of HAProxy (${HAPROXY_MYSQL_LISTEN_PORT} default)"
+    write_email 's9s_haproxy keepalived installation completed' "Access your cluster on $VIRTUAL_IP and the listening port of HAProxy (${HAPROXY_MYSQL_LISTEN_PORT} default)" 
     exit 0
 
 }
@@ -1523,13 +1393,14 @@ function delete_keepalived
                 shift; break;;
                 esac
     done
+
     if [ -z "$CLUSTER_ID" ]; then
 	log_job_message "s9s_haproxy --delete-ka -i <cluster id>  missing" 1
 	log_job 'FAILED' 's9s_haproxy failed' 1
       exit 1
     fi
     init
-
+    
     if [ -z "$CMON_PASSWORD" ]; then
       log_job_message  "s9s_haproxy --delete-ka -p  missing" 1
       log_job 'FAILED' 's9s_haproxy failed' 1
@@ -1553,7 +1424,7 @@ function delete_keepalived
 	log_job 'FAILED' 's9s_haproxy failed' 1
         exit 1
     fi
-
+    
 
     if [ -z "$JOBID" ]; then
 	JOBID=0
@@ -1570,9 +1441,9 @@ function delete_keepalived
             ;;
 	centos6)
 	    OS=centos6
-	    ;;
+	    ;;	
         debian|ubuntu)
-            PKG_MGR="$HTTP_PROXY apt-get remove -y "
+            PKG_MGR="$HTTP_PROXY apt-get remove -y "	    
             OS=debian
             ;;
         *)
@@ -1594,20 +1465,19 @@ function delete_keepalived
     esac
 
     for LB_HOSTNAME in $LB_HOSTNAME1 $LB_HOSTNAME2
-    do
+    do    
 	echo "Removing keepalived on $LB_HOSTNAME"
 	remote_cmd_nofail $LB_HOSTNAME "killall -q -15 keepalived"
 	remote_cmd_nofail $LB_HOSTNAME "$PKG_MGR keepalived"
-	remote_cmd_nofail $LB_HOSTNAME "rm -f /usr/sbin/keepalived"
 	remote_cmd_nofail $LB_HOSTNAME "rm -f /etc/keepalived/keepalived.conf"
-
+	
 	if [ $OS = "rhel" ] || [ $OS = "centos6"  ] ; then
             remote_cmd_nofail $LB_HOSTNAME "/sbin/chkconfig --del keepalived"
             remote_cmd_nofail $LB_HOSTNAME "/sbin/chkconfig keepalived off"
 	else
             remote_cmd_nofail $LB_HOSTNAME "/usr/sbin/update-rc.d -f keepalived remove"
 	fi
-
+	
 	QUERY="DELETE FROM keepalived WHERE cid=${CLUSTER_ID} AND virtual_ip='$VIRTUAL_IP' AND name='$KEEPALIVED_NAME'"
 	$MYSQL_BIN --host=$CMON_DB_HOST --port=$CMON_DB_PORT --user=cmon --password=$CMON_PASSWORD --database=$CMON_DB_DB -e "$QUERY"
 	if [  $? -ne 0 ]; then
@@ -1665,13 +1535,14 @@ function delete_haproxy
                 shift; break;;
                 esac
     done
+
     if [ -z "$CLUSTER_ID" ]; then
       log_job_message "s9s_haproxy --delete -i <cluster id>  missing" 1
       log_job "FAILED" "s9s_haproxy failed" 1
       exit 1
     fi
     init
-
+    
     if [ -z "$CMON_PASSWORD" ]; then
       log_job_message "s9s_haproxy --delete -p  missing" 1
       log_job "FAILED" "s9s_haproxy failed" 1
@@ -1683,7 +1554,7 @@ function delete_haproxy
 	log_job "FAILED" "s9s_haproxy failed" 1
         exit 1
     fi
-
+    
 
     if [ -z "$JOBID" ]; then
 	JOBID=0
@@ -1740,7 +1611,7 @@ function delete_haproxy
 
     QUERY="DELETE FROM haproxy_server WHERE cid=$CLUSTER_ID AND lb_host='$LB_HOSTNAME'"
     $MYSQL_BIN --host=$CMON_DB_HOST --port=$CMON_DB_PORT --user=cmon --password=$CMON_PASSWORD --database=$CMON_DB_DB -e "$QUERY"
-
+    
     QUERY="DELETE FROM ext_proc WHERE cid=$CLUSTER_ID AND hostname='$LB_HOSTNAME' AND proc_name='haproxy'"
     $MYSQL_BIN $MYSQL_OPTS -NB --database=$CMON_DB_DB --host=$CMON_DB_HOST  --port=${CMON_DB_PORT} -e "$QUERY" 2>&1 >/tmp/err.log
     if [  $? -ne 0 ]; then
@@ -1751,7 +1622,7 @@ function delete_haproxy
     fi
     log_job_message "Removed $LB_HOSTNAME" 0
     echo ""
-    log_job "FINISHED" "s9s_haproxy --delete completed" 0
+    log_job "FINISHED" "s9s_haproxy --delete completed" 0    
     exit 0
 }
 
@@ -1791,7 +1662,7 @@ function remove_node
       exit 1
     fi
     init
-
+    
     if [ -z "$CMON_PASSWORD" ]; then
       echo "s9s_haproxy --remove-node -p  missing"
       exit 1
@@ -1806,7 +1677,7 @@ function remove_node
         echo "s9s_haproxy --remote-node  -n <serveraddr to remove from lb > missing"
         exit 1
     fi
-
+    
     if [ -z "$LB_NAME" ]; then
         LB_NAME="production"
     fi
@@ -1848,7 +1719,7 @@ function remove_node
 
     REMOVE_STR="server $NODE"
     remote_cmd $LB_HOSTNAME "sed -i.bak '/$REMOVE_STR/d'  /etc/haproxy/haproxy.cfg"
-    remote_cmd $LB_HOSTNAME "/usr/sbin/haproxy ${HAPROXY_OPTS}"
+    remote_cmd $LB_HOSTNAME "/usr/sbin/haproxy ${HAPROXY_OPTS}"    
 
 }
 
@@ -1886,7 +1757,7 @@ function add_node
       exit 1
     fi
     init
-
+    
     if [ -z "$CMON_PASSWORD" ]; then
       echo "s9s_haproxy --add-node -p  missing"
       exit 1
@@ -1901,7 +1772,7 @@ function add_node
         echo "s9s_haproxy --add-node  -n <serveraddr to add to lb > missing"
         exit 1
     fi
-
+    
     if [ -z "$LB_NAME" ]; then
         LB_NAME="production"
     fi
@@ -1954,13 +1825,13 @@ function add_node
         exit 1
         ;;
     esac
-    cp $TMPDIR/mysqlchk.sh.$CLUSTER_TYPE $TMPDIR/mysqlchk.sh
-
+    cp $TMPDIR/mysqlchk.sh.$CLUSTER_TYPE $TMPDIR/mysqlchk.sh 
+    
     install_mysqlchk $NODE
     REMOVE_STR="server $NODE"
     remote_cmd_nofail $LB_HOSTNAME "sed -i.bak '/$REMOVE_STR/d'  /etc/haproxy/haproxy.cfg"
     remote_cmd $LB_HOSTNAME "echo '        server $NODE ${NODE}:3306 check' >> /etc/haproxy/haproxy.cfg"
-    remote_cmd $LB_HOSTNAME "/usr/sbin/haproxy ${HAPROXY_OPTS}"
+    remote_cmd $LB_HOSTNAME "/usr/sbin/haproxy ${HAPROXY_OPTS}"    
 
 }
 
@@ -2002,7 +1873,7 @@ function maint_node
       exit 1
     fi
     init
-
+    
     if [ -z "$CMON_PASSWORD" ]; then
       echo "s9s_haproxy --disable-node -p  missing"
       exit 1
@@ -2011,7 +1882,7 @@ function maint_node
 	    JOBID=0
     fi
     load_opts $CLUSTER_ID
-
+    
     if [ -z "$LB_HOSTNAME" ]; then
         log_job_message "s9s_haproxy --maint-node  -h <loadbalancer host> missing" 1
         log_job "FAILED" "s9s_haproxy failed" 1
@@ -2037,8 +1908,8 @@ function maint_node
     fi
 
 
-
-
+    
+    
     if  remote_cmd_getretcode $LB_HOSTNAME "hash socat" ; then
         echo ''
     else
@@ -2049,17 +1920,27 @@ function maint_node
         fi
 
     fi
-    remote_cmd $LB_HOSTNAME "sh -c 'echo \"$ACTION server $LB_NAME/$NODE\" | socat stdio  /tmp/haproxy.socket'"
+    remote_cmd $LB_HOSTNAME "sh -c 'echo \"$ACTION server $LB_NAME/$NODE\" | socat stdio  /tmp/haproxy.socket'" 
 
 }
 
+echo "This script is deprecated."
+exit 1
+
+read -p 's9s_haproxy has been deprecated (manage haproxy from UI). Are you sure you want to continue? [y/N]: ' ans
+if [ "$ans" == "y" ] || [ "$ans" == "Y" ] ; then
+    echo "Proceeding, not supported."
+else
+    echo 'Aborting.'
+    exit 1
+fi
 
 
 if [ ! -e $LOCKFILE ]; then
     trap "rm -f $LOCKFILE; exit" INT TERM EXIT
     ARG=$1
     shift
-    touch $LOCKFILE
+    touch $LOCKFILE    
     case $ARG in
 	--prepare)
     	    prepare
@@ -2068,12 +1949,12 @@ if [ ! -e $LOCKFILE ]; then
 	    install_haproxy $*
 	    ;;
 	--install-keepalived)
-	    install_keepalived $*
+	        install_keepalived $*
 	    ;;
 	--delete-keepalived)
 	    delete_keepalived $*
 	    ;;
-	--add-node)
+	--add-node)	
 	    add_node $*
 	    ;;
 	--remove-node)
@@ -2097,3 +1978,4 @@ if [ ! -e $LOCKFILE ]; then
     rm $LOCKFILE
     trap - INT TERM EXIT
 fi
+

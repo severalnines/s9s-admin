@@ -2,7 +2,8 @@
 # Copyright 2012 Severalnines AB
 #
 # MODIFY THE BELOW TO SUIT YOU ENV:
-
+echo "This script is deprecated."
+exit
 
 if [ ! -e /etc/cmon.cnf ] ; then
     echo "Could not find /etc/cmon.cnf"

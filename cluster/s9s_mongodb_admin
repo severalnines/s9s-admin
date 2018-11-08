@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copyright 2013 Severalnines AB
+# Copyright 2013-2016 Severalnines AB
 #
 # MODIFY THE BELOW TO SUIT YOU ENV:
 
@@ -26,14 +26,16 @@ function init
    
     source $configfile
 
-
     CID=$cluster_id
-    CMON_USER=cmon
+    CMON_USER=$cmon_user
+    if [ "${CMON_USER}x" == "x" ]; then
+        CMON_USER=cmon
+    fi
     CMON_DB_PORT=$mysql_port
     CMON_PASSWORD=$mysql_password
     CMON_DB_HOST=$mysql_hostname
     CMON_DB_DB=cmon
-    MYSQL_BIN=$mysql_basedir/bin//mysql
+    MYSQL_BIN=$mysql_basedir/bin/mysql
     MYSQL_BIN2=$mysql_bindir/mysql
 
     if  ! test -f $MYSQL_BIN ; then
@@ -43,7 +45,6 @@ function init
         fi
     fi
     
-
     CLUSTER_STATE_TIMEOUT=3600
     START_BALANCER_TIMEOUT=3600
     BACKUP_LOGFILE="/tmp/s9s_mongodb_backup.log"
@@ -315,7 +316,7 @@ function load_opts
 	fi
 	SSH_OPTS="-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY"
 	if [ "$SUDO" = "" ] || [ "$SUDO" = "NULL" ];  then
-           SUDO=sudo
+           SUDO="sudo -n"
         fi
     fi
     if [ "$SSH_PORT" = "" ] || [ "$SSH_PORT" = "NULL" ];  then
@@ -880,7 +881,7 @@ EOF
 		    remote_cmd_nofail $xhost "sed -i.bak '/10gen/d'  /etc/apt/sources.list"
 
 		    osdist=$(remote_cmd_getreply $xhost "lsb_release -i -s")
-            osdist=`echo $osdist |tr -d '\r\n\t '`
+		    osdist=`echo $osdist |tr -d '\r\n\t '`
 		    echo "$osdist"
 		    if [ "$osdist" = "ubuntu" ] || [ "$osdist" = "Ubuntu" ]; then
 			    remote_cmd $xhost "/bin/sh -c 'echo \"deb http://downloads-distro.mongodb.org/repo/ubuntu-upstart dist 10gen\" >> /etc/apt/sources.list'"
@@ -891,7 +892,7 @@ EOF
 		    remote_cmd $xhost "LC_ALL=en_US.utf8 DEBIAN_FRONTEND=noninteractive $HTTP_PROXY apt-get -o Dpkg::Options::='--force-confnew' -y -q install mongodb-org"
 		    ;;
 		*)
-		    echo "OS is unknonwn / not supported" 		  
+		    echo "OS is unknonwn / not supported"
 		    exit 1
 		    ;;
 	    esac
@@ -1477,10 +1478,8 @@ function backup_cluster
   fi
 
   echo "starting mongodb shard backup" > $BACKUP_LOGFILE
-  sleep 5
   log_job_message "Starting backup" 0
   log_job "RUNNING" "Backup started" 0
-  
 
   cat << 'EOF' > /tmp/startBalancer.js
    db=db.getMongo().getDB("config"); 
@@ -1503,9 +1502,10 @@ EOF
   CNT_UP=$(get_count_up)
   CNT_ALL=$(get_count_all)
   if [ $CNT_UP -ne $CNT_ALL ]; then
-      log_job_message "All servers are not started - refusing to start backup." 1
+      log_job_message "All: ${CNT_ALL} Up: ${CNT_UP}" 1
+      log_job_message "Not all servers are started - refusing to start backup." 1
       log_job "FAILED" "Backup Failed" 1
-      write_email "Backup failed" "All servers are not started - refusing to start backup"
+      write_email "Backup failed" "Not all servers are started - refusing to start backup"
       exit 1
   fi
 
@@ -1529,7 +1529,7 @@ EOF
   QUERY="UPDATE mongodb_backup SET status='failed', error=1 WHERE status='running'"
   $MYSQL_BIN --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"
  
-  QUERY="INSERT INTO mongodb_backup(backupid, cid, directory, error, status, report_ts, backup_type, backup_method, logfile, cc_storage, storage_host) VALUES($BACKUP_ID, $CID, '$BACKUPDIR','','running',now(), 'full', 'mongodump','', 1, '$HOSTNAME')"
+  QUERY="INSERT INTO mongodb_backup(backupid, cid, directory, error, status, report_ts, backup_type, backup_method, logfile, cc_storage, storage_host) VALUES($BACKUP_ID, $CID, '$BACKUPDIR',0,'running',now(), 'full', 'mongodump','', 1, '$HOSTNAME')"
   
   $MYSQL_BIN --user=$CMON_USER --password=$CMON_PASSWORD --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"
   if [ $? -ne 0 ]; then
@@ -1606,7 +1606,9 @@ EOF
 	      if [ "$VENDOR" = "tokutek" ]; then
 		  LC_ALL=C  $MONGODB_BASEDIR/bin/mongodump --db config -h $CFG_HNAME:$CFG_PORT -o $BACKUPDIR  >> $BACKUP_LOGFILE  2>&1
 	      else
-		  LC_ALL=C  $MONGODB_BASEDIR/bin/mongodump --journal --db config -h $CFG_HNAME:$CFG_PORT -o $BACKUPDIR  >> $BACKUP_LOGFILE  2>&1
+          # --journal has been removed for MongoDB 3.x
+          # https://docs.mongodb.org/v3.0/release-notes/3.0-compatibility/#tools-remove-dbpath-support
+		  LC_ALL=C  $MONGODB_BASEDIR/bin/mongodump --db config -h $CFG_HNAME:$CFG_PORT -o $BACKUPDIR  >> $BACKUP_LOGFILE  2>&1
 	      fi
 	      break
 	  done
@@ -1620,6 +1622,12 @@ EOF
   fi
 
   if [ "$RS_VICTIM_LIST" != "NULL" ]; then
+
+      if [ ! -f $MONGODB_BASEDIR/bin/mongodump ]; then
+          log_job_message "Could not find $MONGODB_BASEDIR/bin/mongodump on the controller, please install the mongo client utilities" 1
+          # not exiting, as we might do some cleanups later...
+      fi
+
       for r in $RS_VICTIM_LIST
       do	  
 	  RS_HNAME=`echo $r | awk -F ',' '{print $1};'`
@@ -1633,7 +1641,9 @@ EOF
 	  if [ "$VENDOR" = "tokutek" ]; then
 	      LC_ALL=C  $MONGODB_BASEDIR/bin/mongodump  -h $RS_HNAME:$RS_PORT -o $BACKUPDIR/$RS_NAME  >> $BACKUP_LOGFILE  2>&1  &
 	  else
-	      LC_ALL=C  $MONGODB_BASEDIR/bin/mongodump --journal  -h $RS_HNAME:$RS_PORT -o $BACKUPDIR/$RS_NAME  >> $BACKUP_LOGFILE  2>&1  &
+          # --journal has been removed for MongoDB 3.x
+          # https://docs.mongodb.org/v3.0/release-notes/3.0-compatibility/#tools-remove-dbpath-support
+	      LC_ALL=C  $MONGODB_BASEDIR/bin/mongodump -h $RS_HNAME:$RS_PORT -o $BACKUPDIR/$RS_NAME  >> $BACKUP_LOGFILE  2>&1  &
 	  fi
 	      
       done
@@ -1656,6 +1666,10 @@ EOF
   then
       log_job_message "All shards completed backup" 0
   else
+      cat $BACKUP_LOGFILE | sed  -e "s/'/\\\'/g" -e 's/"/\\"/g' > /tmp/s9s_mongodb_backup_log_escaped
+      LOG_CONTENT=`cat /tmp/s9s_mongodb_backup_log_escaped`
+      log_job_message "$LOG_CONTENT" 1
+
       log_job_message "$FAIL shards failed to complete backup - backup failed" 1
       log_job "FAILED" "Backup Failed" 1
   fi
@@ -1766,6 +1780,7 @@ EOF
   else
      set_backup_status 'failed' 1 
      write_email "Backup Failed" "Backup Failed"
+     log_job_message "Fail count: $FAIL" 1
      log_job "FAILED" "Backup Failed" 1
   fi
   exit 0
@@ -2313,6 +2328,9 @@ function check_host_exists
     echo $HID    
 }
 
+echo "This script is deprecated."
+exit 1
+
 ARG=$1
 shift
 case $ARG in
@@ -2355,3 +2373,4 @@ case $ARG in
     exit 1
     ;;
 esac
+

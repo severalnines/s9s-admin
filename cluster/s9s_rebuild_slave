@@ -291,7 +291,8 @@ function write_logfile
    rm -rf /tmp/s9s_backup_log_escaped
 }
 
-
+echo "This script is deprecated."
+exit 1
 NODEID=0
 ADDNODE=0
 

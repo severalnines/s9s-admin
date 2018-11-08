@@ -40,6 +40,7 @@ function init
     CONNECT_TIMEOUT=10
     CLUSTER_TYPE=$type
     MYSQL_OPTS="--connect-timeout=$CONNECT_TIMEOUT"
+    OSUSER=$USER
     JOBID=0
 
     if (( EUID != 0 )); then
@@ -249,14 +250,14 @@ function load_opts
     if [ "$SSH_USER" != "root" ]; then
 	SSH_OPTS=" -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY"
 	if [ "$SUDO" = "" ] || [ "$SUDO" = "NULL" ];  then
-           SUDO=sudo
+           SUDO="sudo -n"
         fi
     fi
     if [ "$SSH_PORT" = "" ] || [ "$SSH_PORT" = "NULL" ];  then
-        SSH_PORT="22"        
+        SSH_PORT="22"
     fi
-    SSH_OPTS="-t $SSH_OPTSX -p$SSH_PORT $SSH_OPTS"
-    SSH_OPTS2="-t -P$SSH_PORT $SSH_OPTS"
+    SSH_OPTS="$SSH_OPTSX -p$SSH_PORT $SSH_OPTS"
+    SSH_OPTS2="-P$SSH_PORT $SSH_OPTS"
 
 }
 
@@ -302,16 +303,6 @@ function change_password_mysql_mycnf
 	exit 1
     fi
 }
-
-function change_password_mysql_mycmoncnf
-{
-    local h=$1
-    local new_password=$2
-    MYCNF=$CONFIGDIR/my_cmon.cnf
-    new_password2=$(printf '%q' $new_password)
-    remote_cmd $h "[ -f $MYCNF ] sed -i \"s/password=.*/password=\'$new_password2\'/\" $MYCNF"    
-}
-
 
 function change_password_mysql_mysqlchk
 {
@@ -682,6 +673,10 @@ function change_ui_password()
         echo "** ClusterControl REST API database access credentials have not been changed"
     fi
 }
+
+
+echo "This script is deprecated."
+exit 1
 
 if [ ! -e $LOCKFILE ]; then
     trap "rm -f $LOCKFILE; exit" INT TERM EXIT

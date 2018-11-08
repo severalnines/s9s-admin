@@ -521,7 +521,6 @@ function start_backup
             SERVER_ADDRESS="127.0.0.1"
         fi
 	    
-
 	    QUERY="UPDATE mysql_backup SET status='failed', error=1 WHERE status='running' AND cc_storage=1"
 	    $MYSQL_BIN $MYSQL_OPTS --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "$QUERY"
 	    
@@ -1009,7 +1008,7 @@ function restore
       fi
   done
 
-  LIST=`$MYSQL_BIN $MYSQL_OPTS -NAB --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "set group_concat_max_len=1024*1024;select group_concat(concat(parentid ,',', backup_type, ',', concat(directory,'/', filename), ',' , status, ',', size, ',\'' ,  date_format(report_ts, \"%Y-%M-%d_%H:%i:%s\") , '\'', ',', directory, ',', filename, ',', md5sum, ',', compressed, ',', backupid) SEPARATOR ' ') from mysql_backup where cid=$CLUSTER_ID and parentid=$BACKUPID and backup_type='incremental' and status='completed' and lsn>0 order by parentid, backupid"`
+  LIST=`$MYSQL_BIN $MYSQL_OPTS -NAB --database=$CMON_DB_DB --host=$CMON_DB_HOST --port=$CMON_DB_PORT -e "set group_concat_max_len=1024*1024;select group_concat(concat(parentid ,',', backup_type, ',', concat(directory,'/', filename), ',' , status, ',', size, ',\'' ,  date_format(report_ts, \"%Y-%M-%d_%H:%i:%s\") , '\'', ',', directory, ',', filename, ',', md5sum, ',', compressed) SEPARATOR ' ') from mysql_backup where cid=$CLUSTER_ID and parentid=$BACKUPID and backup_type='incremental' and status='completed' and lsn>0 order by parentid, backupid"`
   if [ $? -ne 0 ]; then
       echo "Failed to read backups"
       echo "Restore FAILED"
@@ -1028,15 +1027,15 @@ function restore
       echo "Restore completed OK"
       echo "To copy back the restored data into your datadir of mysqld do:"
       echo "* Shutdown the cmon controller to prevent automatic recovery"
-      echo "* Shutdown the cmon agent on this host to prevent automatic recovery (if any)"
-      echo "* Shutdown all the mysql servers in the cluster"
+      echo "* Shutdown the cmon agent on this host to prevent automatic recovery"
+      echo "* Shutdown all the mysql servers in the cluster. "
       echo "* Copy $TARGETDIR/$BACKUPID/  to all the mysql servers in the cluster, e.g: "
-      echo "scp -r $TARGETDIR/$BACKUPID/  <user>@<target_server>:~"
-      echo "* On the target_server:"
-      echo "innobackupex --copy-back $BACKUPID/"
-      echo "* and don't forget to:"
-      echo "chown mysql:mysql -R <mysqld datadir>"
-      echo "* Start up the cluster again."
+      echo "*   scp -r $TARGETDIR/$BACKUPID/  <user>@<target_server>:"
+      echo "*   On the target_server"
+      echo "*   innobackupex --copy-back $BACKUPID/"
+      echo "    and don't forget to:"
+      echo "*   chwon mysql:mysql -R <mysqld datadir>"
+      echo "Start up the cluster again."
       echo ""
       exit 0
   fi
@@ -1045,9 +1044,8 @@ function restore
   for f in $LIST
   do      
       backupid=`echo $f | awk -F ',' '{print $1;}'`
-      backupid2=`echo $f | awk -F ',' '{print $11;}'`
       if [ -n "$EXCLUDE_BACKUPID" ]; then	  
-	  if [ $backupid2 -ge $EXCLUDE_BACKUPID ];  then
+	  if [ $backupid -ge $EXCLUDE_BACKUPID ];  then
 	      continue
 	  fi
       fi
@@ -1100,15 +1098,15 @@ function restore
   
   echo "To copy back the restored data into your datadir of mysqld do:"
   echo "* Shutdown the cmon controller to prevent automatic recovery"
-  echo "* Shutdown the cmon agent on this host to prevent automatic recovery (if any)"
-  echo "* Shutdown all the mysql servers in the cluster"
-  echo "* Copy $TARGETDIR/$BACKUPID/  to all the mysql servers in the cluster, e.g:"
-  echo "scp -r $TARGETDIR/$BACKUPID/  <user>@<target_server>:~"
-  echo "* On the target_server:"
-  echo "innobackupex --copy-back $BACKUPID/"
-  echo "* and don't forget to:"
-  echo "chown mysql:mysql -R <mysqld datadir>"
-  echo "* Start up the cluster again."
+  echo "* Shutdown the cmon agent on this host to prevent automatic recovery"
+  echo "* Shutdown all the mysql servers in the cluster. "
+  echo "* Copy $TARGETDIR/$BACKUPID/  to all the mysql servers in the cluster, e.g: "
+  echo "*   scp -r $TARGETDIR/$BACKUPID/*  <user>@<target_server>:"
+  echo "* On the target_server"
+  echo "* innobackupex --copy-back $BACKUPID/"
+  echo "and don't forget to:"
+  echo "* chwon mysql:mysql -R <mysqld datadir>"
+  echo " Start up the cluster again."
   exit 0
 }
 
@@ -1146,7 +1144,7 @@ function load_opts
 	SSH_OPTS="-q -t -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY"
 	SCP_OPTS="-q -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -oNumberOfPasswordPrompts=0 -oConnectTimeout=10 $SSH_IDENTITY"
 	if [ "$SUDO" = "" ] || [ "$SUDO" = "NULL" ];  then
-           SUDO=sudo
+           SUDO="sudo -n"
         fi
     fi
 
@@ -1455,9 +1453,22 @@ function check_mysql_client()
    fi
 }
 
+
+echo "This script is deprecated."
+exit 1
+
 ulimit -n $ULIMIT
 ARG=$1
 shift
+
+
+read -p 's9s_backupc has been deprecated (use backup/restore from UI). Are you sure you want to continue? [y/N]: ' ans
+if [ "$ans" == "y" ] || [ "$ans" == "Y" ] ; then
+    echo "Proceeding, not supported."
+else
+    echo 'Aborting.'
+    exit 1
+fi
 
 case $ARG in
     --backup)
