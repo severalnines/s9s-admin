@@ -55,10 +55,13 @@ function create_local_s9s_user
             cmon_user="s9s-error-reporter-$SUDO_USER"
         fi
 
+        # remove the non-working config
+        rm -f $S9S_USER_CONFIG 2>/dev/null
+
         # new s9s CLI requires the username defined alone without --cmon-user
         # only the new one has BUILD info in --version:
         if s9s --version | grep BUILD >/dev/null; then
-            s9s user --create --generate-key --group=admins --controller="https://localhost:9501" $cmon_user
+            s9s user --create --generate-key --group=admins --controller="https://localhost:9501" "$cmon_user"
         else
             s9s user --create --generate-key --group=admins --controller="https://localhost:9501" --cmon-user="$cmon_user"
         fi
@@ -72,9 +75,11 @@ CONFIG_END
         if [ -z "$SUDO_USER" ]; then
             chown -R root ~/.s9s
         else
-            chown -R $SUDO_USER ~/.s9s
+            chown -R "$SUDO_USER" ~/.s9s
         fi
     fi
+
+    s9s user --whoami
 
     unset S9S_SYSTEM_CONFIG
     unset S9S_USER_CONFIG
@@ -125,6 +130,9 @@ if (( EUID != 0 )); then
     echo "must be executed as 'root' or with 'sudo'  ( you are logged in as $USER )."
     exit 1
 fi
+
+/etc/init.d/cmon start || true
+/etc/init.d/cmon status
 
 ensure_tools_installed
 create_report
