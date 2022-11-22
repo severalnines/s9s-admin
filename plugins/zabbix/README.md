@@ -19,7 +19,7 @@ Installation Instructions
 Configure Zabbix Agent
 ----------------------
 
-On Zabbix agent host aka ClusterControl host, run following command (omit sudo if you run as root):
+On Zabbix agent host (ClusterControl host), run following command (omit sudo if you run as root):
 
 1) Get the package from GitHub:
 ```bash
@@ -55,7 +55,7 @@ Cluster ID 5 not found.
 
 ** This example shows that this ClusterControl instance only has 3 clusters, although we specified 5 cluster IDs in the command line.
 
-You should get an output of your database cluster summary, indicating the script is able to retrieve information using the provided ClusterControl RPC interface with correct token in `bootstrap.php`.
+You should get an output of your database cluster summary, indicating the script is able to retrieve information using the provided ClusterControl RPC interface with correct token in the `bootstrap.php`.
 
 6) Finally, restart Zabbix agent:
 ```bash
@@ -69,7 +69,9 @@ Configure Zabbix Server
 
 2) Import the XML template using Zabbix UI (*Configuration > Templates > Import*).
 
-3) Create/edit hosts and linking them the template "ClusterControl Template" (*Configuration > Hosts > choose a host > Templates tab*).
+3) Create/edit hosts and link them with "ClusterControl Template" (*Configuration > Hosts > choose a host > Templates > ClusterControl Template*).
+
+4) Add "Agent" as the interface. Commonly is the Zabbix agent (ClusterControl host IP address) with Zabbix agent port (default to 10050).
 
 You are done.
 
@@ -87,11 +89,12 @@ The template will report following items' key from ClusterControl:
 * `net.tcp.service[http,,9500]` - Status of ClusterControl Controller service (cmon).
 * `net.tcp.service[http,,9511]` - Status of ClusterControl SSH service (web-based SSH inside ClusterControl UI).
 * `net.tcp.service[http,,9510]` - Status of ClusterControl Events service (third-party integration with external notification service like PagerDuty and Slack).
+* `net.tcp.service[http,,9518]` - Status of ClusterControl Cloud module service (cloud provider integrations).
 
 User Parameter
 --------------
 
-The default user parameter file assumes you are running a database cluster under ClusterControl with cluster ID 1. If you want to monitor multiple clusters, specify a comma-delimited value of cluster IDs on the second argument.
+The default user parameter file assumes you are running a database cluster under ClusterControl with cluster ID 1. If you want to monitor multiple clusters, specify comma-delimited values of cluster IDs on the second argument.
 
 Example below shows user parameters to monitor multiple clusters with ID 1,2 and 5:
 ```bash
@@ -104,5 +107,5 @@ Debugging
 =========
 
 - Set `DebugLevel=4` on `/etc/zabbix/zabbix_agentd.conf`
-- Use zabbix_get to retrieve monitoring data from Zabbix server
+- Use `zabbix_get` to retrieve monitoring data from Zabbix server
 - Zabbix log file: `/var/log/zabbix/zabbix_agentd.log`
