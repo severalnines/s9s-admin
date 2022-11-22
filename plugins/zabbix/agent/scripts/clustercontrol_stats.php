@@ -161,29 +161,29 @@ function process_cmonrpc ( $cid, $arg, $xopt ) {
 		return $retval;
 	}
 	elseif ( $arg == 'alarms' ) {
-		// return 0 if not ok, return 1 if ok, return 3 if unknown/problem
-
+		// return 0 if ok (no alarms), return 1 if there is at least one alarm, return 3 if unknown/problem
+		// it's an uncommon Zabbix practice, due to we rely on CMON alarms' counter result
 		foreach ( $ncid as $cluster_id ) {
 			$arr = json_decode(call_cmonrpc($cluster_id,$arg));
 			if ( $arr->requestStatus == "ok" ) {
 				if ( $xopt == "critical" ) {
 					if ( $arr->cluster->alarm_statistics->critical <> 0 ) {
-						$retval=0;
+						$retval=1;
 						break;
 					}
 					else {
-						$retval=1;
+						$retval=0;
 						continue;
 					}
 
 				}
 				elseif ( $xopt == "warning" ) {
 					if ( $arr->cluster->alarm_statistics->warning <> 0 ) {
-						$retval=0;
+						$retval=1;
 						break;
 					}
 					else {
-						$retval=1;
+						$retval=0;
 						continue;
 					}
 				}
