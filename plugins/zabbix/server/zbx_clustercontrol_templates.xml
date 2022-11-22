@@ -1,441 +1,229 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <zabbix_export>
-    <version>3.4</version>
-    <date>2017-10-24T04:52:34Z</date>
-    <groups>
-        <group>
+    <version>6.2</version>
+    <date>2022-11-22T08:09:45Z</date>
+    <template_groups>
+        <template_group>
+            <uuid>7df96b18c230490a9a0a9e2307226338</uuid>
             <name>Templates</name>
-        </group>
-    </groups>
+        </template_group>
+    </template_groups>
     <templates>
         <template>
+            <uuid>df943d8c42c64fcf95a6ef1f4716062b</uuid>
             <template>ClusterControl Template</template>
             <name>ClusterControl Template</name>
-            <description/>
             <groups>
                 <group>
                     <name>Templates</name>
                 </group>
             </groups>
-            <applications>
-                <application>
-                    <name>ClusterControl</name>
-                </application>
-            </applications>
             <items>
                 <item>
+                    <uuid>e45c17640f7741aea73c35a76b44d9cb</uuid>
                     <name>DB alarms (critical)</name>
-                    <type>0</type>
-                    <snmp_community/>
-                    <snmp_oid/>
                     <key>clustercontrol.db.alarms-critical</key>
                     <delay>30</delay>
-                    <history>90d</history>
-                    <trends>365d</trends>
-                    <status>0</status>
-                    <value_type>3</value_type>
-                    <allowed_hosts/>
-                    <units/>
-                    <snmpv3_contextname/>
-                    <snmpv3_securityname/>
-                    <snmpv3_securitylevel>0</snmpv3_securitylevel>
-                    <snmpv3_authprotocol>0</snmpv3_authprotocol>
-                    <snmpv3_authpassphrase/>
-                    <snmpv3_privprotocol>0</snmpv3_privprotocol>
-                    <snmpv3_privpassphrase/>
-                    <params/>
-                    <ipmi_sensor/>
-                    <authtype>0</authtype>
-                    <username/>
-                    <password/>
-                    <publickey/>
-                    <privatekey/>
-                    <port/>
                     <description>ClusterControl alarms (severity: critical)</description>
-                    <inventory_link>0</inventory_link>
-                    <applications>
-                        <application>
-                            <name>ClusterControl</name>
-                        </application>
-                    </applications>
-                    <valuemap/>
-                    <logtimefmt/>
-                    <preprocessing/>
-                    <jmx_endpoint/>
-                    <master_item/>
+                    <tags>
+                        <tag>
+                            <tag>Application</tag>
+                            <value>ClusterControl</value>
+                        </tag>
+                    </tags>
+                    <triggers>
+                        <trigger>
+                            <uuid>b16799c47f474723afc66ab20ea7010b</uuid>
+                            <expression>last(/ClusterControl Template/clustercontrol.db.alarms-critical)&gt;0</expression>
+                            <name>ClusterControl alarm (critical)</name>
+                            <priority>HIGH</priority>
+                            <description>ClusterControl has raised one or more alarms with critical severity. Please take necessary action.</description>
+                        </trigger>
+                    </triggers>
                 </item>
                 <item>
+                    <uuid>bdaf4339f5bc4f8b922344627d026943</uuid>
                     <name>DB alarms (warning)</name>
-                    <type>0</type>
-                    <snmp_community/>
-                    <snmp_oid/>
                     <key>clustercontrol.db.alarms-warning</key>
                     <delay>30</delay>
-                    <history>90d</history>
-                    <trends>365d</trends>
-                    <status>0</status>
-                    <value_type>3</value_type>
-                    <allowed_hosts/>
-                    <units/>
-                    <snmpv3_contextname/>
-                    <snmpv3_securityname/>
-                    <snmpv3_securitylevel>0</snmpv3_securitylevel>
-                    <snmpv3_authprotocol>0</snmpv3_authprotocol>
-                    <snmpv3_authpassphrase/>
-                    <snmpv3_privprotocol>0</snmpv3_privprotocol>
-                    <snmpv3_privpassphrase/>
-                    <params/>
-                    <ipmi_sensor/>
-                    <authtype>0</authtype>
-                    <username/>
-                    <password/>
-                    <publickey/>
-                    <privatekey/>
-                    <port/>
                     <description>ClusterControl Alarms (severity: warning)</description>
-                    <inventory_link>0</inventory_link>
-                    <applications>
-                        <application>
-                            <name>ClusterControl</name>
-                        </application>
-                    </applications>
-                    <valuemap/>
-                    <logtimefmt/>
-                    <preprocessing/>
-                    <jmx_endpoint/>
-                    <master_item/>
+                    <tags>
+                        <tag>
+                            <tag>Application</tag>
+                            <value>ClusterControl</value>
+                        </tag>
+                    </tags>
+                    <triggers>
+                        <trigger>
+                            <uuid>edf2326c19c440109d5cf40c3e04bd52</uuid>
+                            <expression>last(/ClusterControl Template/clustercontrol.db.alarms-warning)&gt;0</expression>
+                            <name>ClusterControl alarm (warning)</name>
+                            <priority>WARNING</priority>
+                            <description>ClusterControl has raised one or more alarms with warning severity</description>
+                        </trigger>
+                    </triggers>
                 </item>
                 <item>
+                    <uuid>46666728994d4bd59d13f71f151d2e16</uuid>
                     <name>DB cluster status</name>
-                    <type>0</type>
-                    <snmp_community/>
-                    <snmp_oid/>
                     <key>clustercontrol.db.status</key>
                     <delay>30</delay>
-                    <history>90d</history>
-                    <trends>365d</trends>
-                    <status>0</status>
-                    <value_type>3</value_type>
-                    <allowed_hosts/>
-                    <units/>
-                    <snmpv3_contextname/>
-                    <snmpv3_securityname/>
-                    <snmpv3_securitylevel>0</snmpv3_securitylevel>
-                    <snmpv3_authprotocol>0</snmpv3_authprotocol>
-                    <snmpv3_authpassphrase/>
-                    <snmpv3_privprotocol>0</snmpv3_privprotocol>
-                    <snmpv3_privpassphrase/>
-                    <params/>
-                    <ipmi_sensor/>
-                    <authtype>0</authtype>
-                    <username/>
-                    <password/>
-                    <publickey/>
-                    <privatekey/>
-                    <port/>
                     <description>DB cluster status from ClusterControl point-of-view</description>
-                    <inventory_link>0</inventory_link>
-                    <applications>
-                        <application>
-                            <name>ClusterControl</name>
-                        </application>
-                    </applications>
                     <valuemap>
                         <name>ClusterControl DB Cluster Status</name>
                     </valuemap>
-                    <logtimefmt/>
-                    <preprocessing/>
-                    <jmx_endpoint/>
-                    <master_item/>
+                    <tags>
+                        <tag>
+                            <tag>Application</tag>
+                            <value>ClusterControl</value>
+                        </tag>
+                    </tags>
+                    <triggers>
+                        <trigger>
+                            <uuid>a69a1e1cba1748e5b97a018df24ddd70</uuid>
+                            <expression>max(/ClusterControl Template/clustercontrol.db.status,#3)=2</expression>
+                            <name>DB cluster is degraded</name>
+                            <priority>WARNING</priority>
+                        </trigger>
+                        <trigger>
+                            <uuid>97ee090280bd4095befb14beaf245e2c</uuid>
+                            <expression>max(/ClusterControl Template/clustercontrol.db.status,#3)=0</expression>
+                            <name>DB cluster is failed</name>
+                            <priority>DISASTER</priority>
+                        </trigger>
+                        <trigger>
+                            <uuid>95eb8bcdd7b4446a872d644b8260bc2c</uuid>
+                            <expression>max(/ClusterControl Template/clustercontrol.db.status,#3)=3</expression>
+                            <name>DB cluster status is unknown</name>
+                            <priority>AVERAGE</priority>
+                        </trigger>
+                    </triggers>
                 </item>
                 <item>
+                    <uuid>b7cb89399fc94af4bdce13ec1ce94034</uuid>
                     <name>ClusterControl CMON Controller status</name>
-                    <type>3</type>
-                    <snmp_community/>
-                    <snmp_oid/>
                     <key>net.tcp.service[http,,9500]</key>
                     <delay>30</delay>
-                    <history>90d</history>
-                    <trends>365d</trends>
-                    <status>0</status>
-                    <value_type>3</value_type>
-                    <allowed_hosts/>
-                    <units/>
-                    <snmpv3_contextname/>
-                    <snmpv3_securityname/>
-                    <snmpv3_securitylevel>0</snmpv3_securitylevel>
-                    <snmpv3_authprotocol>0</snmpv3_authprotocol>
-                    <snmpv3_authpassphrase/>
-                    <snmpv3_privprotocol>0</snmpv3_privprotocol>
-                    <snmpv3_privpassphrase/>
-                    <params/>
-                    <ipmi_sensor/>
-                    <authtype>0</authtype>
-                    <username/>
-                    <password/>
-                    <publickey/>
-                    <privatekey/>
-                    <port/>
                     <description>ClusterControl Controller (CMON) service</description>
-                    <inventory_link>0</inventory_link>
-                    <applications>
-                        <application>
-                            <name>ClusterControl</name>
-                        </application>
-                    </applications>
                     <valuemap>
                         <name>ClusterControl DB Cluster Status</name>
                     </valuemap>
-                    <logtimefmt/>
-                    <preprocessing/>
-                    <jmx_endpoint/>
-                    <master_item/>
+                    <tags>
+                        <tag>
+                            <tag>Application</tag>
+                            <value>ClusterControl</value>
+                        </tag>
+                    </tags>
+                    <triggers>
+                        <trigger>
+                            <uuid>9a785ff30d564f548bd41f94fc3c3f2f</uuid>
+                            <expression>last(/ClusterControl Template/net.tcp.service[http,,9500])=0</expression>
+                            <name>ClusterControl controller service</name>
+                            <priority>HIGH</priority>
+                            <description>Failed to detect ClusterControl controller (cmon) service. Please take necessary action.</description>
+                        </trigger>
+                    </triggers>
                 </item>
                 <item>
+                    <uuid>e0638d17093d49339e378eda90d6fa79</uuid>
                     <name>ClusterControl CMON Notification status</name>
-                    <type>3</type>
-                    <snmp_community/>
-                    <snmp_oid/>
                     <key>net.tcp.service[http,,9510]</key>
                     <delay>30</delay>
-                    <history>90d</history>
-                    <trends>365d</trends>
-                    <status>0</status>
-                    <value_type>3</value_type>
-                    <allowed_hosts/>
-                    <units/>
-                    <snmpv3_contextname/>
-                    <snmpv3_securityname/>
-                    <snmpv3_securitylevel>0</snmpv3_securitylevel>
-                    <snmpv3_authprotocol>0</snmpv3_authprotocol>
-                    <snmpv3_authpassphrase/>
-                    <snmpv3_privprotocol>0</snmpv3_privprotocol>
-                    <snmpv3_privpassphrase/>
-                    <params/>
-                    <ipmi_sensor/>
-                    <authtype>0</authtype>
-                    <username/>
-                    <password/>
-                    <publickey/>
-                    <privatekey/>
-                    <port/>
                     <description>ClusterControl notfication service (cmon-events), running on port 9510.</description>
-                    <inventory_link>0</inventory_link>
-                    <applications>
-                        <application>
-                            <name>ClusterControl</name>
-                        </application>
-                    </applications>
                     <valuemap>
                         <name>ClusterControl DB Cluster Status</name>
                     </valuemap>
-                    <logtimefmt/>
-                    <preprocessing/>
-                    <jmx_endpoint/>
-                    <master_item/>
+                    <tags>
+                        <tag>
+                            <tag>Application</tag>
+                            <value>ClusterControl</value>
+                        </tag>
+                    </tags>
+                    <triggers>
+                        <trigger>
+                            <uuid>efd5715c8f3c4edbb26eec6943eaa129</uuid>
+                            <expression>last(/ClusterControl Template/net.tcp.service[http,,9510])=0</expression>
+                            <name>ClusterControl notification service</name>
+                            <priority>WARNING</priority>
+                            <description>Failed to detect ClusterControl notification (cmon-events) service. Please take necessary action.</description>
+                        </trigger>
+                    </triggers>
                 </item>
                 <item>
+                    <uuid>54dc32f8a8d0477f849651f0b84ebe14</uuid>
                     <name>ClusterControl CMON Web SSH status</name>
-                    <type>3</type>
-                    <snmp_community/>
-                    <snmp_oid/>
                     <key>net.tcp.service[http,,9511]</key>
                     <delay>30</delay>
-                    <history>90d</history>
-                    <trends>365d</trends>
-                    <status>0</status>
-                    <value_type>3</value_type>
-                    <allowed_hosts/>
-                    <units/>
-                    <snmpv3_contextname/>
-                    <snmpv3_securityname/>
-                    <snmpv3_securitylevel>0</snmpv3_securitylevel>
-                    <snmpv3_authprotocol>0</snmpv3_authprotocol>
-                    <snmpv3_authpassphrase/>
-                    <snmpv3_privprotocol>0</snmpv3_privprotocol>
-                    <snmpv3_privpassphrase/>
-                    <params/>
-                    <ipmi_sensor/>
-                    <authtype>0</authtype>
-                    <username/>
-                    <password/>
-                    <publickey/>
-                    <privatekey/>
-                    <port/>
                     <description>ClusterControl web SSH service (cmon-ssh), running on port 9511.</description>
-                    <inventory_link>0</inventory_link>
-                    <applications>
-                        <application>
-                            <name>ClusterControl</name>
-                        </application>
-                    </applications>
                     <valuemap>
                         <name>ClusterControl DB Cluster Status</name>
                     </valuemap>
-                    <logtimefmt/>
-                    <preprocessing/>
-                    <jmx_endpoint/>
-                    <master_item/>
+                    <tags>
+                        <tag>
+                            <tag>Application</tag>
+                            <value>ClusterControl</value>
+                        </tag>
+                    </tags>
+                    <triggers>
+                        <trigger>
+                            <uuid>a0a3ce40f407495588ea3aa8f57eb510</uuid>
+                            <expression>last(/ClusterControl Template/net.tcp.service[http,,9511])=0</expression>
+                            <name>ClusterControl web SSH service</name>
+                            <priority>WARNING</priority>
+                            <description>Failed to detect ClusterControl web SSH (cmon-ssh) service. Please take necessary action.</description>
+                        </trigger>
+                    </triggers>
+                </item>
+                <item>
+                    <uuid>fb6810609c0f40ae87a62e8a3530adc7</uuid>
+                    <name>ClusterControl CMON Cloud module status</name>
+                    <key>net.tcp.service[http,,9518]</key>
+                    <delay>30</delay>
+                    <description>ClusterControl Cloud module (cmon-cloud), running on port 9518.</description>
+                    <valuemap>
+                        <name>ClusterControl DB Cluster Status</name>
+                    </valuemap>
+                    <tags>
+                        <tag>
+                            <tag>Application</tag>
+                            <value>ClusterControl</value>
+                        </tag>
+                    </tags>
+                    <triggers>
+                        <trigger>
+                            <uuid>90eb740842b441ce8d66395769d61379</uuid>
+                            <expression>last(/ClusterControl Template/net.tcp.service[http,,9518])=0</expression>
+                            <name>ClusterControl cloud service</name>
+                            <priority>WARNING</priority>
+                            <description>Failed to detect ClusterControl cloud (cmon-cloud) service. Please take the necessary action.</description>
+                        </trigger>
+                    </triggers>
                 </item>
             </items>
-            <discovery_rules/>
-            <httptests/>
-            <macros/>
-            <templates/>
-            <screens/>
+            <valuemaps>
+                <valuemap>
+                    <uuid>d3233fa6dc824f8687c4037f7ec9bdda</uuid>
+                    <name>ClusterControl DB Cluster Status</name>
+                    <mappings>
+                        <mapping>
+                            <value>0</value>
+                            <newvalue>Failed</newvalue>
+                        </mapping>
+                        <mapping>
+                            <value>1</value>
+                            <newvalue>Active</newvalue>
+                        </mapping>
+                        <mapping>
+                            <value>2</value>
+                            <newvalue>Degraded</newvalue>
+                        </mapping>
+                        <mapping>
+                            <value>3</value>
+                            <newvalue>Unknown</newvalue>
+                        </mapping>
+                    </mappings>
+                </valuemap>
+            </valuemaps>
         </template>
     </templates>
-    <triggers>
-        <trigger>
-            <expression>{ClusterControl Template:clustercontrol.db.alarms-critical.last(0)}&gt;0</expression>
-            <recovery_mode>0</recovery_mode>
-            <recovery_expression/>
-            <name>ClusterControl alarm (critical)</name>
-            <correlation_mode>0</correlation_mode>
-            <correlation_tag/>
-            <url/>
-            <status>0</status>
-            <priority>4</priority>
-            <description>ClusterControl has raised one or more alarms with critical severity. Please take necessary action.</description>
-            <type>0</type>
-            <manual_close>0</manual_close>
-            <dependencies/>
-            <tags/>
-        </trigger>
-        <trigger>
-            <expression>{ClusterControl Template:clustercontrol.db.alarms-warning.last(0)}&gt;0</expression>
-            <recovery_mode>0</recovery_mode>
-            <recovery_expression/>
-            <name>ClusterControl alarm (warning)</name>
-            <correlation_mode>0</correlation_mode>
-            <correlation_tag/>
-            <url/>
-            <status>0</status>
-            <priority>2</priority>
-            <description>ClusterControl has raised one or more alarms with warning severity</description>
-            <type>0</type>
-            <manual_close>0</manual_close>
-            <dependencies/>
-            <tags/>
-        </trigger>
-        <trigger>
-            <expression>{ClusterControl Template:net.tcp.service[http,,9500].last(0)}=0</expression>
-            <recovery_mode>0</recovery_mode>
-            <recovery_expression/>
-            <name>ClusterControl controller service</name>
-            <correlation_mode>0</correlation_mode>
-            <correlation_tag/>
-            <url/>
-            <status>0</status>
-            <priority>4</priority>
-            <description>Failed to detect ClusterControl controller (cmon) service. Please take necessary action.</description>
-            <type>0</type>
-            <manual_close>0</manual_close>
-            <dependencies/>
-            <tags/>
-        </trigger>
-        <trigger>
-            <expression>{ClusterControl Template:net.tcp.service[http,,9510].last(0)}=0</expression>
-            <recovery_mode>0</recovery_mode>
-            <recovery_expression/>
-            <name>ClusterControl notification service</name>
-            <correlation_mode>0</correlation_mode>
-            <correlation_tag/>
-            <url/>
-            <status>0</status>
-            <priority>2</priority>
-            <description>Failed to detect ClusterControl notification (cmon-events) service. Please take necessary action.</description>
-            <type>0</type>
-            <manual_close>0</manual_close>
-            <dependencies/>
-            <tags/>
-        </trigger>
-        <trigger>
-            <expression>{ClusterControl Template:net.tcp.service[http,,9511].last(0)}=0</expression>
-            <recovery_mode>0</recovery_mode>
-            <recovery_expression/>
-            <name>ClusterControl web SSH service</name>
-            <correlation_mode>0</correlation_mode>
-            <correlation_tag/>
-            <url/>
-            <status>0</status>
-            <priority>2</priority>
-            <description>Failed to detect ClusterControl web SSH (cmon-ssh) service. Please take necessary action.</description>
-            <type>0</type>
-            <manual_close>0</manual_close>
-            <dependencies/>
-            <tags/>
-        </trigger>
-        <trigger>
-            <expression>{ClusterControl Template:clustercontrol.db.status.max(#3)}=2</expression>
-            <recovery_mode>0</recovery_mode>
-            <recovery_expression/>
-            <name>DB cluster is degraded</name>
-            <correlation_mode>0</correlation_mode>
-            <correlation_tag/>
-            <url/>
-            <status>0</status>
-            <priority>2</priority>
-            <description/>
-            <type>0</type>
-            <manual_close>0</manual_close>
-            <dependencies/>
-            <tags/>
-        </trigger>
-        <trigger>
-            <expression>{ClusterControl Template:clustercontrol.db.status.max(#3)}=0</expression>
-            <recovery_mode>0</recovery_mode>
-            <recovery_expression/>
-            <name>DB cluster is failed</name>
-            <correlation_mode>0</correlation_mode>
-            <correlation_tag/>
-            <url/>
-            <status>0</status>
-            <priority>5</priority>
-            <description/>
-            <type>0</type>
-            <manual_close>0</manual_close>
-            <dependencies/>
-            <tags/>
-        </trigger>
-        <trigger>
-            <expression>{ClusterControl Template:clustercontrol.db.status.max(#3)}=3</expression>
-            <recovery_mode>0</recovery_mode>
-            <recovery_expression/>
-            <name>DB cluster status is unknown</name>
-            <correlation_mode>0</correlation_mode>
-            <correlation_tag/>
-            <url/>
-            <status>0</status>
-            <priority>3</priority>
-            <description/>
-            <type>0</type>
-            <manual_close>0</manual_close>
-            <dependencies/>
-            <tags/>
-        </trigger>
-    </triggers>
-    <value_maps>
-        <value_map>
-            <name>ClusterControl DB Cluster Status</name>
-            <mappings>
-                <mapping>
-                    <value>0</value>
-                    <newvalue>Failed</newvalue>
-                </mapping>
-                <mapping>
-                    <value>1</value>
-                    <newvalue>Active</newvalue>
-                </mapping>
-                <mapping>
-                    <value>2</value>
-                    <newvalue>Degraded</newvalue>
-                </mapping>
-                <mapping>
-                    <value>3</value>
-                    <newvalue>Unknown</newvalue>
-                </mapping>
-            </mappings>
-        </value_map>
-    </value_maps>
 </zabbix_export>
